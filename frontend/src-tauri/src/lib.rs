@@ -1,0 +1,650 @@
+use std::io::Write;
+use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use std::time::Duration;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, PhysicalPosition, Position, State,
+};
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+struct BackendState(Mutex<Option<Child>>);
+
+fn resolve_backend_script(script_name: &str) -> Result<(PathBuf, PathBuf), String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut dir = Some(cwd.as_path());
+        while let Some(d) = dir {
+            candidates.push(d.to_path_buf());
+            dir = d.parent();
+        }
+    }
+
+    candidates.push(PathBuf::from(r"C:\My Projects\AIDEN_assistant"));
+
+    for root in candidates {
+        let python_exe = root
+            .join("backend")
+            .join("venv")
+            .join("Scripts")
+            .join("python.exe");
+        let script_path = root.join("backend").join(script_name);
+
+        if python_exe.exists() && script_path.exists() {
+            return Ok((python_exe, script_path));
+        }
+    }
+
+    Err(format!(
+        "Could not locate backend Python environment or {}",
+        script_name
+    ))
+}
+
+fn is_port_8765_active() -> bool {
+    if let Ok(addr) = "127.0.0.1:8765".parse::<SocketAddr>() {
+        TcpStream::connect_timeout(&addr, Duration::from_millis(90)).is_ok()
+    } else {
+        false
+    }
+}
+
+fn kill_pid_tree(pid: u32) {
+    #[cfg(target_os = "windows")]
+    {
+        let mut kill_cmd = Command::new("taskkill");
+        kill_cmd
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW);
+        let _ = kill_cmd.status();
+    }
+}
+
+fn stop_all_aiden_processes(state: &BackendState) {
+    if let Ok(mut guard) = state.0.lock() {
+        if let Some(mut child) = guard.take() {
+            let pid = child.id();
+            kill_pid_tree(pid);
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    // Also terminate any external main.py instance holding port 8765
+    #[cfg(target_os = "windows")]
+    if is_port_8765_active() {
+        let mut ps_cmd = Command::new("powershell");
+        ps_cmd
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW);
+        let _ = ps_cmd.status();
+    }
+}
+
+fn spawn_aiden_backend(state: &BackendState) -> Result<u32, String> {
+    let (python_exe, script_path) = resolve_backend_script("main.py")?;
+    let backend_dir = script_path
+        .parent()
+        .ok_or_else(|| "Invalid backend directory".to_string())?;
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg("-u")
+        .arg(&script_path)
+        .current_dir(backend_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to boot Aiden backend (main.py): {}", e))?;
+    let pid = child.id();
+
+    if let Ok(mut guard) = state.0.lock() {
+        *guard = Some(child);
+    }
+
+    Ok(pid)
+}
+
+#[tauri::command]
+fn boot_aiden(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
+    // Check if tracked child is still alive
+    let mut already_alive = false;
+    if let Ok(mut guard) = state.0.lock() {
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => already_alive = true,
+                _ => {
+                    *guard = None;
+                }
+            }
+        }
+    }
+
+    if already_alive || is_port_8765_active() {
+        return Ok(serde_json::json!({
+            "ok": true,
+            "running": true,
+            "status": "already_running",
+            "message": "Aiden is already active in the background."
+        }));
+    }
+
+    let pid = spawn_aiden_backend(&state)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "running": true,
+        "pid": pid,
+        "status": "booted",
+        "message": "Aiden booted in sleep mode."
+    }))
+}
+
+#[tauri::command]
+fn shutdown_aiden(
+    app: AppHandle,
+    state: State<'_, BackendState>,
+) -> Result<serde_json::Value, String> {
+    stop_all_aiden_processes(&state);
+
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_ignore_cursor_events(true);
+    }
+    let _ = app.emit(
+        "chat-pill-sync",
+        serde_json::json!({
+            "isAwake": false,
+            "reply": serde_json::Value::Null,
+        }),
+    );
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "running": false,
+        "status": "stopped",
+        "message": "Aiden has been shut down completely."
+    }))
+}
+
+#[tauri::command]
+fn restart_aiden(
+    app: AppHandle,
+    state: State<'_, BackendState>,
+) -> Result<serde_json::Value, String> {
+    stop_all_aiden_processes(&state);
+
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_ignore_cursor_events(true);
+    }
+    let _ = app.emit(
+        "chat-pill-sync",
+        serde_json::json!({
+            "isAwake": false,
+            "reply": serde_json::Value::Null,
+        }),
+    );
+
+    std::thread::sleep(Duration::from_millis(400));
+
+    let pid = spawn_aiden_backend(&state)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "running": true,
+        "pid": pid,
+        "status": "restarted",
+        "message": "Aiden restarted in sleep mode."
+    }))
+}
+
+#[tauri::command]
+fn get_aiden_status(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
+    let mut tracked_alive = false;
+    if let Ok(mut guard) = state.0.lock() {
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => tracked_alive = true,
+                _ => {
+                    *guard = None;
+                }
+            }
+        }
+    }
+
+    let ws_online = is_port_8765_active();
+    Ok(serde_json::json!({
+        "running": tracked_alive || ws_online,
+        "wsOnline": ws_online
+    }))
+}
+
+#[tauri::command]
+fn get_windows_accent_color() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("reg");
+        cmd.args(["query", "HKCU\\Software\\Microsoft\\Windows\\DWM", "/v", "AccentColor"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = cmd.output() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if line.contains("AccentColor") && line.contains("REG_DWORD") {
+                    if let Some(hex_part) = line.split_whitespace().last() {
+                        let clean = hex_part.trim_start_matches("0x");
+                        if let Ok(val) = u32::from_str_radix(clean, 16) {
+                            let r = val & 0xFF;
+                            let g = (val >> 8) & 0xFF;
+                            let b = (val >> 16) & 0xFF;
+                            return Ok(format!("#{:02x}{:02x}{:02x}", r, g, b));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok("#258292".to_string())
+}
+
+#[tauri::command]
+fn save_openai_key(api_key: String) -> Result<String, String> {
+    let trimmed = api_key.trim();
+    if trimmed.is_empty() {
+        return Err("API key cannot be empty.".to_string());
+    }
+
+    let (python_exe, script_path) = resolve_backend_script("auth_manager.py")?;
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
+        .arg("--save-stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(trimmed.as_bytes())
+            .map_err(|e| format!("Failed to pass API key to backend: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+
+    if output.status.success() {
+        Ok("API Key saved to Windows Credential Manager.".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        Err(format!(
+            "Backend failed to save key: {} {}",
+            stdout.trim(),
+            stderr.trim()
+        ))
+    }
+}
+
+#[tauri::command]
+fn check_openai_key() -> Result<bool, String> {
+    let (python_exe, script_path) = resolve_backend_script("auth_manager.py")?;
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
+        .arg("--check")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to check key status: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+            if let Some(has_key) = parsed.get("has_key").and_then(|v| v.as_bool()) {
+                return Ok(has_key);
+            }
+        }
+        Ok(false)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn get_user_preferences() -> Result<serde_json::Value, String> {
+    let (python_exe, script_path) = resolve_backend_script("configuration.py")?;
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
+        .arg("--get")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to read user preferences: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| format!("Failed to parse user preferences JSON: {}", e))?;
+        Ok(parsed)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Failed reading preferences: {}", stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn save_user_preferences(
+    identity_vibe: Option<String>,
+    extra_rules: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let (python_exe, script_path) = resolve_backend_script("configuration.py")?;
+
+    let mut payload = serde_json::Map::new();
+    if let Some(vibe) = identity_vibe {
+        payload.insert("identity_vibe".to_string(), serde_json::Value::String(vibe));
+    }
+    if let Some(rules) = extra_rules {
+        let arr = rules
+            .into_iter()
+            .map(serde_json::Value::String)
+            .collect::<Vec<_>>();
+        payload.insert("extra_rules".to_string(), serde_json::Value::Array(arr));
+    }
+    let payload_str = serde_json::Value::Object(payload).to_string();
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
+        .arg("--save-stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to launch configuration manager: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(payload_str.as_bytes())
+            .map_err(|e| format!("Failed to pass preferences payload: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed waiting for configuration manager: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| format!("Failed to parse saved preferences JSON: {}", e))?;
+        Ok(parsed)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Failed saving preferences: {}", stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn get_user_memories() -> Result<serde_json::Value, String> {
+    let (python_exe, script_path) = resolve_backend_script("memory_manager.py")?;
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
+        .arg("--get")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to read user memories: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| format!("Failed to parse user memories JSON: {}", e))?;
+        Ok(parsed)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Failed reading memories: {}", stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn save_user_memories(memories: serde_json::Value) -> Result<serde_json::Value, String> {
+    let (python_exe, script_path) = resolve_backend_script("memory_manager.py")?;
+
+    let payload = serde_json::json!({ "memories": memories });
+    let payload_str = payload.to_string();
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
+        .arg("--save-stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to launch memory manager: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(payload_str.as_bytes())
+            .map_err(|e| format!("Failed to pass memories payload: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed waiting for memory manager: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| format!("Failed to parse saved memories JSON: {}", e))?;
+        Ok(parsed)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Failed saving memories: {}", stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn set_chat_pill_state(
+    app: AppHandle,
+    is_awake: Option<bool>,
+    is_dark_mode: Option<bool>,
+    reply: Option<String>,
+) -> Result<(), String> {
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_always_on_top(true);
+        if let Some(awake) = is_awake {
+            let _ = pill_win.set_ignore_cursor_events(!awake);
+            if awake {
+                let _ = pill_win.show();
+                let _ = pill_win.set_focus();
+            }
+        }
+    }
+
+    let payload = serde_json::json!({
+        "isAwake": is_awake,
+        "isDarkMode": is_dark_mode,
+        "reply": reply,
+    });
+    let _ = app.emit("chat-pill-sync", payload);
+    Ok(())
+}
+
+#[tauri::command]
+fn minimize_to_tray(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_focus();
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .manage(BackendState(Mutex::new(None)))
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_always_on_top(true);
+            }
+
+            // Position the floating Copilot Chat Pill window right above the Windows taskbar
+            if let Some(pill_win) = app.get_webview_window("chat_pill") {
+                let _ = pill_win.set_always_on_top(true);
+                let _ = pill_win.set_ignore_cursor_events(true);
+
+                if let Ok(Some(monitor)) = pill_win.primary_monitor() {
+                    let screen_size = monitor.size();
+                    let monitor_pos = monitor.position();
+                    let scale = monitor.scale_factor();
+
+                    let win_width = (920.0 * scale) as i32;
+                    let win_height = (460.0 * scale) as i32;
+                    let taskbar_offset = (48.0 * scale) as i32;
+
+                    let x = monitor_pos.x + ((screen_size.width as i32 - win_width) / 2);
+                    let y = monitor_pos.y + (screen_size.height as i32 - win_height - taskbar_offset);
+
+                    let _ = pill_win.set_position(Position::Physical(PhysicalPosition { x, y }));
+                }
+            }
+
+            // Context menu with "Open" and "Exit"
+            let open_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
+            let exit_item = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&open_item, &exit_item])?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .tooltip("AIDEN")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "exit" => {
+                        let state = app.state::<BackendState>();
+                        stop_all_aiden_processes(&state);
+                        if let Some(pill_win) = app.get_webview_window("chat_pill") {
+                            let _ = pill_win.destroy();
+                        }
+                        if let Some(main_win) = app.get_webview_window("main") {
+                            let _ = main_win.destroy();
+                        }
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // Left click on tray restores/shows the app
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder.build(app)?;
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            minimize_to_tray,
+            show_main_window,
+            save_openai_key,
+            check_openai_key,
+            get_user_preferences,
+            save_user_preferences,
+            get_user_memories,
+            save_user_memories,
+            set_chat_pill_state,
+            boot_aiden,
+            shutdown_aiden,
+            restart_aiden,
+            get_aiden_status,
+            get_windows_accent_color
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

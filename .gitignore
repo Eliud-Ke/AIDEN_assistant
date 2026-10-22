@@ -1,0 +1,47 @@
+# ==============================================================================
+# Aiden Assistant — Unified Git Ignore
+# ==============================================================================
+
+# Python & Backend
+backend/venv/
+backend/env/
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+*.mypy_cache/
+*.wav
+*.mp3
+*.pcm
+*.raw
+*.tmp
+
+# Frontend (Node & Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Rust & Tauri
+frontend/src-tauri/target/
+frontend/src-tauri/gen/schemas/
+**/*.rs.bk
+
+# Secrets & Environment
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Editor & OS Artifacts
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
