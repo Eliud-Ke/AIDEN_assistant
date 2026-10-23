@@ -57,35 +57,37 @@
 }
 
 /* ==========================================================================
-   OUTER BEZEL FRAME (Concentric thick border matching launcher window-frame)
+   OUTER BEZEL FRAME (Concentric thin border matching launcher window-frame)
    ========================================================================== */
 .chat-pill-frame {
   width: 100%;
   max-width: 480px;
-  padding: 3.5px;
+  padding: 1.2px;
   box-sizing: border-box;
-  border-radius: 27.5px;
+  border-radius: 25.2px;
   cursor: default;
   user-select: none;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   transition: background-color 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
 }
 
-/* Dark Mode Frame: Seamless accent-tinted bezel without bright outer stroke */
+/* Dark Mode Frame: Translucent accent-tinted bezel */
 .chat-pill-frame.dark-frame {
-  background-color: var(--windows-accent-frame, #24262a);
-  border: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
-              0 18px 40px rgba(0, 0, 0, 0.55),
-              0 4px 14px rgba(0, 0, 0, 0.35);
+  background-color: color-mix(in srgb, var(--windows-accent, #258292) 28%, rgba(26, 27, 34, 0.35));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
+              0 16px 36px rgba(0, 0, 0, 0.35),
+              0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* Light Mode Frame: Creamy off-white with subtle stroke */
+/* Light Mode Frame: Creamy translucent bezel */
 .chat-pill-frame.light-frame {
-  background-color: #ede8df;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
-              0 18px 40px rgba(0, 0, 0, 0.14),
-              0 4px 12px rgba(0, 0, 0, 0.08);
+  background-color: rgba(235, 229, 219, 0.78);
+  border: 1px solid rgba(115, 62, 10, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+              0 18px 40px rgba(0, 0, 0, 0.12),
+              0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 /* ==========================================================================
@@ -101,22 +103,34 @@
   flex-direction: column;
   justify-content: space-between;
   user-select: none;
-  transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  backdrop-filter: blur(36px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 
-/* Dark Mode Shell: Deep solid opaque dark */
+/* Dark Mode Shell: Sleek Windows 11 Dark Acrylic */
 .chat-pill-shell.dark-shell {
-  background-color: #121214;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: linear-gradient(
+    145deg,
+    rgba(28, 30, 38, 0.38) 0%,
+    rgba(14, 15, 20, 0.48) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.4);
   color: #ffffff;
 }
 
-/* Light Mode Shell: Solid opaque cream */
+/* Light Mode Shell: Warm Biscuit/Cream Windows 11 Acrylic */
 .chat-pill-shell.light-shell {
-  background-color: #f7f7fa;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  background: linear-gradient(
+    145deg,
+    rgba(250, 248, 244, 0.82) 0%,
+    rgba(240, 235, 226, 0.88) 100%
+  );
+  border: 1px solid rgba(115, 62, 10, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+              inset 0 -1px 0 rgba(115, 62, 10, 0.06);
   color: #1a1a1a;
 }
 
@@ -312,15 +326,17 @@
 }
 
 /* ==========================================================================
-   RESPONSE BUBBLE (With thick concentric bezel frame)
+   RESPONSE BUBBLE (With refined concentric bezel frame)
    ========================================================================== */
 .chat-pill-response-frame {
   width: 100%;
   max-width: 800px;
   margin-bottom: 10px;
-  padding: 3.5px;
+  padding: 1.2px;
   box-sizing: border-box;
-  border-radius: 20.5px;
+  border-radius: 18.2px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   animation: responseBloom 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   transition: background-color 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
 }
@@ -337,19 +353,19 @@
 }
 
 .chat-pill-response-frame.dark-frame {
-  background-color: var(--windows-accent-frame, #24262a);
-  border: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
-              0 16px 36px rgba(0, 0, 0, 0.5),
-              0 4px 10px rgba(0, 0, 0, 0.3);
+  background-color: color-mix(in srgb, var(--windows-accent, #258292) 28%, rgba(26, 27, 34, 0.35));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
+              0 16px 36px rgba(0, 0, 0, 0.35),
+              0 4px 10px rgba(0, 0, 0, 0.18);
 }
 
 .chat-pill-response-frame.light-frame {
-  background-color: #ede8df;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
-              0 16px 36px rgba(0, 0, 0, 0.14),
-              0 4px 10px rgba(0, 0, 0, 0.06);
+  background-color: rgba(235, 229, 219, 0.78);
+  border: 1px solid rgba(115, 62, 10, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+              0 16px 36px rgba(0, 0, 0, 0.12),
+              0 4px 10px rgba(0, 0, 0, 0.05);
 }
 
 .chat-pill-response-shell {
@@ -359,20 +375,32 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  backdrop-filter: blur(36px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 
 .chat-pill-response-shell.dark-shell {
-  background-color: #121214;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: linear-gradient(
+    145deg,
+    rgba(28, 30, 38, 0.38) 0%,
+    rgba(14, 15, 20, 0.48) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.4);
   color: #ffffff;
 }
 
 .chat-pill-response-shell.light-shell {
-  background-color: #f7f7fa;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  background: linear-gradient(
+    145deg,
+    rgba(250, 248, 244, 0.82) 0%,
+    rgba(240, 235, 226, 0.88) 100%
+  );
+  border: 1px solid rgba(115, 62, 10, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+              inset 0 -1px 0 rgba(115, 62, 10, 0.06);
   color: #1a1a1a;
 }
 
