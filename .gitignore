@@ -41,6 +41,7 @@ frontend/src-tauri/gen/schemas/
 *.key
 
 # Editor & OS Artifacts
+release_binaries/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
