@@ -3,6 +3,13 @@ import os
 import sys
 import json
 
+# Ensure PyInstaller bundles and activates Windows Credential Manager backend
+try:
+    import keyring.backends.Windows
+    keyring.set_keyring(keyring.backends.Windows.WinVaultKeyring())
+except Exception:
+    pass
+
 SERVICE_NAME = "AidenAssistant_Auth"
 KEY_NAME = "openai_api_key"
 

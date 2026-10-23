@@ -1,5 +1,5 @@
 {
-  "productName": "frontend",
+  "productName": "AIDEN Assistant",
   "version": "0.1.0",
   "identifier": "com.aiden.assistant",
   "build": {
@@ -45,6 +45,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "../../backend/dist/aiden-engine": "aiden-engine"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -6,6 +6,9 @@
 backend/venv/
 backend/env/
 backend/.venv/
+backend/build/
+backend/dist/
+*.spec
 **/__pycache__/
 *.py[cod]
 *$py.class

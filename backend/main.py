@@ -1,10 +1,21 @@
 import sys
+import multiprocessing
 
 # Ensure Windows stdout/stderr handles UTF-8 cleanly
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    # Fast-path CLI dispatcher for standalone PyInstaller binary (--cli-module <name> [flags...])
+    if len(sys.argv) >= 3 and sys.argv[1] == "--cli-module":
+        target_module = sys.argv[2]
+        sys.argv = [sys.argv[0]] + sys.argv[3:]
+        import runpy
+        runpy.run_module(target_module, run_name="__main__", alter_sys=True)
+        sys.exit(0)
 
 from auth_manager import ensure_api_key, get_api_key
 from openai import AsyncOpenAI

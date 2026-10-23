@@ -18,7 +18,25 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct BackendState(Mutex<Option<Child>>);
 
-fn resolve_backend_script(script_name: &str) -> Result<(PathBuf, PathBuf), String> {
+fn find_bundled_engine() -> Option<PathBuf> {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let candidates = [
+                exe_dir.join("aiden-engine").join("aiden-engine.exe"),
+                exe_dir.join("resources").join("aiden-engine").join("aiden-engine.exe"),
+                exe_dir.join("aiden-engine.exe"),
+            ];
+            for candidate in candidates {
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn find_dev_python(script_name: &str) -> Option<(PathBuf, PathBuf)> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Ok(cwd) = std::env::current_dir() {
@@ -29,7 +47,13 @@ fn resolve_backend_script(script_name: &str) -> Result<(PathBuf, PathBuf), Strin
         }
     }
 
-    candidates.push(PathBuf::from(r"C:\My Projects\AIDEN_assistant"));
+    if let Ok(exe_path) = std::env::current_exe() {
+        let mut dir = exe_path.parent();
+        while let Some(d) = dir {
+            candidates.push(d.to_path_buf());
+            dir = d.parent();
+        }
+    }
 
     for root in candidates {
         let python_exe = root
@@ -40,12 +64,48 @@ fn resolve_backend_script(script_name: &str) -> Result<(PathBuf, PathBuf), Strin
         let script_path = root.join("backend").join(script_name);
 
         if python_exe.exists() && script_path.exists() {
-            return Ok((python_exe, script_path));
+            return Some((python_exe, script_path));
+        }
+    }
+    None
+}
+
+fn build_backend_command(script_name: &str) -> Result<Command, String> {
+    let use_bundled = if cfg!(debug_assertions) {
+        find_dev_python(script_name).is_none() && find_bundled_engine().is_some()
+    } else {
+        find_bundled_engine().is_some()
+    };
+
+    if use_bundled {
+        if let Some(engine_exe) = find_bundled_engine() {
+            let mut cmd = Command::new(&engine_exe);
+            if let Some(engine_dir) = engine_exe.parent() {
+                cmd.current_dir(engine_dir);
+            }
+            if script_name != "main.py" {
+                let mod_name = script_name.trim_end_matches(".py");
+                cmd.arg("--cli-module").arg(mod_name);
+            }
+            return Ok(cmd);
         }
     }
 
+    if let Some((python_exe, script_path)) = find_dev_python(script_name) {
+        let mut cmd = Command::new(&python_exe);
+        if let Some(backend_dir) = script_path.parent() {
+            cmd.current_dir(backend_dir);
+        }
+        if script_name == "main.py" {
+            cmd.arg("-u").arg(&script_path);
+        } else {
+            cmd.arg(&script_path);
+        }
+        return Ok(cmd);
+    }
+
     Err(format!(
-        "Could not locate backend Python environment or {}",
+        "Could not locate bundled Aiden engine or Python environment for {}",
         script_name
     ))
 }
@@ -100,16 +160,8 @@ fn stop_all_aiden_processes(state: &BackendState) {
 }
 
 fn spawn_aiden_backend(state: &BackendState) -> Result<u32, String> {
-    let (python_exe, script_path) = resolve_backend_script("main.py")?;
-    let backend_dir = script_path
-        .parent()
-        .ok_or_else(|| "Invalid backend directory".to_string())?;
-
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg("-u")
-        .arg(&script_path)
-        .current_dir(backend_dir)
-        .stdin(Stdio::null())
+    let mut cmd = build_backend_command("main.py")?;
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
@@ -275,11 +327,8 @@ fn save_openai_key(api_key: String) -> Result<String, String> {
         return Err("API key cannot be empty.".to_string());
     }
 
-    let (python_exe, script_path) = resolve_backend_script("auth_manager.py")?;
-
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script_path)
-        .arg("--save-stdin")
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--save-stdin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -316,11 +365,8 @@ fn save_openai_key(api_key: String) -> Result<String, String> {
 
 #[tauri::command]
 fn check_openai_key() -> Result<bool, String> {
-    let (python_exe, script_path) = resolve_backend_script("auth_manager.py")?;
-
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script_path)
-        .arg("--check")
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--check")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -346,11 +392,8 @@ fn check_openai_key() -> Result<bool, String> {
 
 #[tauri::command]
 fn get_user_preferences() -> Result<serde_json::Value, String> {
-    let (python_exe, script_path) = resolve_backend_script("configuration.py")?;
-
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script_path)
-        .arg("--get")
+    let mut cmd = build_backend_command("configuration.py")?;
+    cmd.arg("--get")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -377,8 +420,6 @@ fn save_user_preferences(
     identity_vibe: Option<String>,
     extra_rules: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
-    let (python_exe, script_path) = resolve_backend_script("configuration.py")?;
-
     let mut payload = serde_json::Map::new();
     if let Some(vibe) = identity_vibe {
         payload.insert("identity_vibe".to_string(), serde_json::Value::String(vibe));
@@ -392,9 +433,8 @@ fn save_user_preferences(
     }
     let payload_str = serde_json::Value::Object(payload).to_string();
 
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script_path)
-        .arg("--save-stdin")
+    let mut cmd = build_backend_command("configuration.py")?;
+    cmd.arg("--save-stdin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -429,11 +469,8 @@ fn save_user_preferences(
 
 #[tauri::command]
 fn get_user_memories() -> Result<serde_json::Value, String> {
-    let (python_exe, script_path) = resolve_backend_script("memory_manager.py")?;
-
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script_path)
-        .arg("--get")
+    let mut cmd = build_backend_command("memory_manager.py")?;
+    cmd.arg("--get")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -457,14 +494,11 @@ fn get_user_memories() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn save_user_memories(memories: serde_json::Value) -> Result<serde_json::Value, String> {
-    let (python_exe, script_path) = resolve_backend_script("memory_manager.py")?;
-
     let payload = serde_json::json!({ "memories": memories });
     let payload_str = payload.to_string();
 
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script_path)
-        .arg("--save-stdin")
+    let mut cmd = build_backend_command("memory_manager.py")?;
+    cmd.arg("--save-stdin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

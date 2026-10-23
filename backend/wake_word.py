@@ -29,18 +29,25 @@ except ImportError:
 
 
 def get_model_path() -> str:
-    """Resolves the absolute path to aiden.onnx or aiden.tflite."""
-    base_dir = Path(__file__).resolve().parent
-    onnx_path = base_dir / "models" / "aiden.onnx"
-    if onnx_path.exists():
-        return str(onnx_path)
+    """Resolves the absolute path to aiden.onnx or aiden.tflite (supports dev and PyInstaller)."""
+    candidate_dirs = []
+    if hasattr(sys, "_MEIPASS"):
+        candidate_dirs.append(Path(sys._MEIPASS))
+    candidate_dirs.append(Path(__file__).resolve().parent)
+    candidate_dirs.append(Path(sys.executable).resolve().parent)
+    candidate_dirs.append(Path(sys.executable).resolve().parent / "_internal")
 
-    tflite_path = base_dir / "models" / "aiden.tflite"
-    if tflite_path.exists():
-        return str(tflite_path)
+    for base_dir in candidate_dirs:
+        onnx_path = base_dir / "models" / "aiden.onnx"
+        if onnx_path.exists():
+            return str(onnx_path)
+
+        tflite_path = base_dir / "models" / "aiden.tflite"
+        if tflite_path.exists():
+            return str(tflite_path)
 
     raise FileNotFoundError(
-        f"Wake word model not found in {base_dir / 'models'}. Expected 'aiden.onnx' or 'aiden.tflite'."
+        f"Wake word model not found in {[str(d / 'models') for d in candidate_dirs]}. Expected 'aiden.onnx' or 'aiden.tflite'."
     )
 
 
