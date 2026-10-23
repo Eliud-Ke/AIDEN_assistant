@@ -72,13 +72,15 @@
   transition: background-color 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
 }
 
-/* Dark Mode Frame: Translucent accent-tinted bezel */
+/* Dark Mode Frame: Solid opaque bezel */
 .chat-pill-frame.dark-frame {
-  background-color: color-mix(in srgb, var(--windows-accent, #258292) 28%, rgba(26, 27, 34, 0.35));
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
-              0 16px 36px rgba(0, 0, 0, 0.35),
-              0 4px 12px rgba(0, 0, 0, 0.2);
+  background-color: color-mix(in srgb, var(--windows-accent, #258292) 20%, #1c1d22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
+              0 18px 40px rgba(0, 0, 0, 0.65),
+              0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
 /* Light Mode Frame: Creamy translucent bezel */
@@ -108,16 +110,19 @@
   transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 
-/* Dark Mode Shell: Sleek Windows 11 Dark Acrylic */
+/* Dark Mode Shell: Solid Cinematic Gradient (Almost Grey to Cinematic Black Grey) */
 .chat-pill-shell.dark-shell {
   background: linear-gradient(
-    145deg,
-    rgba(28, 30, 38, 0.38) 0%,
-    rgba(14, 15, 20, 0.48) 100%
+    150deg,
+    #26282e 0%,
+    #1a1b20 48%,
+    #0e0f12 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
-              inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.55);
   color: #ffffff;
 }
 
@@ -353,11 +358,13 @@
 }
 
 .chat-pill-response-frame.dark-frame {
-  background-color: color-mix(in srgb, var(--windows-accent, #258292) 28%, rgba(26, 27, 34, 0.35));
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
-              0 16px 36px rgba(0, 0, 0, 0.35),
-              0 4px 10px rgba(0, 0, 0, 0.18);
+  background-color: color-mix(in srgb, var(--windows-accent, #258292) 20%, #1c1d22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
+              0 16px 36px rgba(0, 0, 0, 0.55),
+              0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 .chat-pill-response-frame.light-frame {
@@ -382,13 +389,16 @@
 
 .chat-pill-response-shell.dark-shell {
   background: linear-gradient(
-    145deg,
-    rgba(28, 30, 38, 0.38) 0%,
-    rgba(14, 15, 20, 0.48) 100%
+    150deg,
+    #26282e 0%,
+    #1a1b20 48%,
+    #0e0f12 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
-              inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
+              inset 0 -1px 0 rgba(0, 0, 0, 0.55);
   color: #ffffff;
 }
 
