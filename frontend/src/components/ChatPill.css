@@ -83,13 +83,15 @@
               0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
-/* Light Mode Frame: Creamy translucent bezel */
+/* Light Mode Frame: Golden biscuit bezel matching launcher frame */
 .chat-pill-frame.light-frame {
-  background-color: rgba(235, 229, 219, 0.78);
-  border: 1px solid rgba(115, 62, 10, 0.14);
+  background-color: #ede5d8;
+  border: 1px solid rgba(115, 62, 10, 0.16);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              0 18px 40px rgba(0, 0, 0, 0.12),
-              0 4px 12px rgba(0, 0, 0, 0.06);
+              0 18px 40px rgba(115, 62, 10, 0.12),
+              0 4px 12px rgba(115, 62, 10, 0.06);
 }
 
 /* ==========================================================================
@@ -105,8 +107,6 @@
   flex-direction: column;
   justify-content: space-between;
   user-select: none;
-  backdrop-filter: blur(36px) saturate(180%);
-  -webkit-backdrop-filter: blur(36px) saturate(180%);
   transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 
@@ -126,16 +126,19 @@
   color: #ffffff;
 }
 
-/* Light Mode Shell: Warm Biscuit/Cream Windows 11 Acrylic */
+/* Light Mode Shell: Warm Golden Biscuit to Cream Gradient (Matching App Launcher Sections) */
 .chat-pill-shell.light-shell {
   background: linear-gradient(
     145deg,
-    rgba(250, 248, 244, 0.82) 0%,
-    rgba(240, 235, 226, 0.88) 100%
+    #eae1cf 0%,
+    #f4eee2 40%,
+    #fbf9f6 100%
   );
-  border: 1px solid rgba(115, 62, 10, 0.16);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(115, 62, 10, 0.20);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              inset 0 -1px 0 rgba(115, 62, 10, 0.06);
+              inset 0 -1px 0 rgba(115, 62, 10, 0.08);
   color: #1a1a1a;
 }
 
@@ -254,17 +257,17 @@
   background: rgba(96, 165, 250, 0.15);
 }
 
-/* Light Mode Action Buttons */
+/* Light Mode Action Buttons: Warm bronze gold matching app launcher */
 .chat-pill-shell.light-shell .chat-pill-btn {
-  color: rgba(0, 0, 0, 0.65);
+  color: rgba(115, 62, 10, 0.75);
 }
 .chat-pill-shell.light-shell .chat-pill-btn:hover {
-  color: #1a1a1a;
-  background: rgba(0, 0, 0, 0.08);
+  color: #733E0A;
+  background: rgba(115, 62, 10, 0.08);
 }
 .chat-pill-shell.light-shell .chat-pill-btn.active {
-  color: #1a1a1a;
-  background: rgba(0, 0, 0, 0.12);
+  color: #733E0A;
+  background: rgba(115, 62, 10, 0.15);
 }
 
 /* Active Microphone Listening Pulse */
@@ -326,8 +329,9 @@
 }
 
 .chat-pill-shell.light-shell .chat-pill-send-btn {
-  background: #1a1a1a;
+  background: #733E0A;
   color: #ffffff;
+  box-shadow: 0 2px 8px rgba(115, 62, 10, 0.25);
 }
 
 /* ==========================================================================
@@ -368,11 +372,13 @@
 }
 
 .chat-pill-response-frame.light-frame {
-  background-color: rgba(235, 229, 219, 0.78);
-  border: 1px solid rgba(115, 62, 10, 0.14);
+  background-color: #ede5d8;
+  border: 1px solid rgba(115, 62, 10, 0.16);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              0 16px 36px rgba(0, 0, 0, 0.12),
-              0 4px 10px rgba(0, 0, 0, 0.05);
+              0 16px 36px rgba(115, 62, 10, 0.12),
+              0 4px 10px rgba(115, 62, 10, 0.05);
 }
 
 .chat-pill-response-shell {
@@ -382,8 +388,6 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(36px) saturate(180%);
-  -webkit-backdrop-filter: blur(36px) saturate(180%);
   transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 
@@ -405,12 +409,15 @@
 .chat-pill-response-shell.light-shell {
   background: linear-gradient(
     145deg,
-    rgba(250, 248, 244, 0.82) 0%,
-    rgba(240, 235, 226, 0.88) 100%
+    #eae1cf 0%,
+    #f4eee2 40%,
+    #fbf9f6 100%
   );
-  border: 1px solid rgba(115, 62, 10, 0.16);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(115, 62, 10, 0.20);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              inset 0 -1px 0 rgba(115, 62, 10, 0.06);
+              inset 0 -1px 0 rgba(115, 62, 10, 0.08);
   color: #1a1a1a;
 }
 
@@ -460,8 +467,8 @@
 }
 
 .chat-pill-response-shell.light-shell .chat-pill-string-orb {
-  color: rgba(20, 20, 22, 0.88);
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.14));
+  color: #733E0A;
+  filter: drop-shadow(0 0 3px rgba(115, 62, 10, 0.22));
 }
 
 .string-orb-svg {
