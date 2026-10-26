@@ -66,16 +66,16 @@
   -webkit-user-select: none;
 
   /* Authentic Apple Intelligence deep smoked vignette:
-     Intense dark curved vignette at the top (0-35%), easing to rich neutral smoked glass */
+     Intense dark curved vignette at the top (0-35%), easing to subtle blur smoked glass */
   background: linear-gradient(
     180deg,
-    rgba(0, 0, 0, 0.94) 0%,
-    rgba(8, 8, 8, 0.86) 35%,
-    rgba(18, 18, 18, 0.78) 72%,
-    rgba(28, 28, 28, 0.70) 100%
+    rgba(0, 0, 0, 0.84) 0%,
+    rgba(10, 10, 10, 0.76) 35%,
+    rgba(18, 18, 18, 0.65) 72%,
+    rgba(24, 24, 24, 0.56) 100%
   );
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   /* Soft, barely-there boundary - not a harsh white wireframe */
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
@@ -225,20 +225,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
   outline: none;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.85);
   padding: 0;
   transition: color 0.2s ease,
               background 0.2s ease,
+              box-shadow 0.2s ease,
               transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .siri-pill-btn:hover {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   transform: scale(1.08);
 }
 
@@ -364,19 +367,22 @@
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.12);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
   outline: none;
   cursor: pointer;
   color: #ffffff;
   opacity: 0.9;
   transition: opacity 0.2s ease,
               background 0.2s ease,
+              box-shadow 0.2s ease,
               transform 0.15s ease;
 }
 
 .siri-card-header-btn:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
   transform: scale(1.08);
 }
 
@@ -598,7 +604,8 @@
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.12);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
   outline: none;
   cursor: pointer;
   color: #ffffff;
@@ -607,12 +614,14 @@
   flex-shrink: 0;
   transition: opacity 0.2s ease,
               background 0.2s ease,
+              box-shadow 0.2s ease,
               transform 0.15s ease;
 }
 
 .siri-card-action-btn:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   transform: scale(1.08);
 }
 
