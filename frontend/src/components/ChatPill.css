@@ -81,7 +81,6 @@
   box-shadow: 
     /* Razor-thin specular reflection ONLY on top edge */
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
     /* Deep ambient shadow */
     0 24px 60px rgba(0, 0, 0, 0.65),
     0 4px 16px rgba(0, 0, 0, 0.4);
@@ -103,6 +102,22 @@
   padding: 0 16px 0 24px; /* Generous breathing room */
   cursor: default;
   animation: siriPillBloom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Top dark vignette, rich grey body, gradual smooth fade starting 77%-85% down into transparent */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.94) 0%,
+    rgba(8, 8, 8, 0.86) 30%,
+    rgba(20, 20, 20, 0.72) 62%,
+    rgba(22, 22, 22, 0.62) 74%,
+    rgba(24, 24, 24, 0.46) 80%,
+    rgba(26, 26, 26, 0.28) 86%,
+    rgba(26, 26, 26, 0.12) 92%,
+    rgba(26, 26, 26, 0.0) 100%
+  ) !important;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 
 @keyframes siriPillBloom {
@@ -334,6 +349,22 @@
   flex-direction: column;
   padding: 16px 18px 16px 18px;
   animation: siriCardExpand 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Top dark vignette, rich grey body, gradual smooth fade across 76%-86% into transparent */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.94) 0%,
+    rgba(8, 8, 8, 0.86) 26%,
+    rgba(20, 20, 20, 0.72) 60%,
+    rgba(22, 22, 22, 0.62) 72%,
+    rgba(24, 24, 24, 0.45) 79%,
+    rgba(26, 26, 26, 0.26) 86%,
+    rgba(26, 26, 26, 0.10) 93%,
+    rgba(26, 26, 26, 0.0) 100%
+  ) !important;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 
 @keyframes siriCardExpand {
