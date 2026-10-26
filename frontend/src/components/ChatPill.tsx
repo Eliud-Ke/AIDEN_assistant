@@ -422,7 +422,7 @@ export const ChatPillWindow: React.FC = () => {
             const data = JSON.parse(event.data);
             const msgType = data.type;
 
-            if (msgType === "state_change") {
+            if (msgType === "state" || msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
               setIsAwake(nextAwake);
               invoke("set_chat_pill_state", { isAwake: nextAwake }).catch(() => {});

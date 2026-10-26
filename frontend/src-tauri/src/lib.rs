@@ -544,6 +544,8 @@ fn set_chat_pill_state(
             let _ = pill_win.set_ignore_cursor_events(!awake);
             if awake {
                 let _ = pill_win.show();
+                let _ = pill_win.unminimize();
+                let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_focus();
             }
         }
