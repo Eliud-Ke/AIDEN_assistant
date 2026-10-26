@@ -132,33 +132,67 @@
   flex: 1;
   height: 100%;
   margin-right: 8px;
+  overflow: hidden;
 }
 
-/* Apple-style glowing cursor beam on the left of "Search or Ask" */
-.siri-pill-cursor {
+/* Track container that pairs the invisible measurer with the real shining cursor */
+.siri-input-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Invisible text measurer that exactly mirrors typed characters */
+.siri-measure-text {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.15px;
+}
+
+.siri-card-input-capsule .siri-measure-text {
+  font-size: 14px;
+}
+
+/* Real Shining Animated Apple-Style Cursor */
+.siri-shining-cursor {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   width: 2px;
   height: 20px;
   background-color: #ffffff;
   border-radius: 1px;
-  margin-right: 8px;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.85);
-  animation: siriCursorPulse 1.2s infinite ease-in-out;
-  flex-shrink: 0;
+  pointer-events: none;
+  box-shadow: 0 0 9px rgba(255, 255, 255, 0.95), 0 0 3px #ffffff;
+  animation: siriCaretBlink 1.05s infinite ease-in-out;
+  z-index: 3;
+  transition: left 0.04s ease-out;
 }
 
-.siri-glass.light-mode .siri-pill-cursor {
+.siri-glass.light-mode .siri-shining-cursor {
   background-color: #1a1a1a;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.45);
 }
 
-@keyframes siriCursorPulse {
+@keyframes siriCaretBlink {
   0%, 100% {
     opacity: 1;
-    transform: scaleY(1);
+    box-shadow: 0 0 9px rgba(255, 255, 255, 0.95), 0 0 3px #ffffff;
   }
   50% {
-    opacity: 0.25;
-    transform: scaleY(0.85);
+    opacity: 0.15;
+    box-shadow: 0 0 2px rgba(255, 255, 255, 0.2);
   }
 }
 
@@ -173,6 +207,7 @@
   font-size: 15px;
   font-weight: 400;
   letter-spacing: 0.15px;
+  caret-color: transparent !important;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -723,6 +758,7 @@
   color: inherit;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 14px;
+  caret-color: transparent !important;
   user-select: text;
   -webkit-user-select: text;
 }

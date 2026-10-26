@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import "./ChatPill.css";
@@ -30,12 +30,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isMicActive, setIsMicActive] = useState(false);
   const [isVisionActive, setIsVisionActive] = useState(false);
 
+  // Dynamic Shining Cursor tracking
+  const [selectionIndex, setSelectionIndex] = useState(0);
+  const [cursorLeft, setCursorLeft] = useState(0);
+
   const pillInputRef = useRef<HTMLInputElement>(null);
   const cardInputRef = useRef<HTMLInputElement>(null);
+  const pillMeasureRef = useRef<HTMLSpanElement>(null);
+  const cardMeasureRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
   const hasReplyText = Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
   const showReplyWindow = Boolean(activeUiTag || hasReplyText || userPrompt);
+
+  const cursorPrefix = inputText.slice(0, selectionIndex);
+
+  // Measure text width up to the caret position for the shining cursor
+  useLayoutEffect(() => {
+    const activeMeasureRef = showReplyWindow ? cardMeasureRef : pillMeasureRef;
+    if (activeMeasureRef.current) {
+      setCursorLeft(activeMeasureRef.current.offsetWidth);
+    }
+  }, [inputText, selectionIndex, showReplyWindow]);
 
   // Auto-focus the active input when woken up or transitioning views
   useEffect(() => {
@@ -43,8 +59,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       const timer = window.setTimeout(() => {
         if (showReplyWindow) {
           cardInputRef.current?.focus();
+          setSelectionIndex(cardInputRef.current?.selectionStart ?? inputText.length);
         } else {
           pillInputRef.current?.focus();
+          setSelectionIndex(pillInputRef.current?.selectionStart ?? inputText.length);
         }
       }, 150);
       return () => clearTimeout(timer);
@@ -57,6 +75,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       streamContainerRef.current.scrollTop = streamContainerRef.current.scrollHeight;
     }
   }, [responseMessage, isStreaming, userPrompt]);
+
+  const updateSelection = (el: HTMLInputElement | null) => {
+    if (el) {
+      setSelectionIndex(el.selectionStart ?? el.value.length);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -79,6 +103,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       onSendMessage(trimmed);
     }
     setInputText("");
+    setSelectionIndex(0);
+    setCursorLeft(0);
   };
 
   const formatStatusTag = (raw: string): string => {
@@ -102,22 +128,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
              EXPANDED STATE: SIRI CONVERSATION CARD (IMAGE 2)
              ========================================================================== */
           <div className={`siri-card siri-glass ${isDarkMode ? "dark-mode" : "light-mode"}`}>
-            {/* Card Header Bar: Dismiss (×) on left, Orb status in center, Expand on right */}
+            {/* Card Header Bar: Status/Orb on left, Minimize Button on right (no 'x' button) */}
             <div className="siri-card-header">
-              {onClearResponse && (
-                <button
-                  type="button"
-                  className="siri-card-header-btn"
-                  onClick={onClearResponse}
-                  title="Dismiss (Esc)"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              )}
-
               {/* Shimmering Status Tag + Tiny String Orb */}
               {activeUiTag ? (
                 <div className="siri-card-status-tag" key={activeUiTag}>
@@ -135,22 +147,22 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 <div className="siri-card-header-spacer" />
               )}
 
-              {/* Expand / Popout Icon from Image 2 */}
-              <button
-                type="button"
-                className="siri-card-header-btn"
-                onClick={() => {
-                  invoke("show_main_window").catch(() => {});
-                }}
-                title="Open Control Panel"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="15 3 21 3 21 9" />
-                  <polyline points="9 21 3 21 3 15" />
-                  <line x1="21" y1="3" x2="14" y2="10" />
-                  <line x1="3" y1="21" x2="10" y2="14" />
-                </svg>
-              </button>
+              {/* Minimize / Contract Button on top right (returns expanded UI back to Search or Ask) */}
+              {onClearResponse && (
+                <button
+                  type="button"
+                  className="siri-card-header-btn"
+                  onClick={onClearResponse}
+                  title="Minimize to Search or Ask (Esc)"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="4 14 10 14 10 20" />
+                    <polyline points="20 10 14 10 14 4" />
+                    <line x1="14" y1="10" x2="21" y2="3" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                </button>
+              )}
             </div>
 
             {/* Conversation Stream: User Prompt Bubble on right + Assistant Answer on left */}
@@ -190,16 +202,34 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               </button>
 
               <div className="siri-card-input-capsule">
-                <input
-                  ref={cardInputRef}
-                  type="text"
-                  className="siri-card-input"
-                  placeholder={isMicActive ? "Listening..." : "Ask Aiden"}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  spellCheck={false}
-                />
+                <div className="siri-input-track">
+                  {/* Invisible text measurer */}
+                  <span ref={cardMeasureRef} className="siri-measure-text" aria-hidden="true">
+                    {cursorPrefix}
+                  </span>
+                  {/* Real Shining Animated Cursor */}
+                  <span
+                    className="siri-shining-cursor"
+                    style={{ left: `${cursorLeft}px` }}
+                    aria-hidden="true"
+                  />
+                  <input
+                    ref={cardInputRef}
+                    type="text"
+                    className="siri-card-input"
+                    placeholder={isMicActive ? "Listening..." : "Ask Aiden"}
+                    value={inputText}
+                    onChange={(e) => {
+                      setInputText(e.target.value);
+                      updateSelection(e.target);
+                    }}
+                    onSelect={(e) => updateSelection(e.currentTarget)}
+                    onKeyUp={(e) => updateSelection(e.currentTarget)}
+                    onClick={(e) => updateSelection(e.currentTarget)}
+                    onKeyDown={handleKeyDown}
+                    spellCheck={false}
+                  />
+                </div>
               </div>
 
               <button
@@ -236,18 +266,34 @@ export const ChatPill: React.FC<ChatPillProps> = ({
              ========================================================================== */
           <div className={`siri-pill-capsule siri-glass ${isDarkMode ? "dark-mode" : "light-mode"}`}>
             <div className="siri-pill-input-wrap">
-              {/* Apple-style soft glowing cursor beam on the left */}
-              <span className="siri-pill-cursor" aria-hidden="true" />
-              <input
-                ref={pillInputRef}
-                type="text"
-                className="siri-pill-input"
-                placeholder={isMicActive ? "Listening for speech..." : "Search or Ask"}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                spellCheck={false}
-              />
+              <div className="siri-input-track">
+                {/* Invisible text measurer */}
+                <span ref={pillMeasureRef} className="siri-measure-text" aria-hidden="true">
+                  {cursorPrefix}
+                </span>
+                {/* Real Shining Animated Cursor */}
+                <span
+                  className="siri-shining-cursor"
+                  style={{ left: `${cursorLeft}px` }}
+                  aria-hidden="true"
+                />
+                <input
+                  ref={pillInputRef}
+                  type="text"
+                  className="siri-pill-input"
+                  placeholder={isMicActive ? "Listening for speech..." : "Search or Ask"}
+                  value={inputText}
+                  onChange={(e) => {
+                    setInputText(e.target.value);
+                    updateSelection(e.target);
+                  }}
+                  onSelect={(e) => updateSelection(e.currentTarget)}
+                  onKeyUp={(e) => updateSelection(e.currentTarget)}
+                  onClick={(e) => updateSelection(e.currentTarget)}
+                  onKeyDown={handleKeyDown}
+                  spellCheck={false}
+                />
+              </div>
             </div>
 
             <div className="siri-pill-actions">
