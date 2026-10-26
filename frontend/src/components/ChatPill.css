@@ -54,9 +54,8 @@
 }
 
 /* ==========================================================================
-   AUTHENTIC UNIVERSAL SMOKED GLASS (ZERO BLUE TINT + 3D CURVATURE VIGNETTE)
-   Neutral translucent glass that lets any background show through naturally
-   Adapted Liquid Glass Optical Model (Squircle Lens, Meniscus & Dispersion)
+   AUTHENTIC UNIVERSAL SMOKED GLASS (APPLE INTELLIGENCE DEEP SMOKED VIGNETTE)
+   Deep velvety dark top vignette + rich neutral smoked glass body
    ========================================================================== */
 .siri-glass {
   position: relative;
@@ -66,67 +65,28 @@
   user-select: none;
   -webkit-user-select: none;
 
-  /* Universal neutral smoke: Dark curved top vignette + neutral glass body */
-  background: 
-    linear-gradient(180deg, rgba(0, 0, 0, 0.56) 0%, rgba(0, 0, 0, 0.06) 42%, rgba(0, 0, 0, 0.24) 100%),
-    rgba(18, 18, 18, 0.65);
+  /* Authentic Apple Intelligence deep smoked vignette:
+     Intense dark curved vignette at the top (0-35%), easing to rich neutral smoked glass */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.94) 0%,
+    rgba(8, 8, 8, 0.86) 35%,
+    rgba(18, 18, 18, 0.78) 72%,
+    rgba(28, 28, 28, 0.70) 100%
+  );
   backdrop-filter: blur(32px) saturate(180%);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* Soft, barely-there boundary - not a harsh white wireframe */
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
-    /* rb2: Top razor-thin specular highlight */
-    inset 0 1.2px 0 rgba(255, 255, 255, 0.38),
-    /* Lateral glass wall meniscus thickness */
-    inset 0 0 1px rgba(255, 255, 255, 0.18),
-    /* rb3: Bottom caustic bounce / internal lens reflection */
-    inset 0 -1px 1px rgba(255, 255, 255, 0.14),
-    inset 0 -10px 24px rgba(255, 255, 255, 0.025),
-    /* Outer deep ambient drop shadow */
-    0 24px 60px rgba(0, 0, 0, 0.55),
-    0 4px 16px rgba(0, 0, 0, 0.35);
+    /* Razor-thin specular reflection ONLY on top edge */
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    /* Deep ambient shadow */
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    0 4px 16px rgba(0, 0, 0, 0.4);
   color: #ffffff;
   transition: box-shadow 0.35s ease;
-}
-
-/* Prismatic Chromatic Edge Fringe (Optical Light Dispersion) */
-.siri-glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.35) 0%,
-    rgba(180, 220, 255, 0.16) 24%,
-    rgba(255, 210, 235, 0.12) 48%,
-    rgba(255, 255, 255, 0.06) 72%,
-    rgba(190, 230, 255, 0.18) 100%
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  opacity: 0.85;
-  z-index: 1;
-}
-
-/* Convex Liquid Lens Gloss Dome (Light Reflecting across Fluid Surface) */
-.siri-glass::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(
-    135% 85% at 50% -18%,
-    rgba(255, 255, 255, 0.13) 0%,
-    rgba(255, 255, 255, 0.03) 42%,
-    transparent 72%
-  );
-  mix-blend-mode: screen;
-  z-index: 1;
 }
 
 /* ==========================================================================
