@@ -1,11 +1,6 @@
 /* ==========================================================================
-   AIDEN COPILOT-STYLE FLOATING CHAT PILL (STANDALONE TASKBAR WINDOW)
+   AIDEN FLOATING SIRI AI PILL & CONVERSATION CARD (APPLE INTELLIGENCE STYLE)
    ========================================================================== */
-
-:root {
-  --windows-accent: AccentColor;
-  --windows-accent-frame: color-mix(in srgb, var(--windows-accent) 26%, #1a1b1e);
-}
 
 /* Zero background on root window container */
 .chat-pill-desktop-window {
@@ -17,39 +12,40 @@
   background: transparent !important;
   background-color: transparent !important;
   pointer-events: none;
+  overflow: hidden;
 }
 
-/* Outer floating viewport container anchored at the bottom above taskbar */
+/* Outer floating viewport container anchored in the upper third/quarter of the display */
 .chat-pill-anchor {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 12px;
+  top: 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   z-index: 90;
   pointer-events: none;
   padding: 0 40px;
   box-sizing: border-box;
 }
 
-/* Slide Up / Slide Down Spring Animation Wrapper */
+/* Slide Down Spring Animation Wrapper (Spotlight / Siri style from upper screen) */
 .chat-pill-wrapper {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 800px;
-  transform: translateY(140%) scale(0.94);
+  max-width: 520px;
+  transform: translateY(-24px) scale(0.96);
   opacity: 0;
   pointer-events: none;
-  transition: transform 0.48s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.35s ease;
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.26s ease;
 }
 
-/* Awake State: Glides up from the bottom taskbar */
+/* Awake State: Glides down smoothly into view */
 .chat-pill-wrapper.awake {
   transform: translateY(0) scale(1);
   opacity: 1;
@@ -57,169 +53,153 @@
 }
 
 /* ==========================================================================
-   OUTER BEZEL FRAME (Concentric thin border matching launcher window-frame)
+   AUTHENTIC SIRI GLASS MATERIAL (HIGH-PERFORMANCE HARDWARE-ACCELERATED BLUR)
    ========================================================================== */
-.chat-pill-frame {
-  width: 100%;
-  max-width: 480px;
-  padding: 1.2px;
+.siri-glass {
+  position: relative;
+  transform: translateZ(0); /* Dedicated GPU compositor layer */
+  will-change: transform, opacity;
   box-sizing: border-box;
-  border-radius: 25.2px;
-  cursor: default;
   user-select: none;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  transition: background-color 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
+  -webkit-user-select: none;
+  transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
 }
 
-/* Dark Mode Frame: Solid opaque bezel */
-.chat-pill-frame.dark-frame {
-  background-color: color-mix(in srgb, var(--windows-accent, #258292) 20%, #1c1d22);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
-              0 18px 40px rgba(0, 0, 0, 0.65),
-              0 4px 14px rgba(0, 0, 0, 0.4);
-}
-
-/* Light Mode Frame: Golden biscuit bezel matching launcher frame */
-.chat-pill-frame.light-frame {
-  background-color: #ede5d8;
-  border: 1px solid rgba(115, 62, 10, 0.16);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              0 18px 40px rgba(115, 62, 10, 0.12),
-              0 4px 12px rgba(115, 62, 10, 0.06);
-}
-
-/* ==========================================================================
-   INNER SHELL (Matches launcher inner shell)
-   ========================================================================== */
-.chat-pill-shell {
-  width: 100%;
-  min-height: 98px;
-  border-radius: 24px;
-  padding: 18px 18px 10px 18px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  user-select: none;
-  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
-}
-
-/* Dark Mode Shell: Solid Cinematic Gradient (Almost Grey to Cinematic Black Grey) */
-.chat-pill-shell.dark-shell {
+/* Dark Mode: Deep tinted frosted glass with Apple specular refraction */
+.siri-glass.dark-mode {
   background: linear-gradient(
-    150deg,
-    #26282e 0%,
-    #1a1b20 48%,
-    #0e0f12 100%
+    180deg,
+    rgba(32, 34, 42, 0.70) 0%,
+    rgba(18, 20, 26, 0.80) 100%
   );
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
-              inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 16px rgba(255, 255, 255, 0.03),
+    0 24px 60px rgba(0, 0, 0, 0.52),
+    0 4px 14px rgba(0, 0, 0, 0.35);
   color: #ffffff;
 }
 
-/* Light Mode Shell: Warm Golden Biscuit to Cream Gradient (Matching App Launcher Sections) */
-.chat-pill-shell.light-shell {
+/* Light Mode: Crystal luminous frosted glass with soft reflection */
+.siri-glass.light-mode {
   background: linear-gradient(
-    145deg,
-    #eae1cf 0%,
-    #f4eee2 40%,
-    #fbf9f6 100%
+    180deg,
+    rgba(255, 255, 255, 0.75) 0%,
+    rgba(242, 242, 247, 0.84) 100%
   );
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid rgba(115, 62, 10, 0.20);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              inset 0 -1px 0 rgba(115, 62, 10, 0.08);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.90);
+  box-shadow: 
+    inset 0 1px 0 #ffffff,
+    0 20px 48px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.05);
   color: #1a1a1a;
 }
 
 /* ==========================================================================
-   TOP ROW: TEXT INPUT AREA
+   IMAGE 1: SLEEK SIRI CAPSULE PILL (IDLE / INPUT STATE)
    ========================================================================== */
-.chat-pill-input-row {
-  display: flex;
-  align-items: flex-start;
+.siri-pill-capsule {
   width: 100%;
-  margin-top: 2px;
-  margin-bottom: 8px;
+  max-width: 520px;
+  height: 50px;
+  border-radius: 9999px; /* Pure capsule shape */
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 18px;
+  cursor: default;
+  animation: siriPillBloom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.chat-pill-textarea {
+@keyframes siriPillBloom {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.siri-pill-input-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  height: 100%;
+  margin-right: 8px;
+}
+
+/* Apple-style glowing cursor beam on the left of "Search or Ask" */
+.siri-pill-cursor {
+  width: 2px;
+  height: 20px;
+  background-color: #ffffff;
+  border-radius: 1px;
+  margin-right: 8px;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.85);
+  animation: siriCursorPulse 1.2s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+.siri-glass.light-mode .siri-pill-cursor {
+  background-color: #1a1a1a;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes siriCursorPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scaleY(0.85);
+  }
+}
+
+.siri-pill-input {
   width: 100%;
-  min-height: 21px;
-  max-height: 147px; /* 7 lines * 21px */
-  padding: 0;
-  margin: 0;
+  height: 100%;
   background: transparent;
   border: none;
   outline: none;
-  resize: none;
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  font-family: 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: inherit;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 15px;
-  line-height: 21px;
+  font-weight: 400;
   letter-spacing: 0.15px;
-  box-sizing: border-box;
   user-select: text;
   -webkit-user-select: text;
 }
 
-.chat-pill-textarea::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-.chat-pill-shell.dark-shell .chat-pill-textarea {
+.siri-glass.dark-mode .siri-pill-input {
   color: #ffffff;
 }
-.chat-pill-shell.dark-shell .chat-pill-textarea::placeholder {
-  color: #ffffff;
-  opacity: 1;
+.siri-glass.dark-mode .siri-pill-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.chat-pill-shell.light-shell .chat-pill-textarea {
-  color: #000000;
+.siri-glass.light-mode .siri-pill-input {
+  color: #1a1a1a;
 }
-.chat-pill-shell.light-shell .chat-pill-textarea::placeholder {
-  color: #000000;
-  opacity: 1;
-}
-
-/* ==========================================================================
-   BOTTOM TOOLBAR ROW: ACTION BUTTONS
-   ========================================================================== */
-.chat-pill-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 32px;
+.siri-glass.light-mode .siri-pill-input::placeholder {
+  color: rgba(0, 0, 0, 0.5);
 }
 
-.chat-pill-toolbar-spacer {
-  flex: 1;
-}
-
-/* Right Side: Quick Action Icons Group */
-.chat-pill-actions {
+.siri-pill-actions {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
-.chat-pill-btn {
+/* Circular Apple-Style Action Buttons inside Pill */
+.siri-pill-btn {
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -230,52 +210,42 @@
   border: none;
   outline: none;
   cursor: pointer;
+  color: inherit;
+  opacity: 0.8;
   padding: 0;
-  transition: background 0.2s ease,
-              color 0.2s ease,
+  transition: opacity 0.2s ease,
+              background 0.2s ease,
               transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.chat-pill-btn:hover {
-  transform: scale(1.1);
+.siri-pill-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.08);
 }
 
-.chat-pill-btn:active {
+.siri-glass.light-mode .siri-pill-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.siri-pill-btn:active {
   transform: scale(0.92);
 }
 
-/* Dark Mode Action Buttons */
-.chat-pill-shell.dark-shell .chat-pill-btn {
-  color: rgba(255, 255, 255, 0.7);
-}
-.chat-pill-shell.dark-shell .chat-pill-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
-}
-.chat-pill-shell.dark-shell .chat-pill-btn.active {
+.siri-pill-btn.active {
+  opacity: 1;
   color: #60a5fa;
-  background: rgba(96, 165, 250, 0.15);
+  background: rgba(96, 165, 250, 0.18);
 }
 
-/* Light Mode Action Buttons: Warm bronze gold matching app launcher */
-.chat-pill-shell.light-shell .chat-pill-btn {
-  color: rgba(115, 62, 10, 0.75);
-}
-.chat-pill-shell.light-shell .chat-pill-btn:hover {
-  color: #733E0A;
-  background: rgba(115, 62, 10, 0.08);
-}
-.chat-pill-shell.light-shell .chat-pill-btn.active {
-  color: #733E0A;
-  background: rgba(115, 62, 10, 0.15);
-}
-
-/* Active Microphone Listening Pulse */
-.chat-pill-btn.mic-listening {
+/* Active Mic Listening Animation */
+.siri-pill-btn.mic-listening {
   position: relative;
+  opacity: 1;
+  color: #ef4444;
 }
 
-.chat-pill-btn.mic-listening::after {
+.siri-pill-btn.mic-listening::after {
   content: '';
   position: absolute;
   top: -2px;
@@ -298,10 +268,10 @@
   }
 }
 
-/* Send Button (Lights up when text is typed) */
-.chat-pill-send-btn {
-  width: 32px;
-  height: 32px;
+/* Luminous Circular Send Button */
+.siri-send-btn {
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -310,50 +280,57 @@
   outline: none;
   cursor: pointer;
   padding: 0;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
-              background 0.2s ease,
-              opacity 0.2s ease;
+  background: #ffffff;
+  color: #121316;
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.35);
+  animation: sendBtnPop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.15s ease, opacity 0.2s ease;
 }
 
-.chat-pill-send-btn:hover {
+.siri-send-btn:hover {
   transform: scale(1.1);
 }
 
-.chat-pill-send-btn:active {
+.siri-send-btn:active {
   transform: scale(0.92);
 }
 
-.chat-pill-shell.dark-shell .chat-pill-send-btn {
-  background: #ffffff;
-  color: #141618;
+.siri-glass.light-mode .siri-send-btn {
+  background: #1a1a1a;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
-.chat-pill-shell.light-shell .chat-pill-send-btn {
-  background: #733E0A;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(115, 62, 10, 0.25);
+@keyframes sendBtnPop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* ==========================================================================
-   RESPONSE BUBBLE (With refined concentric bezel frame)
+   IMAGE 2: SIRI CONVERSATION CARD (EXPANDED REPLY STATE)
    ========================================================================== */
-.chat-pill-response-frame {
+.siri-card {
   width: 100%;
-  max-width: 800px;
-  margin-bottom: 10px;
-  padding: 1.2px;
-  box-sizing: border-box;
-  border-radius: 18.2px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  animation: responseBloom 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  transition: background-color 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
+  max-width: 490px;
+  min-height: 240px;
+  max-height: 580px;
+  border-radius: 28px; /* Large squircle corners */
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 14px 16px;
+  animation: siriCardExpand 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes responseBloom {
+@keyframes siriCardExpand {
   0% {
     opacity: 0;
-    transform: translateY(12px) scale(0.97);
+    transform: translateY(-10px) scale(0.97);
   }
   100% {
     opacity: 1;
@@ -361,114 +338,79 @@
   }
 }
 
-.chat-pill-response-frame.dark-frame {
-  background-color: color-mix(in srgb, var(--windows-accent, #258292) 20%, #1c1d22);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
-              0 16px 36px rgba(0, 0, 0, 0.55),
-              0 4px 10px rgba(0, 0, 0, 0.3);
-}
-
-.chat-pill-response-frame.light-frame {
-  background-color: #ede5d8;
-  border: 1px solid rgba(115, 62, 10, 0.16);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              0 16px 36px rgba(115, 62, 10, 0.12),
-              0 4px 10px rgba(115, 62, 10, 0.05);
-}
-
-.chat-pill-response-shell {
-  width: 100%;
-  padding: 10px 14px 12px 14px;
-  border-radius: 17px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
-}
-
-.chat-pill-response-shell.dark-shell {
-  background: linear-gradient(
-    150deg,
-    #26282e 0%,
-    #1a1b20 48%,
-    #0e0f12 100%
-  );
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
-              inset 0 -1px 0 rgba(0, 0, 0, 0.55);
-  color: #ffffff;
-}
-
-.chat-pill-response-shell.light-shell {
-  background: linear-gradient(
-    145deg,
-    #eae1cf 0%,
-    #f4eee2 40%,
-    #fbf9f6 100%
-  );
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border: 1px solid rgba(115, 62, 10, 0.20);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-              inset 0 -1px 0 rgba(115, 62, 10, 0.08);
-  color: #1a1a1a;
-}
-
-.chat-pill-response-header {
+/* Card Header: Dismiss (×) on left, Status / Orb in center, Expand on right */
+.siri-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: 20px;
+  height: 32px;
+  margin-bottom: 12px;
 }
 
-/* Active UI Execution Status (Animated Tiny String Orb + Shimmering Tag Text) */
-.chat-pill-ui-tag {
+.siri-card-header-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  outline: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.85;
+  transition: opacity 0.2s ease,
+              background 0.2s ease,
+              transform 0.15s ease;
+}
+
+.siri-card-header-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.22);
+  transform: scale(1.06);
+}
+
+.siri-glass.light-mode .siri-card-header-btn {
+  background: rgba(0, 0, 0, 0.07);
+}
+.siri-glass.light-mode .siri-card-header-btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.siri-card-header-spacer {
+  flex: 1;
+}
+
+/* Shimmering Status Tag with Orb */
+.siri-card-status-tag {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-  background: transparent;
-  border: none;
-  animation: tagPopIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  gap: 7px;
+  padding: 2px 8px;
+  animation: tagFadeIn 0.2s ease;
 }
 
-@keyframes tagPopIn {
-  0% {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes tagFadeIn {
+  0% { opacity: 0; transform: translateY(-3px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
-/* Tiny Orb of Interweaving Strings */
-.chat-pill-string-orb {
-  width: 17px;
-  height: 17px;
+.siri-string-orb {
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.95);
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
 }
 
-.chat-pill-response-shell.dark-shell .chat-pill-string-orb {
-  color: rgba(255, 255, 255, 0.9);
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.28));
-}
-
-.chat-pill-response-shell.light-shell .chat-pill-string-orb {
-  color: #733E0A;
-  filter: drop-shadow(0 0 3px rgba(115, 62, 10, 0.22));
+.siri-glass.light-mode .siri-string-orb {
+  color: #1a1a1a;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.15));
 }
 
 .string-orb-svg {
@@ -498,55 +440,30 @@
 }
 
 @keyframes orbStringSpin1 {
-  0% {
-    transform: rotate(0deg) scaleY(1);
-  }
-  50% {
-    transform: rotate(180deg) scaleY(0.76);
-  }
-  100% {
-    transform: rotate(360deg) scaleY(1);
-  }
+  0% { transform: rotate(0deg) scaleY(1); }
+  50% { transform: rotate(180deg) scaleY(0.76); }
+  100% { transform: rotate(360deg) scaleY(1); }
 }
 
 @keyframes orbStringSpin2 {
-  0% {
-    transform: rotate(60deg) scaleY(0.85);
-  }
-  50% {
-    transform: rotate(240deg) scaleY(1.12);
-  }
-  100% {
-    transform: rotate(420deg) scaleY(0.85);
-  }
+  0% { transform: rotate(60deg) scaleY(0.85); }
+  50% { transform: rotate(240deg) scaleY(1.12); }
+  100% { transform: rotate(420deg) scaleY(0.85); }
 }
 
 @keyframes orbStringSpin3 {
-  0% {
-    transform: rotate(120deg) scaleY(1.05);
-  }
-  50% {
-    transform: rotate(-60deg) scaleY(0.78);
-  }
-  100% {
-    transform: rotate(-240deg) scaleY(1.05);
-  }
+  0% { transform: rotate(120deg) scaleY(1.05); }
+  50% { transform: rotate(-60deg) scaleY(0.78); }
+  100% { transform: rotate(-240deg) scaleY(1.05); }
 }
 
 @keyframes orbCoreBreathe {
-  0%, 100% {
-    opacity: 0.95;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.45;
-    transform: scale(0.72);
-  }
+  0%, 100% { opacity: 0.95; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.72); }
 }
 
-/* Shimmering Status Tag Text (No Pill Container) */
-.chat-pill-ui-tag-text {
-  font-family: 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+.siri-status-text {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.2px;
@@ -557,7 +474,7 @@
   animation: tagTextShimmer 2s infinite linear;
 }
 
-.chat-pill-response-shell.dark-shell .chat-pill-ui-tag-text {
+.siri-glass.dark-mode .siri-status-text {
   background-image: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.42) 0%,
@@ -568,122 +485,258 @@
   );
 }
 
-.chat-pill-response-shell.light-shell .chat-pill-ui-tag-text {
+.siri-glass.light-mode .siri-status-text {
   background-image: linear-gradient(
     90deg,
-    rgba(0, 0, 0, 0.38) 0%,
+    rgba(0, 0, 0, 0.4) 0%,
     rgba(0, 0, 0, 0.95) 45%,
     #000000 50%,
     rgba(0, 0, 0, 0.95) 55%,
-    rgba(0, 0, 0, 0.38) 100%
+    rgba(0, 0, 0, 0.4) 100%
   );
 }
 
 @keyframes tagTextShimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -120% 0;
-  }
+  0% { background-position: 100% 0; }
+  100% { background-position: -120% 0; }
 }
 
-.chat-pill-response-close {
-  background: transparent;
-  border: none;
-  outline: none;
-  cursor: pointer;
-  padding: 3px;
-  color: inherit;
-  opacity: 0.6;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s ease, background 0.2s ease;
-}
-
-.chat-pill-response-close:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.chat-pill-response-shell.light-shell .chat-pill-response-close:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-/* Smooth Height Animator for Reply Window Expansion */
-.chat-pill-response-body-animator {
-  width: 100%;
-  overflow: hidden;
-  will-change: height;
-  transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-              margin-top 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 0.2s ease;
-}
-
-.chat-pill-response-body-animator.collapsed {
-  margin-top: 0;
-  opacity: 0;
-}
-
-.chat-pill-response-body-animator.open {
-  margin-top: 4px;
-  opacity: 1;
-}
-
-.chat-pill-response-text {
-  font-family: 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  font-size: 13.5px;
-  line-height: 1.45;
-  letter-spacing: 0.1px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 220px;
+/* Conversation Stream (Scrollable Container) */
+.siri-card-stream {
+  flex: 1;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 6px 14px 4px;
+  margin-bottom: 8px;
+  max-height: 420px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.siri-glass.light-mode .siri-card-stream {
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+
+.siri-card-stream::-webkit-scrollbar {
+  width: 5px;
+}
+.siri-card-stream::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+}
+.siri-glass.light-mode .siri-card-stream::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* User Prompt Bubble on the right (from Image 2) */
+.siri-user-prompt-pill {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  padding: 8px 16px;
+  border-radius: 18px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 1.4;
+  color: inherit;
+  max-width: 82%;
+  word-break: break-word;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: bubblePop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: text;
   -webkit-user-select: text;
 }
 
-.chat-pill-response-text-inner {
-  width: 100%;
-  padding-bottom: 2px;
+.siri-glass.light-mode .siri-user-prompt-pill {
+  background: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
-.chat-pill-response-text::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+@keyframes bubblePop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-/* Streaming live typing cursor */
-.chat-pill-streaming-cursor {
+/* Assistant Answer Text on the left (from Image 2) */
+.siri-assistant-reply {
+  align-self: flex-start;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.52;
+  letter-spacing: 0.1px;
+  color: inherit;
+  max-width: 96%;
+  word-break: break-word;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  animation: replyFade 0.28s ease;
+}
+
+@keyframes replyFade {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Live Streaming Cursor */
+.siri-streaming-cursor {
   display: inline-block;
   width: 2px;
-  height: 14px;
+  height: 15px;
   margin-left: 3px;
-  vertical-align: -1.5px;
+  vertical-align: -2px;
   border-radius: 1px;
+  background-color: #60a5fa;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.7);
   animation: cursorBlink 0.75s infinite ease-in-out;
 }
 
-.chat-pill-response-shell.dark-shell .chat-pill-streaming-cursor {
-  background-color: #60a5fa;
-  box-shadow: 0 0 6px rgba(96, 165, 250, 0.7);
-}
-
-.chat-pill-response-shell.light-shell .chat-pill-streaming-cursor {
+.siri-glass.light-mode .siri-streaming-cursor {
   background-color: #2563eb;
-  box-shadow: 0 0 4px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 0 5px rgba(37, 99, 235, 0.5);
 }
 
 @keyframes cursorBlink {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.15;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+/* Integrated Bottom Input Capsule Bar (from Image 2) */
+.siri-card-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding-top: 10px;
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.siri-glass.light-mode .siri-card-bottom-bar {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.siri-card-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  outline: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.85;
+  padding: 0;
+  flex-shrink: 0;
+  transition: opacity 0.2s ease,
+              background 0.2s ease,
+              transform 0.15s ease;
+}
+
+.siri-card-action-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.22);
+  transform: scale(1.08);
+}
+
+.siri-glass.light-mode .siri-card-action-btn {
+  background: rgba(0, 0, 0, 0.08);
+}
+.siri-glass.light-mode .siri-card-action-btn:hover {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.siri-card-action-btn:active {
+  transform: scale(0.92);
+}
+
+.siri-card-action-btn.active {
+  opacity: 1;
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.22);
+}
+
+.siri-card-action-btn.mic-listening {
+  position: relative;
+  opacity: 1;
+  color: #ef4444;
+}
+
+.siri-card-action-btn.mic-listening::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  border: 1.5px solid #ef4444;
+  animation: micPulse 1.4s infinite cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Inner Input Capsule Field (from Image 2) */
+.siri-card-input-capsule {
+  flex: 1;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  box-sizing: border-box;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.siri-card-input-capsule:focus-within {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.siri-glass.light-mode .siri-card-input-capsule {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.siri-glass.light-mode .siri-card-input-capsule:focus-within {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+.siri-card-input {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 14px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.siri-glass.dark-mode .siri-card-input {
+  color: #ffffff;
+}
+.siri-glass.dark-mode .siri-card-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.siri-glass.light-mode .siri-card-input {
+  color: #1a1a1a;
+}
+.siri-glass.light-mode .siri-card-input::placeholder {
+  color: rgba(0, 0, 0, 0.45);
 }

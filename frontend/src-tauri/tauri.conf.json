@@ -28,7 +28,7 @@
         "label": "chat_pill",
         "url": "index.html?window=chat_pill",
         "width": 920,
-        "height": 460,
+        "height": 720,
         "decorations": false,
         "transparent": true,
         "resizable": false,

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import "./ChatPill.css";
@@ -6,6 +6,7 @@ import "./ChatPill.css";
 interface ChatPillProps {
   isAwake: boolean;
   isDarkMode: boolean;
+  userPrompt?: string | null;
   onSendMessage?: (message: string) => void;
   onToggleSleep?: () => void;
   responseMessage?: string | null;
@@ -17,7 +18,9 @@ interface ChatPillProps {
 export const ChatPill: React.FC<ChatPillProps> = ({
   isAwake,
   isDarkMode,
+  userPrompt = null,
   onSendMessage,
+  onToggleSleep,
   responseMessage = null,
   activeUiTag = null,
   isStreaming = false,
@@ -26,68 +29,46 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [inputText, setInputText] = useState("");
   const [isMicActive, setIsMicActive] = useState(false);
   const [isVisionActive, setIsVisionActive] = useState(false);
-  const [replyBodyHeight, setReplyBodyHeight] = useState<number>(0);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const responseTextRef = useRef<HTMLDivElement>(null);
-  const responseContentInnerRef = useRef<HTMLDivElement>(null);
-
-  const adjustTextareaHeight = (el: HTMLTextAreaElement | null) => {
-    if (!el) return;
-    el.style.height = "21px";
-    const maxHeight = 147; // Max 7 lines (7 * 21px line-height)
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-  };
-
-  // Auto-focus input when woken up
-  useEffect(() => {
-    if (isAwake) {
-      adjustTextareaHeight(textareaRef.current);
-      window.setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 250);
-    }
-  }, [isAwake]);
-
-  // Dynamically resize textarea up to 7 lines as text changes
-  useEffect(() => {
-    adjustTextareaHeight(textareaRef.current);
-  }, [inputText]);
+  const pillInputRef = useRef<HTMLInputElement>(null);
+  const cardInputRef = useRef<HTMLInputElement>(null);
+  const streamContainerRef = useRef<HTMLDivElement>(null);
 
   const hasReplyText = Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
+  const showReplyWindow = Boolean(activeUiTag || hasReplyText || userPrompt);
 
-  // Measure inner text height and smoothly animate the reply container height
-  useLayoutEffect(() => {
-    if (!hasReplyText || !responseContentInnerRef.current) {
-      setReplyBodyHeight(0);
-      return;
+  // Auto-focus the active input when woken up or transitioning views
+  useEffect(() => {
+    if (isAwake) {
+      const timer = window.setTimeout(() => {
+        if (showReplyWindow) {
+          cardInputRef.current?.focus();
+        } else {
+          pillInputRef.current?.focus();
+        }
+      }, 150);
+      return () => clearTimeout(timer);
     }
+  }, [isAwake, showReplyWindow]);
 
-    const updateHeight = () => {
-      if (!responseContentInnerRef.current) return;
-      const measured = responseContentInnerRef.current.offsetHeight;
-      const clamped = Math.min(Math.max(measured, 20), 220);
-      setReplyBodyHeight(clamped);
+  // Auto-scroll stream to bottom as reply text streams in
+  useEffect(() => {
+    if (streamContainerRef.current) {
+      streamContainerRef.current.scrollTop = streamContainerRef.current.scrollHeight;
+    }
+  }, [responseMessage, isStreaming, userPrompt]);
 
-      if (responseTextRef.current && measured > 220) {
-        responseTextRef.current.scrollTop = responseTextRef.current.scrollHeight;
-      }
-    };
-
-    updateHeight();
-
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(responseContentInnerRef.current);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [responseMessage, isStreaming, hasReplyText]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      if (showReplyWindow && onClearResponse) {
+        onClearResponse();
+      } else if (onToggleSleep) {
+        onToggleSleep();
+      }
     }
   };
 
@@ -98,9 +79,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       onSendMessage(trimmed);
     }
     setInputText("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "21px";
-    }
   };
 
   const formatStatusTag = (raw: string): string => {
@@ -116,174 +94,210 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
-  const showReplyWindow = Boolean(activeUiTag || hasReplyText);
-
   return (
     <div className="chat-pill-anchor">
       <div className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
-        {/* Response Bubble above the pill with thick concentric bezel frame */}
-        {showReplyWindow && (
-          <div className={`chat-pill-response-frame ${isDarkMode ? "dark-frame" : "light-frame"}`}>
-            <div className={`chat-pill-response-shell ${isDarkMode ? "dark-shell" : "light-shell"}`}>
-              <div className="chat-pill-response-header">
-                {/* Animated Tiny Orb of Strings + Shimmering Status Tag */}
-                {activeUiTag ? (
-                  <div className="chat-pill-ui-tag" key={activeUiTag}>
-                    <span className="chat-pill-string-orb" aria-hidden="true">
-                      <svg
-                        className="string-orb-svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <ellipse
-                           className="orb-string orb-string-1"
-                          cx="12"
-                          cy="12"
-                          rx="9.5"
-                          ry="4.2"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        />
-                        <ellipse
-                          className="orb-string orb-string-2"
-                          cx="12"
-                          cy="12"
-                          rx="9.5"
-                          ry="4.2"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        />
-                        <ellipse
-                          className="orb-string orb-string-3"
-                          cx="12"
-                          cy="12"
-                          rx="9.5"
-                          ry="4.2"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        />
-                        <circle
-                          className="orb-core"
-                          cx="12"
-                          cy="12"
-                          r="2.1"
-                          fill="currentColor"
-                        />
-                      </svg>
-                    </span>
-                    <span className="chat-pill-ui-tag-text">
-                      {formatStatusTag(activeUiTag)}
-                    </span>
-                  </div>
-                ) : (
-                  <div />
-                )}
+        {showReplyWindow ? (
+          /* ==========================================================================
+             EXPANDED STATE: SIRI CONVERSATION CARD (IMAGE 2)
+             ========================================================================== */
+          <div className={`siri-card siri-glass ${isDarkMode ? "dark-mode" : "light-mode"}`}>
+            {/* Card Header Bar: Dismiss (×) on left, Orb status in center, Expand on right */}
+            <div className="siri-card-header">
+              {onClearResponse && (
+                <button
+                  type="button"
+                  className="siri-card-header-btn"
+                  onClick={onClearResponse}
+                  title="Dismiss (Esc)"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
 
-                {onClearResponse && (
-                  <button
-                    type="button"
-                    className="chat-pill-response-close"
-                    onClick={onClearResponse}
-                    title="Dismiss reply"
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
+              {/* Shimmering Status Tag + Tiny String Orb */}
+              {activeUiTag ? (
+                <div className="siri-card-status-tag" key={activeUiTag}>
+                  <span className="siri-string-orb" aria-hidden="true">
+                    <svg className="string-orb-svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                      <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                      <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                      <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
                     </svg>
-                  </button>
-                )}
+                  </span>
+                  <span className="siri-status-text">{formatStatusTag(activeUiTag)}</span>
+                </div>
+              ) : (
+                <div className="siri-card-header-spacer" />
+              )}
+
+              {/* Expand / Popout Icon from Image 2 */}
+              <button
+                type="button"
+                className="siri-card-header-btn"
+                onClick={() => {
+                  invoke("show_main_window").catch(() => {});
+                }}
+                title="Open Control Panel"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Conversation Stream: User Prompt Bubble on right + Assistant Answer on left */}
+            <div ref={streamContainerRef} className="siri-card-stream">
+              {userPrompt && (
+                <div className="siri-user-prompt-pill">
+                  {userPrompt}
+                </div>
+              )}
+
+              {responseMessage && (
+                <div className="siri-assistant-reply">
+                  {responseMessage}
+                  {isStreaming && <span className="siri-streaming-cursor" />}
+                </div>
+              )}
+
+              {!responseMessage && isStreaming && (
+                <div className="siri-assistant-reply">
+                  <span className="siri-streaming-cursor" />
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Input Capsule Bar from Image 2 */}
+            <div className="siri-card-bottom-bar">
+              <button
+                type="button"
+                className={`siri-card-action-btn ${isVisionActive ? "active" : ""}`}
+                onClick={() => setIsVisionActive((prev) => !prev)}
+                title={isVisionActive ? "Screen context active" : "Add screen context"}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+
+              <div className="siri-card-input-capsule">
+                <input
+                  ref={cardInputRef}
+                  type="text"
+                  className="siri-card-input"
+                  placeholder={isMicActive ? "Listening..." : "Ask Aiden"}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  spellCheck={false}
+                />
               </div>
 
-              <div
-                className={`chat-pill-response-body-animator ${hasReplyText ? "open" : "collapsed"}`}
-                style={{
-                  height: hasReplyText ? `${replyBodyHeight}px` : "0px",
-                }}
+              <button
+                type="button"
+                className={`siri-card-action-btn ${isMicActive ? "mic-listening active" : ""}`}
+                onClick={() => setIsMicActive((prev) => !prev)}
+                title={isMicActive ? "Mute microphone" : "Speak to Aiden"}
               >
-                <div ref={responseTextRef} className="chat-pill-response-text">
-                  <div ref={responseContentInnerRef} className="chat-pill-response-text-inner">
-                    {responseMessage}
-                    {isStreaming && <span className="chat-pill-streaming-cursor" />}
-                  </div>
-                </div>
-              </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              </button>
+
+              {inputText.trim().length > 0 && (
+                <button
+                  type="button"
+                  className="siri-send-btn"
+                  onClick={handleSend}
+                  title="Send message (Enter)"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
-        )}
-
-        {/* The Main Copilot-Style Floating Pill with thick concentric bezel frame */}
-        <div className={`chat-pill-frame ${isDarkMode ? "dark-frame" : "light-frame"}`}>
-          <div className={`chat-pill-shell ${isDarkMode ? "dark-shell" : "light-shell"}`}>
-            {/* Top Row: Input Field without ellipses */}
-            <div className="chat-pill-input-row">
-              <textarea
-                ref={textareaRef}
-                className="chat-pill-textarea"
-                placeholder={isMicActive ? "Listening for speech" : "Ask Aiden anything"}
+        ) : (
+          /* ==========================================================================
+             IDLE / INPUT STATE: SLEEK SIRI CAPSULE PILL (IMAGE 1)
+             ========================================================================== */
+          <div className={`siri-pill-capsule siri-glass ${isDarkMode ? "dark-mode" : "light-mode"}`}>
+            <div className="siri-pill-input-wrap">
+              {/* Apple-style soft glowing cursor beam on the left */}
+              <span className="siri-pill-cursor" aria-hidden="true" />
+              <input
+                ref={pillInputRef}
+                type="text"
+                className="siri-pill-input"
+                placeholder={isMicActive ? "Listening for speech..." : "Search or Ask"}
                 value={inputText}
-                rows={1}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 spellCheck={false}
               />
             </div>
 
-            {/* Bottom Toolbar Row: Action buttons */}
-            <div className="chat-pill-toolbar">
-              <div className="chat-pill-toolbar-spacer" />
+            <div className="siri-pill-actions">
+              {/* Vision Context Button */}
+              <button
+                type="button"
+                className={`siri-pill-btn ${isVisionActive ? "active" : ""}`}
+                onClick={() => setIsVisionActive((prev) => !prev)}
+                title={isVisionActive ? "Screen context active" : "Scan screen context"}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="6" cy="14" r="4" />
+                  <circle cx="18" cy="14" r="4" />
+                  <path d="M14 14a2 2 0 0 0-4 0" />
+                  <path d="M2.5 13L5 7" />
+                  <path d="M21.5 13L19 7" />
+                </svg>
+              </button>
 
-              <div className="chat-pill-actions">
-                {/* Vision / Screen Context Button */}
+              {/* Apple-Style Microphone Button */}
+              <button
+                type="button"
+                className={`siri-pill-btn ${isMicActive ? "mic-listening active" : ""}`}
+                onClick={() => setIsMicActive((prev) => !prev)}
+                title={isMicActive ? "Mute microphone" : "Speak to Aiden"}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              </button>
+
+              {/* Send Button */}
+              {inputText.trim().length > 0 && (
                 <button
                   type="button"
-                  className={`chat-pill-btn ${isVisionActive ? "active" : ""}`}
-                  onClick={() => setIsVisionActive((prev) => !prev)}
-                  title={isVisionActive ? "Screen context active" : "Scan screen context"}
+                  className="siri-send-btn"
+                  onClick={handleSend}
+                  title="Send message (Enter)"
                 >
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="6" cy="14" r="4" />
-                    <circle cx="18" cy="14" r="4" />
-                    <path d="M14 14a2 2 0 0 0-4 0" />
-                    <path d="M2.5 13L5 7" />
-                    <path d="M21.5 13L19 7" />
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
                   </svg>
                 </button>
-
-                {/* Microphone / Voice Input Button */}
-                <button
-                  type="button"
-                  className={`chat-pill-btn ${isMicActive ? "mic-listening active" : ""}`}
-                  onClick={() => setIsMicActive((prev) => !prev)}
-                  title={isMicActive ? "Mute microphone" : "Speak to Aiden"}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                </button>
-
-                {/* Send Button */}
-                {inputText.trim().length > 0 && (
-                  <button
-                    type="button"
-                    className="chat-pill-send-btn"
-                    onClick={handleSend}
-                    title="Send message (Enter)"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="19" x2="12" y2="5" />
-                      <polyline points="5 12 12 5 19 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -296,14 +310,13 @@ interface ChatPillSyncPayload {
 }
 
 /**
- * Standalone Window Container for the Taskbar-Floating Copilot Chat Pill ("chat_pill" window)
- * Uses a 60fps requestAnimationFrame adaptive stream buffer so incoming network token bursts
- * render with liquid smoothness while the reply window glides open seamlessly.
+ * Standalone Window Container for the Siri-Style AI Pill ("chat_pill" window)
  */
 export const ChatPillWindow: React.FC = () => {
   const [isAwake, setIsAwake] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [replyMessage, setReplyMessage] = useState<string | null>(null);
+  const [lastUserPrompt, setLastUserPrompt] = useState<string | null>(null);
   const [activeUiTag, setActiveUiTag] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
@@ -320,110 +333,96 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  const resetReplyState = () => {
-    stopStreamRaf();
-    targetTextRef.current = "";
-    displayedLengthRef.current = 0;
-    streamEndedRef.current = false;
-    setReplyMessage(null);
-    setActiveUiTag(null);
-    setIsStreaming(false);
-  };
-
   const startSmoothStreamLoop = () => {
     if (rafIdRef.current !== null) return;
 
     const tick = () => {
       const target = targetTextRef.current;
       const currentLen = displayedLengthRef.current;
-      const diff = target.length - currentLen;
 
-      if (diff > 0) {
-        // Adaptive step: glides 1-2 chars on small diffs, smoothly accelerates on large bursts
-        const step = Math.max(1, Math.min(diff, Math.ceil(diff * 0.16)));
-        let nextLen = currentLen + step;
-
-        // Avoid splitting UTF-16 surrogate pairs (emojis) mid-character
-        if (nextLen < target.length) {
-          const code = target.charCodeAt(nextLen - 1);
-          if (code >= 0xd800 && code <= 0xdbff) {
-            nextLen += 1;
-          }
-        }
-
+      if (currentLen < target.length) {
+        const remaining = target.length - currentLen;
+        const step = Math.max(1, Math.min(Math.ceil(remaining / 3), 6));
+        const nextLen = Math.min(currentLen + step, target.length);
         displayedLengthRef.current = nextLen;
         setReplyMessage(target.slice(0, nextLen));
-        rafIdRef.current = requestAnimationFrame(tick);
       } else if (streamEndedRef.current) {
+        setReplyMessage(target);
         setIsStreaming(false);
-        rafIdRef.current = null;
-      } else {
-        rafIdRef.current = requestAnimationFrame(tick);
+        stopStreamRaf();
+        return;
       }
+
+      rafIdRef.current = requestAnimationFrame(tick);
     };
 
     rafIdRef.current = requestAnimationFrame(tick);
   };
 
-  // Listen for theme/state sync from the main Tauri Launcher window
+  const resetReplyState = () => {
+    stopStreamRaf();
+    setLastUserPrompt(null);
+    setReplyMessage(null);
+    setActiveUiTag(null);
+    setIsStreaming(false);
+    targetTextRef.current = "";
+    displayedLengthRef.current = 0;
+    streamEndedRef.current = false;
+  };
+
+  // Sync state events from Tauri main process
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenSync: (() => void) | undefined;
 
-    invoke<string>("get_windows_accent_color")
-      .then((hex) => {
-        if (hex) {
-          document.documentElement.style.setProperty("--windows-accent", hex);
-        }
-      })
-      .catch(() => {});
+    const setupListener = async () => {
+      try {
+        unlistenSync = await listen<ChatPillSyncPayload>("chat-pill-sync", (event) => {
+          const payload = event.payload;
+          if (typeof payload.isAwake === "boolean") {
+            setIsAwake(payload.isAwake);
+            if (!payload.isAwake) {
+              resetReplyState();
+            }
+          }
+          if (typeof payload.isDarkMode === "boolean") {
+            setIsDarkMode(payload.isDarkMode);
+          }
+          if (typeof payload.reply === "string") {
+            setReplyMessage(payload.reply);
+          }
+        });
+      } catch {
+        // Fallback if running outside Tauri
+      }
+    };
 
-    listen<ChatPillSyncPayload>("chat-pill-sync", (event) => {
-      const payload = event.payload;
-      if (typeof payload?.isAwake === "boolean") {
-        setIsAwake(payload.isAwake);
-        if (!payload.isAwake) {
-          resetReplyState();
-        }
-      }
-      if (typeof payload?.isDarkMode === "boolean") {
-        setIsDarkMode(payload.isDarkMode);
-      }
-      if (payload?.reply !== undefined) {
-        stopStreamRaf();
-        targetTextRef.current = payload.reply || "";
-        displayedLengthRef.current = (payload.reply || "").length;
-        setReplyMessage(payload.reply);
-      }
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => {});
+    setupListener();
 
     return () => {
-      if (unlisten) unlisten();
-      stopStreamRaf();
+      if (unlistenSync) unlistenSync();
     };
   }, []);
 
-  // Persistent WebSocket connection to backend/main.py (ws://127.0.0.1:8765)
+  // Real-time backend WebSocket connection
   useEffect(() => {
     let isMounted = true;
     let reconnectTimer: number | null = null;
 
     const connectWebSocket = () => {
-      if (!isMounted) return;
-
       try {
         const ws = new WebSocket("ws://127.0.0.1:8765");
         wsRef.current = ws;
+
+        ws.onopen = () => {
+          // Connected
+        };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
             const msgType = data.type;
 
-            if (msgType === "state") {
+            if (msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
               setIsAwake(nextAwake);
               invoke("set_chat_pill_state", { isAwake: nextAwake }).catch(() => {});
@@ -471,7 +470,7 @@ export const ChatPillWindow: React.FC = () => {
               setReplyMessage(errText);
             }
           } catch {
-            // Ignore malformed JSON frames
+            // Ignore malformed frames
           }
         };
 
@@ -517,6 +516,7 @@ export const ChatPillWindow: React.FC = () => {
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
+    setLastUserPrompt(msg);
     setReplyMessage(null);
     setActiveUiTag("THINKING");
     setIsStreaming(false);
@@ -539,6 +539,7 @@ export const ChatPillWindow: React.FC = () => {
       <ChatPill
         isAwake={isAwake}
         isDarkMode={isDarkMode}
+        userPrompt={lastUserPrompt}
         responseMessage={replyMessage}
         activeUiTag={activeUiTag}
         isStreaming={isStreaming}

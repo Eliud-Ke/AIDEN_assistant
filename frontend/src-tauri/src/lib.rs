@@ -585,7 +585,7 @@ pub fn run() {
                 let _ = window.set_always_on_top(true);
             }
 
-            // Position the floating Copilot Chat Pill window right above the Windows taskbar
+            // Position the floating Siri-style AI Pill in the upper quadrant/third of the screen
             if let Some(pill_win) = app.get_webview_window("chat_pill") {
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_ignore_cursor_events(true);
@@ -596,11 +596,9 @@ pub fn run() {
                     let scale = monitor.scale_factor();
 
                     let win_width = (920.0 * scale) as i32;
-                    let win_height = (460.0 * scale) as i32;
-                    let taskbar_offset = (48.0 * scale) as i32;
-
                     let x = monitor_pos.x + ((screen_size.width as i32 - win_width) / 2);
-                    let y = monitor_pos.y + (screen_size.height as i32 - win_height - taskbar_offset);
+                    // Upper third / top quarter (~15% from top of monitor)
+                    let y = monitor_pos.y + ((screen_size.height as f64 * 0.15) as i32);
 
                     let _ = pill_win.set_position(Position::Physical(PhysicalPosition { x, y }));
                 }
