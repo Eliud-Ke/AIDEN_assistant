@@ -1,5 +1,6 @@
 /* ==========================================================================
-   AIDEN FLOATING SIRI AI PILL & CONVERSATION CARD (APPLE INTELLIGENCE STYLE)
+   AIDEN UNIVERSAL SIRI AI GLASS PILL & CONVERSATION CARD
+   Apple Intelligence Smoked Glass with 3D Curvature Top Vignette
    ========================================================================== */
 
 /* Zero background on root window container */
@@ -37,7 +38,7 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 520px;
+  max-width: 560px;
   transform: translateY(-24px) scale(0.96);
   opacity: 0;
   pointer-events: none;
@@ -53,64 +54,45 @@
 }
 
 /* ==========================================================================
-   AUTHENTIC SIRI GLASS MATERIAL (HIGH-PERFORMANCE HARDWARE-ACCELERATED BLUR)
+   AUTHENTIC UNIVERSAL SMOKED GLASS (ZERO BLUE TINT + 3D CURVATURE VIGNETTE)
+   Neutral translucent glass that lets any background show through naturally
    ========================================================================== */
 .siri-glass {
   position: relative;
-  transform: translateZ(0); /* Dedicated GPU compositor layer */
+  transform: translateZ(0); /* Hardware-accelerated GPU layer */
   will-change: transform, opacity;
   box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
-}
 
-/* Dark Mode: Deep tinted frosted glass with Apple specular refraction */
-.siri-glass.dark-mode {
-  background: linear-gradient(
-    180deg,
-    rgba(32, 34, 42, 0.70) 0%,
-    rgba(18, 20, 26, 0.80) 100%
-  );
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  /* Universal neutral smoke: Dark curved top vignette + neutral glass body */
+  background: 
+    linear-gradient(180deg, rgba(0, 0, 0, 0.56) 0%, rgba(0, 0, 0, 0.06) 42%, rgba(0, 0, 0, 0.24) 100%),
+    rgba(18, 18, 18, 0.65);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 0 16px rgba(255, 255, 255, 0.03),
-    0 24px 60px rgba(0, 0, 0, 0.52),
-    0 4px 14px rgba(0, 0, 0, 0.35);
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 0 16px rgba(255, 255, 255, 0.02),
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    0 4px 16px rgba(0, 0, 0, 0.35);
   color: #ffffff;
-}
-
-/* Light Mode: Crystal luminous frosted glass with soft reflection */
-.siri-glass.light-mode {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.75) 0%,
-    rgba(242, 242, 247, 0.84) 100%
-  );
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.90);
-  box-shadow: 
-    inset 0 1px 0 #ffffff,
-    0 20px 48px rgba(0, 0, 0, 0.12),
-    0 4px 12px rgba(0, 0, 0, 0.05);
-  color: #1a1a1a;
+  transition: box-shadow 0.35s ease;
 }
 
 /* ==========================================================================
-   IMAGE 1: SLEEK SIRI CAPSULE PILL (IDLE / INPUT STATE)
+   IMAGE 1: PLUMP SIRI CAPSULE PILL (IDLE / INPUT STATE)
+   Taller (60px), pillowy, neutral smoked glass capsule
    ========================================================================== */
 .siri-pill-capsule {
   width: 100%;
-  max-width: 520px;
-  height: 50px;
+  max-width: 560px;
+  height: 60px; /* Plump 60px height matching Apple Siri reference */
   border-radius: 9999px; /* Pure capsule shape */
   display: flex;
   align-items: center;
-  padding: 0 10px 0 18px;
+  padding: 0 16px 0 24px; /* Generous breathing room */
   cursor: default;
   animation: siriPillBloom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -131,7 +113,7 @@
   align-items: center;
   flex: 1;
   height: 100%;
-  margin-right: 8px;
+  margin-right: 12px;
   overflow: hidden;
 }
 
@@ -155,13 +137,13 @@
   white-space: pre;
   pointer-events: none;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0.15px;
 }
 
 .siri-card-input-capsule .siri-measure-text {
-  font-size: 14px;
+  font-size: 14.5px;
 }
 
 /* Real Shining Animated Apple-Style Cursor */
@@ -169,30 +151,28 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 2px;
-  height: 20px;
+  width: 2.5px;
+  height: 22px; /* Vertically centered inside the 60px pill */
   background-color: #ffffff;
-  border-radius: 1px;
+  border-radius: 1.5px;
   pointer-events: none;
-  box-shadow: 0 0 9px rgba(255, 255, 255, 0.95), 0 0 3px #ffffff;
-  animation: siriCaretBlink 1.05s infinite ease-in-out;
+  box-shadow: 
+    0 0 4px rgba(255, 255, 255, 1),
+    0 0 12px 2px rgba(255, 255, 255, 0.9),
+    0 0 22px 5px rgba(255, 238, 210, 0.5);
+  animation: siriCaretBlink 1.15s infinite ease-in-out;
   z-index: 3;
   transition: left 0.04s ease-out;
-}
-
-.siri-glass.light-mode .siri-shining-cursor {
-  background-color: #1a1a1a;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.45);
 }
 
 @keyframes siriCaretBlink {
   0%, 100% {
     opacity: 1;
-    box-shadow: 0 0 9px rgba(255, 255, 255, 0.95), 0 0 3px #ffffff;
+    filter: drop-shadow(0 0 4px rgba(255, 240, 215, 0.8));
   }
   50% {
-    opacity: 0.15;
-    box-shadow: 0 0 2px rgba(255, 255, 255, 0.2);
+    opacity: 0.25;
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.2));
   }
 }
 
@@ -202,9 +182,9 @@
   background: transparent;
   border: none;
   outline: none;
-  color: inherit;
+  color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0.15px;
   caret-color: transparent !important;
@@ -212,31 +192,22 @@
   -webkit-user-select: text;
 }
 
-.siri-glass.dark-mode .siri-pill-input {
-  color: #ffffff;
-}
-.siri-glass.dark-mode .siri-pill-input::placeholder {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.siri-glass.light-mode .siri-pill-input {
-  color: #1a1a1a;
-}
-.siri-glass.light-mode .siri-pill-input::placeholder {
-  color: rgba(0, 0, 0, 0.5);
+.siri-pill-input::placeholder {
+  color: rgba(255, 255, 255, 0.62);
+  text-indent: 6px;
 }
 
 .siri-pill-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 /* Circular Apple-Style Action Buttons inside Pill */
 .siri-pill-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -245,22 +216,17 @@
   border: none;
   outline: none;
   cursor: pointer;
-  color: inherit;
-  opacity: 0.8;
+  color: rgba(255, 255, 255, 0.85);
   padding: 0;
-  transition: opacity 0.2s ease,
+  transition: color 0.2s ease,
               background 0.2s ease,
               transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .siri-pill-btn:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
   transform: scale(1.08);
-}
-
-.siri-glass.light-mode .siri-pill-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
 }
 
 .siri-pill-btn:active {
@@ -268,15 +234,13 @@
 }
 
 .siri-pill-btn.active {
-  opacity: 1;
   color: #60a5fa;
-  background: rgba(96, 165, 250, 0.18);
+  background: rgba(96, 165, 250, 0.22);
 }
 
 /* Active Mic Listening Animation */
 .siri-pill-btn.mic-listening {
   position: relative;
-  opacity: 1;
   color: #ef4444;
 }
 
@@ -305,8 +269,8 @@
 
 /* Luminous Circular Send Button */
 .siri-send-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -317,7 +281,7 @@
   padding: 0;
   background: #ffffff;
   color: #121316;
-  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.4);
   animation: sendBtnPop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   transition: transform 0.15s ease, opacity 0.2s ease;
 }
@@ -328,12 +292,6 @@
 
 .siri-send-btn:active {
   transform: scale(0.92);
-}
-
-.siri-glass.light-mode .siri-send-btn {
-  background: #1a1a1a;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 @keyframes sendBtnPop {
@@ -352,13 +310,13 @@
    ========================================================================== */
 .siri-card {
   width: 100%;
-  max-width: 490px;
+  max-width: 520px;
   min-height: 240px;
   max-height: 580px;
   border-radius: 28px; /* Large squircle corners */
   display: flex;
   flex-direction: column;
-  padding: 14px 16px 14px 16px;
+  padding: 16px 18px 16px 18px;
   animation: siriCardExpand 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -373,7 +331,7 @@
   }
 }
 
-/* Card Header: Dismiss (×) on left, Status / Orb in center, Expand on right */
+/* Card Header: Status / Orb on left, Minimize Button on right */
 .siri-card-header {
   display: flex;
   align-items: center;
@@ -384,8 +342,8 @@
 }
 
 .siri-card-header-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -394,8 +352,8 @@
   border: none;
   outline: none;
   cursor: pointer;
-  color: inherit;
-  opacity: 0.85;
+  color: #ffffff;
+  opacity: 0.9;
   transition: opacity 0.2s ease,
               background 0.2s ease,
               transform 0.15s ease;
@@ -404,14 +362,7 @@
 .siri-card-header-btn:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.22);
-  transform: scale(1.06);
-}
-
-.siri-glass.light-mode .siri-card-header-btn {
-  background: rgba(0, 0, 0, 0.07);
-}
-.siri-glass.light-mode .siri-card-header-btn:hover {
-  background: rgba(0, 0, 0, 0.12);
+  transform: scale(1.08);
 }
 
 .siri-card-header-spacer {
@@ -441,11 +392,6 @@
   flex-shrink: 0;
   color: rgba(255, 255, 255, 0.95);
   filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
-}
-
-.siri-glass.light-mode .siri-string-orb {
-  color: #1a1a1a;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.15));
 }
 
 .string-orb-svg {
@@ -507,9 +453,6 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: tagTextShimmer 2s infinite linear;
-}
-
-.siri-glass.dark-mode .siri-status-text {
   background-image: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.42) 0%,
@@ -517,17 +460,6 @@
     #ffffff 50%,
     rgba(255, 255, 255, 0.98) 55%,
     rgba(255, 255, 255, 0.42) 100%
-  );
-}
-
-.siri-glass.light-mode .siri-status-text {
-  background-image: linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0.4) 0%,
-    rgba(0, 0, 0, 0.95) 45%,
-    #000000 50%,
-    rgba(0, 0, 0, 0.95) 55%,
-    rgba(0, 0, 0, 0.4) 100%
   );
 }
 
@@ -547,47 +479,35 @@
   margin-bottom: 8px;
   max-height: 420px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-}
-
-.siri-glass.light-mode .siri-card-stream {
-  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
 
 .siri-card-stream::-webkit-scrollbar {
   width: 5px;
 }
 .siri-card-stream::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 9999px;
-}
-.siri-glass.light-mode .siri-card-stream::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
 }
 
 /* User Prompt Bubble on the right (from Image 2) */
 .siri-user-prompt-pill {
   align-self: flex-end;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(12px);
-  padding: 8px 16px;
-  border-radius: 18px;
+  padding: 10px 18px;
+  border-radius: 20px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 450;
   line-height: 1.4;
-  color: inherit;
+  color: #ffffff;
   max-width: 82%;
   word-break: break-word;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   animation: bubblePop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: text;
   -webkit-user-select: text;
-}
-
-.siri-glass.light-mode .siri-user-prompt-pill {
-  background: rgba(0, 0, 0, 0.08);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
 @keyframes bubblePop {
@@ -605,10 +525,10 @@
 .siri-assistant-reply {
   align-self: flex-start;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 14.5px;
-  line-height: 1.52;
+  font-size: 15px;
+  line-height: 1.55;
   letter-spacing: 0.1px;
-  color: inherit;
+  color: #ffffff;
   max-width: 96%;
   word-break: break-word;
   white-space: pre-wrap;
@@ -635,11 +555,6 @@
   animation: cursorBlink 0.75s infinite ease-in-out;
 }
 
-.siri-glass.light-mode .siri-streaming-cursor {
-  background-color: #2563eb;
-  box-shadow: 0 0 5px rgba(37, 99, 235, 0.5);
-}
-
 @keyframes cursorBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.15; }
@@ -651,18 +566,14 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding-top: 10px;
+  padding-top: 12px;
   margin-top: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.siri-glass.light-mode .siri-card-bottom-bar {
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .siri-card-action-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -671,8 +582,8 @@
   border: none;
   outline: none;
   cursor: pointer;
-  color: inherit;
-  opacity: 0.85;
+  color: #ffffff;
+  opacity: 0.9;
   padding: 0;
   flex-shrink: 0;
   transition: opacity 0.2s ease,
@@ -684,13 +595,6 @@
   opacity: 1;
   background: rgba(255, 255, 255, 0.22);
   transform: scale(1.08);
-}
-
-.siri-glass.light-mode .siri-card-action-btn {
-  background: rgba(0, 0, 0, 0.08);
-}
-.siri-glass.light-mode .siri-card-action-btn:hover {
-  background: rgba(0, 0, 0, 0.14);
 }
 
 .siri-card-action-btn:active {
@@ -724,29 +628,20 @@
 /* Inner Input Capsule Field (from Image 2) */
 .siri-card-input-capsule {
   flex: 1;
-  height: 38px;
+  height: 42px;
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
   display: flex;
   align-items: center;
-  padding: 0 14px;
+  padding: 0 16px;
   box-sizing: border-box;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .siri-card-input-capsule:focus-within {
   background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.25);
-}
-
-.siri-glass.light-mode .siri-card-input-capsule {
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-.siri-glass.light-mode .siri-card-input-capsule:focus-within {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: rgba(0, 0, 0, 0.18);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .siri-card-input {
@@ -755,24 +650,15 @@
   background: transparent;
   border: none;
   outline: none;
-  color: inherit;
+  color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 14.5px;
   caret-color: transparent !important;
   user-select: text;
   -webkit-user-select: text;
 }
 
-.siri-glass.dark-mode .siri-card-input {
-  color: #ffffff;
-}
-.siri-glass.dark-mode .siri-card-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.siri-glass.light-mode .siri-card-input {
-  color: #1a1a1a;
-}
-.siri-glass.light-mode .siri-card-input::placeholder {
-  color: rgba(0, 0, 0, 0.45);
+.siri-card-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+  text-indent: 5px;
 }
