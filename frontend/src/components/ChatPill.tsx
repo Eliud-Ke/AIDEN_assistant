@@ -192,8 +192,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [selectionIndex, setSelectionIndex] = useState(0);
   const [cursorLeft, setCursorLeft] = useState(0);
 
-  const pillInputRef = useRef<HTMLInputElement>(null);
-  const cardInputRef = useRef<HTMLInputElement>(null);
+  const [isMultiline, setIsMultiline] = useState(false);
+  const pillInputRef = useRef<HTMLTextAreaElement>(null);
+  const cardInputRef = useRef<HTMLTextAreaElement>(null);
   const pillMeasureRef = useRef<HTMLSpanElement>(null);
   const cardMeasureRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
@@ -287,13 +288,57 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [showReplyWindow, responseMessage, userPrompt]);
 
-  const updateSelection = (el: HTMLInputElement | null) => {
+  const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
       setSelectionIndex(el.selectionStart ?? el.value.length);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const resetTextarea = () => {
+    setIsMultiline(false);
+    if (pillInputRef.current) {
+      pillInputRef.current.style.height = "";
+      pillInputRef.current.scrollTop = 0;
+    }
+    if (cardInputRef.current) {
+      cardInputRef.current.style.height = "";
+      cardInputRef.current.scrollTop = 0;
+    }
+  };
+
+  const adjustTextareaHeight = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    const val = el.value || "";
+    if (!val.trim()) {
+      resetTextarea();
+      return;
+    }
+
+    el.style.height = "auto";
+    const minH = showReplyWindow ? 21 : 24;
+    // Exactly 3 lines maximum height before internal scrolling activates
+    const maxH = showReplyWindow ? 64 : 70;
+    const scrollH = el.scrollHeight;
+    const isMulti = scrollH > (minH + 6) || val.includes("\n");
+    setIsMultiline(isMulti);
+
+    const targetH = Math.min(Math.max(scrollH, minH), maxH);
+    el.style.height = `${targetH}px`;
+  };
+
+  // Reset input expansion and sizing whenever a turn starts, input clears, speech arrives, or awake state toggles
+  useEffect(() => {
+    if (!inputText || !inputText.trim()) {
+      resetTextarea();
+    } else {
+      const activeEl = showReplyWindow ? cardInputRef.current : pillInputRef.current;
+      if (activeEl) {
+        adjustTextareaHeight(activeEl);
+      }
+    }
+  }, [inputText, showReplyWindow, isAwake, userPrompt]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -318,6 +363,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setInputText("");
     setSelectionIndex(0);
     setCursorLeft(0);
+    resetTextarea();
   };
 
   const formatStatusTag = (raw: string): string => {
@@ -475,7 +521,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             )}
 
             {/* Bottom Input Capsule Bar from Image 2 */}
-            <div className="siri-card-bottom-bar">
+            <div className={`siri-card-bottom-bar ${isMultiline ? "multiline" : ""}`}>
               <button
                 type="button"
                 className={`siri-card-action-btn ${isVisionActive ? "active" : ""}`}
@@ -488,27 +534,30 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 </svg>
               </button>
 
-              <div className="siri-card-input-capsule">
+              <div className={`siri-card-input-capsule ${isMultiline ? "multiline" : ""}`}>
                 <div className="siri-input-track">
                   {/* Invisible text measurer */}
                   <span ref={cardMeasureRef} className="siri-measure-text" aria-hidden="true">
                     {cursorPrefix}
                   </span>
                   {/* Real Shining Animated Cursor */}
-                  <span
-                    className="siri-shining-cursor"
-                    style={{ left: `${cursorLeft}px` }}
-                    aria-hidden="true"
-                  />
-                  <input
+                  {!isMultiline && (
+                    <span
+                      className="siri-shining-cursor"
+                      style={{ left: `${cursorLeft}px` }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <textarea
                     ref={cardInputRef}
-                    type="text"
-                    className="siri-card-input"
+                    rows={1}
+                    className={`siri-card-input ${isMultiline ? "multiline" : ""}`}
                     placeholder={isMicActive ? "Listening..." : "Ask Aiden"}
                     value={inputText}
                     onChange={(e) => {
                       setInputText(e.target.value);
                       updateSelection(e.target);
+                      adjustTextareaHeight(e.target);
                     }}
                     onSelect={(e) => updateSelection(e.currentTarget)}
                     onKeyUp={(e) => updateSelection(e.currentTarget)}
@@ -551,7 +600,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           /* ==========================================================================
              IDLE / INPUT STATE: SLEEK SIRI CAPSULE PILL (IMAGE 1)
              ========================================================================== */
-          <div className={`siri-pill-capsule siri-glass ${isDarkMode ? "dark-mode" : "light-mode"}`}>
+          <div className={`siri-pill-capsule siri-glass ${isMultiline ? "multiline" : ""} ${isDarkMode ? "dark-mode" : "light-mode"}`}>
             <div className="siri-pill-input-wrap">
               <div className="siri-input-track">
                 {/* Invisible text measurer */}
@@ -559,20 +608,23 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   {cursorPrefix}
                 </span>
                 {/* Real Shining Animated Cursor */}
-                <span
-                  className="siri-shining-cursor"
-                  style={{ left: `${cursorLeft}px` }}
-                  aria-hidden="true"
-                />
-                <input
+                {!isMultiline && (
+                  <span
+                    className="siri-shining-cursor"
+                    style={{ left: `${cursorLeft}px` }}
+                    aria-hidden="true"
+                  />
+                )}
+                <textarea
                   ref={pillInputRef}
-                  type="text"
-                  className="siri-pill-input"
+                  rows={1}
+                  className={`siri-pill-input ${isMultiline ? "multiline" : ""}`}
                   placeholder={isMicActive ? "Listening for speech..." : "Search or Ask"}
                   value={inputText}
                   onChange={(e) => {
                     setInputText(e.target.value);
                     updateSelection(e.target);
+                    adjustTextareaHeight(e.target);
                   }}
                   onSelect={(e) => updateSelection(e.currentTarget)}
                   onKeyUp={(e) => updateSelection(e.currentTarget)}
@@ -584,22 +636,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             </div>
 
             <div className="siri-pill-actions">
-              {/* Vision Context Button */}
-              <button
-                type="button"
-                className={`siri-pill-btn ${isVisionActive ? "active" : ""}`}
-                onClick={() => setIsVisionActive((prev) => !prev)}
-                title={isVisionActive ? "Screen context active" : "Scan screen context"}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="6" cy="14" r="4" />
-                  <circle cx="18" cy="14" r="4" />
-                  <path d="M14 14a2 2 0 0 0-4 0" />
-                  <path d="M2.5 13L5 7" />
-                  <path d="M21.5 13L19 7" />
-                </svg>
-              </button>
-
               {/* Apple-Style Microphone Button */}
               <button
                 type="button"

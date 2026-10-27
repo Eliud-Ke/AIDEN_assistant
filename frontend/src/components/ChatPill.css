@@ -100,13 +100,17 @@
 .siri-pill-capsule {
   width: 100%;
   max-width: 560px;
-  height: 60px; /* Plump 60px height matching Apple Siri reference */
+  min-height: 60px;
+  height: auto;
   border-radius: 9999px; /* Pure capsule shape */
   display: flex;
   align-items: center;
   padding: 0 16px 0 24px; /* Generous breathing room */
   cursor: default;
   animation: siriPillBloom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: border-radius 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              min-height 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              padding 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   /* Top dark vignette, rich grey body, gradual smooth fade starting 77%-85% down into transparent */
   background: linear-gradient(
     180deg,
@@ -142,9 +146,15 @@
   display: flex;
   align-items: center;
   flex: 1;
-  height: 100%;
+  min-height: 28px;
+  height: auto;
   margin-right: 12px;
   overflow: visible;
+}
+
+.siri-pill-capsule.multiline .siri-pill-input-wrap {
+  align-items: flex-start;
+  padding-top: 1px;
 }
 
 /* Track container that pairs the invisible measurer with the real shining cursor */
@@ -209,7 +219,8 @@
 
 .siri-pill-input {
   width: 100%;
-  height: 100%;
+  min-height: 24px;
+  max-height: 70px; /* Strictly capped at 3 lines max */
   background: transparent;
   border: none;
   outline: none;
@@ -217,10 +228,24 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 16px;
   font-weight: 400;
+  line-height: 1.4;
   letter-spacing: 0.15px;
-  caret-color: transparent !important;
+  caret-color: transparent;
   user-select: text;
   -webkit-user-select: text;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.siri-pill-input::-webkit-scrollbar {
+  display: none;
+}
+
+.siri-pill-input.multiline {
+  caret-color: #ffffff !important;
 }
 
 .siri-pill-input::placeholder {
@@ -235,6 +260,10 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.siri-pill-capsule.multiline .siri-pill-actions {
+  margin-bottom: 2px;
 }
 
 /* Circular Apple-Style Action Buttons inside Pill */
@@ -692,9 +721,18 @@
 }
 
 /* Inner Input Capsule Field (from Image 2) */
+.siri-card-bottom-bar.multiline {
+  align-items: flex-end;
+}
+
+.siri-card-bottom-bar.multiline .siri-card-action-btn {
+  margin-bottom: 4px;
+}
+
 .siri-card-input-capsule {
   flex: 1;
-  height: 42px;
+  min-height: 42px;
+  height: auto;
   background: rgba(0, 0, 0, 0.25); /* Deep recessed neutral tint, zero milky white haze */
   border: 1px solid rgba(255, 255, 255, 0.06); /* Barely-there subtle border */
   border-radius: 9999px;
@@ -702,7 +740,13 @@
   align-items: center;
   padding: 0 16px;
   box-sizing: border-box;
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, border-radius 0.2s ease;
+}
+
+.siri-card-input-capsule.multiline {
+  border-radius: 20px;
+  padding: 8px 16px;
+  align-items: flex-start;
 }
 
 .siri-card-input-capsule:focus-within {
@@ -713,16 +757,31 @@
 
 .siri-card-input {
   width: 100%;
-  height: 100%;
+  min-height: 21px;
+  max-height: 64px; /* Strictly capped at 3 lines max */
   background: transparent;
   border: none;
   outline: none;
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 14.5px;
-  caret-color: transparent !important;
+  line-height: 1.4;
+  caret-color: transparent;
   user-select: text;
   -webkit-user-select: text;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.siri-card-input::-webkit-scrollbar {
+  display: none;
+}
+
+.siri-card-input.multiline {
+  caret-color: #ffffff !important;
 }
 
 .siri-card-input::placeholder {

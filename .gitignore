@@ -6,6 +6,8 @@
 backend/venv/
 backend/env/
 backend/.venv/
+build/
+dist/
 backend/build/
 backend/dist/
 *.spec
