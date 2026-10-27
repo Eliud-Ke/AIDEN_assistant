@@ -294,6 +294,33 @@ CORE_TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_explanatory_media",
+            "description": "Retrieves a set of exactly 4 rich, high-resolution explanatory visual images to illustrate an explanation. MANDATORY RULE: You MUST call this tool whenever answering questions that involve explanations, concepts, history, landmarks, places, science, technology, famous figures, animals, or any topic benefiting from visual illustration. Each tool call returns exactly 4 images for a single horizontal row. If your explanation covers multiple distinct eras or topics, call this tool multiple times (once for each section). In your response text, insert each 4-image row at the exact contextually relevant position (at the beginning before text, between paragraphs, or at the end) using this exact markdown tag: ::media-gallery[image_url_1 | Caption 1, image_url_2 | Caption 2, image_url_3 | Caption 3, image_url_4 | Caption 4]::",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The specific subject to find 4 explanatory photos/diagrams for in this row (e.g. 'French Revolution storming of the Bastille', 'Palace of Versailles Hall of Mirrors', 'James Webb Space Telescope optics', 'Ferrari F40').",
+                    },
+                    "additional_queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of additional specific sub-queries to fetch a diverse set of images (e.g. ['Palace of Versailles', 'Napoleon Bonaparte']).",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of images to fetch (always defaults to 4).",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 

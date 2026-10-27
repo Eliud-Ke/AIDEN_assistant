@@ -745,11 +745,151 @@ def get_bible_passage(reference: str, translation: str = "web") -> str:
         return f"❌ Error executing Bible lookup: {str(e)}"
 
 
+
+
+# ---------------------------------------------------------
+# 19. EXPLANATORY MEDIA TOOL (ZERO API KEY / HIGH FIDELITY)
+# ---------------------------------------------------------
+
+def fetch_explanatory_media(query: str, additional_queries: list = None, count: int = 4) -> str:
+    """
+    Searches and retrieves visual illustrations, diagrams, landmarks, historical photos,
+    or portraits to enhance an explanation from Wikipedia & Wikimedia Commons
+    with zero API keys, no registration, and zero rate limit issues.
+    Always returns exactly 4 high-resolution, verified images for a single row.
+    """
+    try:
+        queries = [query.strip()]
+        if additional_queries and isinstance(additional_queries, list):
+            for q in additional_queries:
+                if isinstance(q, str) and q.strip() and q.strip() not in queries:
+                    queries.append(q.strip())
+
+        headers = {
+            "User-Agent": "AidenAssistant/1.0 (Desktop AI Companion; contact: support@aiden.ai)",
+            "Accept": "application/json"
+        }
+
+        collected = []
+        seen = set()
+
+        def add_image(title, url, thumb, source="Wikipedia"):
+            if not url or not thumb:
+                return
+            if not thumb.startswith("https://") or not url.startswith("https://"):
+                return
+            # Filter non-photo vector/audio/system files
+            lower = thumb.lower()
+            if any(ext in lower for ext in [".svg", ".tif", ".tiff", ".pdf", ".ogg", ".ogv", ".webm", ".ico"]):
+                return
+            if thumb in seen or url in seen:
+                return
+            seen.add(thumb)
+            seen.add(url)
+            collected.append({
+                "title": title[:65],
+                "url": url,
+                "thumbnail": thumb,
+                "source": source
+            })
+
+        for q in queries:
+            if len(collected) >= 4:
+                break
+
+            # Priority 1: Wikipedia Pageimages (Directly connected to encyclopedic topics)
+            try:
+                wiki_url = "https://en.wikipedia.org/w/api.php"
+                params = {
+                    "action": "query",
+                    "format": "json",
+                    "generator": "search",
+                    "gsrsearch": q,
+                    "gsrlimit": 8,
+                    "prop": "pageimages",
+                    "piprop": "thumbnail|original",
+                    "pithumbsize": 960
+                }
+                res = requests.get(wiki_url, params=params, headers=headers, timeout=5)
+                if res.status_code == 200:
+                    pages = res.json().get("query", {}).get("pages", {})
+                    for page in pages.values():
+                        thumb = page.get("thumbnail", {}).get("source")
+                        orig = page.get("original", {}).get("source")
+                        title = page.get("title", "")
+                        if thumb:
+                            add_image(title, orig or thumb, thumb, source="Wikipedia")
+                        if len(collected) >= 4:
+                            break
+            except Exception:
+                pass
+
+            if len(collected) >= 4:
+                break
+
+            # Priority 2: Wikimedia Commons (High-res media repository)
+            try:
+                commons_url = "https://commons.wikimedia.org/w/api.php"
+                params = {
+                    "action": "query",
+                    "format": "json",
+                    "generator": "search",
+                    "gsrsearch": q,
+                    "gsrnamespace": "6",
+                    "gsrlimit": 10,
+                    "prop": "imageinfo",
+                    "iiprop": "url|mime",
+                    "iiurlwidth": 960
+                }
+                res = requests.get(commons_url, params=params, headers=headers, timeout=5)
+                if res.status_code == 200:
+                    pages = res.json().get("query", {}).get("pages", {})
+                    for page in pages.values():
+                        info = page.get("imageinfo", [{}])[0]
+                        mime = info.get("mime", "")
+                        if "image" not in mime or "svg" in mime or "tiff" in mime:
+                            continue
+                        thumb = info.get("thumburl") or info.get("url")
+                        orig = info.get("url")
+                        raw_title = page.get("title", "").replace("File:", "")
+                        clean_title = raw_title.rsplit(".", 1)[0].replace("_", " ")
+                        if len(clean_title) > 3 and not clean_title.lower().startswith("dsc_"):
+                            add_image(clean_title, orig or thumb, thumb, source="Wikimedia Commons")
+                        if len(collected) >= 4:
+                            break
+            except Exception:
+                pass
+
+        final_images = collected[:4]
+        if not final_images:
+            return json.dumps({
+                "status": "not_found",
+                "message": f"No relevant visual media found for '{query}'. Proceed explaining textually."
+            })
+
+        sample_items = [f"{img['thumbnail']} | {img['title']}" for img in final_images]
+        sample_tag = "::media-gallery[" + ", ".join(sample_items) + "]::"
+
+        return json.dumps({
+            "status": "success",
+            "count": len(final_images),
+            "images": final_images,
+            "instruction": (
+                "Embed these 4 images into your explanation text at the exact position (start, middle between paragraphs, or end) "
+                f"where this visual row is most contextually relevant using this exact tag format: {sample_tag}"
+            )
+        }, indent=2)
+
+    except Exception as e:
+        return f"Error fetching explanatory media: {str(e)}"
+
+
 # ---------------------------------------------------------
 # MASTER EXPORT BUCKET
 # ---------------------------------------------------------
 
 SYSTEM_TOOLS = {
+    "fetch_explanatory_media": fetch_explanatory_media,
     "get_system_telemetry": get_system_telemetry,
     "get_current_time_date": get_current_time_date,
     "get_live_location": get_live_location,

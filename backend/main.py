@@ -97,6 +97,7 @@ TOOL_STATUS_MAP = {
     "search_youtube": "SEARCHING YOUTUBE",
     "open_youtube_video": "OPENING YOUTUBE",
     "search_images": "SEARCHING IMAGES",
+    "fetch_explanatory_media": "ORGANIZING THOUGHTS",
 
     # Spotify Integration
     "search_spotify_catalog": "SCANNING SPOTIFY",
@@ -242,6 +243,14 @@ def execute_and_intercept(tc_id, func_name, arguments_str):
             )
         except Exception as e:
             tool_result = f"Failed to render videos to UI: {e}"
+
+    elif func_name == "fetch_explanatory_media":
+        try:
+            payload = json.loads(tool_result)
+            if payload.get("status") == "success" and payload.get("images"):
+                emit_ui_event("EXPLANATORY_MEDIA", payload["images"])
+        except Exception:
+            pass
 
     elif func_name == "search_images" and tool_result.startswith('{"action": "RENDER_IMAGES"'):
         try:

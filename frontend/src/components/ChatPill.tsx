@@ -16,6 +16,100 @@ interface ChatPillProps {
   contentRef?: React.Ref<HTMLDivElement>;
 }
 
+interface MediaGalleryItem {
+  url: string;
+  title: string;
+}
+
+type MessagePart =
+  | { type: "text"; text: string }
+  | { type: "gallery"; items: MediaGalleryItem[] }
+  | { type: "loading_gallery" };
+
+function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
+  if (!rawText) return [];
+
+  const galleryRegex = /::media-(?:gallery|strip)\[([\s\S]*?)\]::/gi;
+  const parts: MessagePart[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = galleryRegex.exec(rawText)) !== null) {
+    const textBefore = rawText.slice(lastIndex, match.index);
+    if (textBefore) {
+      parts.push({ type: "text", text: textBefore });
+    }
+
+    const rawPayload = match[1].trim();
+    const items: MediaGalleryItem[] = [];
+
+    // Check if JSON format
+    if (rawPayload.startsWith("[") || rawPayload.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(rawPayload);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        for (const item of list) {
+          if (item && typeof item === "object") {
+            const u = item.thumbnail || item.url;
+            if (u) {
+              items.push({
+                url: String(u),
+                title: String(item.title || item.caption || "").trim(),
+              });
+            }
+          }
+        }
+      } catch {
+        // Fallback to text parsing
+      }
+    }
+
+    // Comma-separated: "url | caption, url | caption"
+    if (items.length === 0) {
+      const entries = rawPayload.split(/,(?=\s*https?:\/\/|\s*["'{])/g);
+      for (const entry of entries) {
+        const trimmed = entry.trim().replace(/^["']|["']$/g, "");
+        if (!trimmed) continue;
+        if (trimmed.includes("|")) {
+          const [u, ...rest] = trimmed.split("|");
+          items.push({
+            url: u.trim(),
+            title: rest.join("|").trim(),
+          });
+        } else {
+          const tokens = trimmed.split(/\s+/);
+          const u = tokens[0];
+          const t = tokens.slice(1).join(" ");
+          if (u.startsWith("http")) {
+            items.push({ url: u, title: t });
+          }
+        }
+      }
+    }
+
+    if (items.length > 0) {
+      parts.push({ type: "gallery", items });
+    }
+    lastIndex = galleryRegex.lastIndex;
+  }
+
+  const remaining = rawText.slice(lastIndex);
+  if (remaining) {
+    const partialMatch = /::media-(?:gallery|strip)\[[\s\S]*$/i.exec(remaining);
+    if (partialMatch && isStreaming) {
+      const textBeforePartial = remaining.slice(0, partialMatch.index);
+      if (textBeforePartial) {
+        parts.push({ type: "text", text: textBeforePartial });
+      }
+      parts.push({ type: "loading_gallery" });
+    } else {
+      parts.push({ type: "text", text: remaining });
+    }
+  }
+
+  return parts;
+}
+
 export const ChatPill: React.FC<ChatPillProps> = ({
   isAwake,
   isDarkMode,
@@ -31,6 +125,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [inputText, setInputText] = useState("");
   const [isMicActive, setIsMicActive] = useState(false);
   const [isVisionActive, setIsVisionActive] = useState(false);
+  const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
 
   // Dynamic Shining Cursor tracking
   const [selectionIndex, setSelectionIndex] = useState(0);
@@ -143,7 +238,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       handleSend();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (showReplyWindow && onClearResponse) {
+      if (selectedLightboxImage) {
+        setSelectedLightboxImage(null);
+      } else if (showReplyWindow && onClearResponse) {
         onClearResponse();
       } else if (onToggleSleep) {
         onToggleSleep();
@@ -230,8 +327,55 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
               {responseMessage && (
                 <div className="siri-assistant-reply">
-                  {responseMessage}
-                  {isStreaming && <span className="siri-streaming-cursor" />}
+                  {parseMessageWithGalleries(responseMessage, isStreaming).map((part, idx, arr) => {
+                    const isLast = idx === arr.length - 1;
+                    if (part.type === "text") {
+                      return (
+                        <span key={idx} className="siri-text-block">
+                          {part.text}
+                          {isLast && isStreaming && <span className="siri-streaming-cursor" />}
+                        </span>
+                      );
+                    }
+                    if (part.type === "loading_gallery") {
+                      return (
+                        <div key={idx} className="siri-media-gallery loading">
+                          <div className="siri-media-skeleton" />
+                          <div className="siri-media-skeleton" />
+                          <div className="siri-media-skeleton" />
+                          <div className="siri-media-skeleton" />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={idx} className="siri-media-gallery">
+                        {part.items.map((item, imgIdx) => (
+                          <div
+                            key={imgIdx}
+                            className="siri-media-card"
+                            onClick={() => setSelectedLightboxImage(item)}
+                            title={item.title ? `${item.title} (Click to enlarge)` : "Click to enlarge"}
+                          >
+                            <img
+                              src={item.url}
+                              alt={item.title || "Explanatory media"}
+                              className="siri-media-img"
+                              loading="lazy"
+                              onError={(e) => {
+                                const parent = e.currentTarget.parentElement;
+                                if (parent) parent.style.display = "none";
+                              }}
+                            />
+                            {item.title && (
+                              <div className="siri-media-caption-bar">
+                                <span className="siri-media-caption">{item.title}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -241,6 +385,33 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Lightbox Full Image Preview Modal */}
+            {selectedLightboxImage && (
+              <div className="siri-media-lightbox" onClick={() => setSelectedLightboxImage(null)}>
+                <div className="siri-media-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                  <img
+                    src={selectedLightboxImage.url}
+                    alt={selectedLightboxImage.title}
+                    className="siri-lightbox-img"
+                  />
+                  <div className="siri-lightbox-bar">
+                    <span className="siri-lightbox-title">{selectedLightboxImage.title}</span>
+                    <button
+                      type="button"
+                      className="siri-lightbox-close"
+                      onClick={() => setSelectedLightboxImage(null)}
+                      title="Close (Esc)"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Bottom Input Capsule Bar from Image 2 */}
             <div className="siri-card-bottom-bar">

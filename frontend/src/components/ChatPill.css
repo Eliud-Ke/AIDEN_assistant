@@ -729,3 +729,211 @@
   color: rgba(255, 255, 255, 0.55);
   text-indent: 5px;
 }
+
+/* ==========================================================================
+   EXPLANATORY MEDIA GALLERY (CINEMATIC HORIZONTAL SCROLLING ROW OF 4)
+   Apple Intelligence Liquid Glass Visuals
+   ========================================================================== */
+.siri-media-gallery {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 16px; /* Generous breathing room between cards */
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+  padding: 10px 6px 14px 6px;
+  margin: 14px 0;
+  box-sizing: border-box;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+
+  /* Completely invisible scrollbar across all engines while retaining horizontal scrolling */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  /* Subtle horizontal edge fade for smooth entry/exit */
+  mask-image: linear-gradient(to right, transparent 0%, black 18px, black calc(100% - 18px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 18px, black calc(100% - 18px), transparent 100%);
+}
+
+.siri-media-gallery::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Cinematic Large Image Card: 350px by 250px */
+.siri-media-card {
+  position: relative;
+  flex: 0 0 350px;
+  width: 350px;
+  min-width: 350px;
+  max-width: 350px;
+  height: 250px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s ease,
+              border-color 0.25s ease;
+  user-select: none;
+}
+
+.siri-media-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 18px 40px -4px rgba(0, 0, 0, 0.7), 0 0 16px rgba(255, 255, 255, 0.15);
+}
+
+.siri-media-card.load-failed {
+  display: none !important;
+}
+
+.siri-media-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s ease;
+}
+
+.siri-media-card:hover .siri-media-img {
+  transform: scale(1.05);
+}
+
+/* Bottom Glass Gradient Overlay with Caption */
+.siri-media-caption-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 24px 14px 12px 14px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.5) 65%, transparent 100%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.siri-media-caption {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* Loading Shimmer Skeleton while stream tag is completing */
+.siri-media-gallery.loading .siri-media-skeleton {
+  flex: 0 0 350px;
+  width: 350px;
+  min-width: 350px;
+  height: 250px;
+  border-radius: 20px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.10) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite linear;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Lightbox Modal Overlay */
+.siri-media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: lightboxFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+@keyframes lightboxFadeIn {
+  0% { opacity: 0; transform: scale(0.98); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.siri-media-lightbox-content {
+  position: relative;
+  max-width: 88vw;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(20, 20, 24, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.siri-lightbox-img {
+  max-width: 100%;
+  max-height: 68vh;
+  object-fit: contain;
+  display: block;
+  border-radius: 18px 18px 0 0;
+}
+
+.siri-lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  box-sizing: border-box;
+  background: rgba(14, 14, 18, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.siri-lightbox-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80%;
+}
+
+.siri-lightbox-close {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.siri-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.1);
+}
