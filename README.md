@@ -177,6 +177,30 @@ This will:
 
 ---
 
+### 🪟 Tiling Window Managers (GlazeWM Setup)
+
+If you use [GlazeWM](https://github.com/glzr-io/glazewm) (or other tiling window managers), add an ignore rule so GlazeWM doesn't attempt to manage, tile, or snap the floating chat pill and settings launcher.
+
+In your `~/.glzr/glazewm/config.yaml`, add the following under `window_rules:` -> `- commands: ["ignore"]`:
+
+```yaml
+window_rules:
+  - commands: ["ignore"]
+    match:
+      # Ignores AIDEN Assistant (both App Launcher and Floating Chat UI in dev and release)
+      - window_process: { equals: "AIDEN Assistant" }
+      - window_process: { equals: "frontend" }
+        window_title: { regex: "(?i)^AIDEN" }
+      - window_title: { regex: "(?i)^AIDEN" }
+```
+
+Reload your GlazeWM configuration with your reload hotkey (default `Alt + Shift + R`) or via terminal:
+```powershell
+glazewm command wm-reload-config
+```
+
+---
+
 ### 🧠 Long-Term Memory System
 
 Aiden organizes long-term memories across customizable categories (e.g., `General`, `Preferences`, `Personal`, `Projects`) saved to:
