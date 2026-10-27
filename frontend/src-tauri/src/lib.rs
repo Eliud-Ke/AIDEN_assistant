@@ -555,6 +555,16 @@ fn resize_chat_pill(app: AppHandle, expanded: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_ignore_cursor_events(true);
+        let _ = pill_win.hide();
+        let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn set_chat_pill_state(
     app: AppHandle,
     is_awake: Option<bool>,
@@ -576,8 +586,7 @@ fn set_chat_pill_state(
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_focus();
             } else {
-                let _ = pill_win.hide();
-                let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
+                let _ = pill_win.set_ignore_cursor_events(true);
             }
         }
     }
@@ -706,6 +715,7 @@ pub fn run() {
             get_user_memories,
             save_user_memories,
             set_chat_pill_state,
+            hide_chat_pill,
             resize_chat_pill,
             set_chat_pill_size,
             boot_aiden,

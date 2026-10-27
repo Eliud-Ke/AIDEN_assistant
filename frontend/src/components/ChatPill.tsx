@@ -431,6 +431,7 @@ export const ChatPillWindow: React.FC = () => {
   const contentRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef<number>(0);
   const rafResizeRef = useRef<number | null>(null);
+  const hideTimerRef = useRef<number | null>(null);
 
   const stopStreamRaf = () => {
     if (rafIdRef.current !== null) {
@@ -479,12 +480,37 @@ export const ChatPillWindow: React.FC = () => {
   const hasReplyText = Boolean((replyMessage && replyMessage.length > 0) || isStreaming);
   const isExpanded = Boolean(activeUiTag || hasReplyText || lastUserPrompt);
 
+  // Manage sleep exit animation & native window hide timing
+  useEffect(() => {
+    if (isAwake) {
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
+    } else {
+      // Immediately pass cursor events through so background clicks work while fading out
+      invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
+
+      // Wait 300ms for the smooth glide-up & fade-out animation to complete before hiding the native Win32 window
+      hideTimerRef.current = window.setTimeout(() => {
+        invoke("hide_chat_pill").catch(() => {});
+        resetReplyState();
+        lastHeightRef.current = 130;
+        hideTimerRef.current = null;
+      }, 300);
+    }
+
+    return () => {
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+      }
+    };
+  }, [isAwake]);
+
   // True dynamic window resizing: measures exact DOM height + allocates shadow breathing room
   useEffect(() => {
     if (!isAwake) {
-      invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
-      invoke("set_chat_pill_size", { width: 640, height: 130 }).catch(() => {});
-      lastHeightRef.current = 130;
       return;
     }
 
@@ -536,9 +562,6 @@ export const ChatPillWindow: React.FC = () => {
           const payload = event.payload;
           if (typeof payload.isAwake === "boolean") {
             setIsAwake(payload.isAwake);
-            if (!payload.isAwake) {
-              resetReplyState();
-            }
           }
           if (typeof payload.isDarkMode === "boolean") {
             setIsDarkMode(payload.isDarkMode);
@@ -581,11 +604,6 @@ export const ChatPillWindow: React.FC = () => {
             if (msgType === "state" || msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
               setIsAwake(nextAwake);
-              invoke("set_chat_pill_state", { isAwake: nextAwake }).catch(() => {});
-
-              if (!nextAwake) {
-                resetReplyState();
-              }
             } else if (msgType === "ui_tag") {
               const tag = String(data.tag || "").trim();
               if (tag) {
@@ -704,11 +722,6 @@ export const ChatPillWindow: React.FC = () => {
         onToggleSleep={() => {
           const nextAwake = !isAwake;
           setIsAwake(nextAwake);
-          if (!nextAwake) {
-            resetReplyState();
-          }
-          invoke("set_chat_pill_state", { isAwake: nextAwake, expanded: false }).catch(() => {});
-          invoke("set_chat_pill_size", { width: 640, height: 130 }).catch(() => {});
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: nextAwake ? "wake" : "sleep" }));
           }
