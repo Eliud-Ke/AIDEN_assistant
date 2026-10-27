@@ -10,7 +10,7 @@ use std::os::windows::process::CommandExt;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, Position, State,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, State,
 };
 
 #[cfg(target_os = "windows")]
@@ -223,6 +223,8 @@ fn shutdown_aiden(
 
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_ignore_cursor_events(true);
+        let _ = pill_win.hide();
+        let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
     }
     let _ = app.emit(
         "chat-pill-sync",
@@ -249,6 +251,8 @@ fn restart_aiden(
 
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_ignore_cursor_events(true);
+        let _ = pill_win.hide();
+        let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
     }
     let _ = app.emit(
         "chat-pill-sync",
@@ -532,14 +536,38 @@ fn save_user_memories(memories: serde_json::Value) -> Result<serde_json::Value, 
 }
 
 #[tauri::command]
+fn set_chat_pill_size(app: AppHandle, width: Option<f64>, height: f64) -> Result<(), String> {
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let w = width.unwrap_or(640.0);
+        let h = height.max(80.0).min(960.0);
+        let _ = pill_win.set_size(LogicalSize::new(w, h));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn resize_chat_pill(app: AppHandle, expanded: bool) -> Result<(), String> {
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let target_h = if expanded { 580.0 } else { 130.0 };
+        let _ = pill_win.set_size(LogicalSize::new(640.0, target_h));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn set_chat_pill_state(
     app: AppHandle,
     is_awake: Option<bool>,
     is_dark_mode: Option<bool>,
     reply: Option<String>,
+    expanded: Option<bool>,
 ) -> Result<(), String> {
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_always_on_top(true);
+        if let Some(is_exp) = expanded {
+            let target_h = if is_exp { 580.0 } else { 130.0 };
+            let _ = pill_win.set_size(LogicalSize::new(640.0, target_h));
+        }
         if let Some(awake) = is_awake {
             let _ = pill_win.set_ignore_cursor_events(!awake);
             if awake {
@@ -547,6 +575,9 @@ fn set_chat_pill_state(
                 let _ = pill_win.unminimize();
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_focus();
+            } else {
+                let _ = pill_win.hide();
+                let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
             }
         }
     }
@@ -555,6 +586,7 @@ fn set_chat_pill_state(
         "isAwake": is_awake,
         "isDarkMode": is_dark_mode,
         "reply": reply,
+        "expanded": expanded,
     });
     let _ = app.emit("chat-pill-sync", payload);
     Ok(())
@@ -591,13 +623,14 @@ pub fn run() {
             if let Some(pill_win) = app.get_webview_window("chat_pill") {
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_ignore_cursor_events(true);
+                let _ = pill_win.hide();
 
                 if let Ok(Some(monitor)) = pill_win.primary_monitor() {
                     let screen_size = monitor.size();
                     let monitor_pos = monitor.position();
                     let scale = monitor.scale_factor();
 
-                    let win_width = (920.0 * scale) as i32;
+                    let win_width = (640.0 * scale) as i32;
                     let x = monitor_pos.x + ((screen_size.width as i32 - win_width) / 2);
                     // Upper third / top quarter (~15% from top of monitor)
                     let y = monitor_pos.y + ((screen_size.height as f64 * 0.15) as i32);
@@ -673,6 +706,8 @@ pub fn run() {
             get_user_memories,
             save_user_memories,
             set_chat_pill_state,
+            resize_chat_pill,
+            set_chat_pill_size,
             boot_aiden,
             shutdown_aiden,
             restart_aiden,

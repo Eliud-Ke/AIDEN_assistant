@@ -13,6 +13,7 @@ interface ChatPillProps {
   activeUiTag?: string | null;
   isStreaming?: boolean;
   onClearResponse?: () => void;
+  contentRef?: React.Ref<HTMLDivElement>;
 }
 
 export const ChatPill: React.FC<ChatPillProps> = ({
@@ -25,6 +26,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   activeUiTag = null,
   isStreaming = false,
   onClearResponse,
+  contentRef,
 }) => {
   const [inputText, setInputText] = useState("");
   const [isMicActive, setIsMicActive] = useState(false);
@@ -122,7 +124,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   return (
     <div className="chat-pill-anchor">
-      <div className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
+      <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
         {showReplyWindow ? (
           /* ==========================================================================
              EXPANDED STATE: SIRI CONVERSATION CARD (IMAGE 2)
@@ -353,6 +355,7 @@ interface ChatPillSyncPayload {
   isAwake?: boolean | null;
   isDarkMode?: boolean | null;
   reply?: string | null;
+  expanded?: boolean | null;
 }
 
 /**
@@ -371,6 +374,10 @@ export const ChatPillWindow: React.FC = () => {
   const displayedLengthRef = useRef<number>(0);
   const streamEndedRef = useRef<boolean>(false);
   const rafIdRef = useRef<number | null>(null);
+
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastHeightRef = useRef<number>(0);
+  const rafResizeRef = useRef<number | null>(null);
 
   const stopStreamRaf = () => {
     if (rafIdRef.current !== null) {
@@ -415,6 +422,56 @@ export const ChatPillWindow: React.FC = () => {
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
   };
+
+  const hasReplyText = Boolean((replyMessage && replyMessage.length > 0) || isStreaming);
+  const isExpanded = Boolean(activeUiTag || hasReplyText || lastUserPrompt);
+
+  // True dynamic window resizing: measures exact DOM height + allocates shadow breathing room
+  useEffect(() => {
+    if (!isAwake) {
+      invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
+      invoke("set_chat_pill_size", { width: 640, height: 130 }).catch(() => {});
+      lastHeightRef.current = 130;
+      return;
+    }
+
+    const el = contentRef.current;
+    if (!el) return;
+
+    const applyTargetHeight = (rawHeight: number) => {
+      // 18px top padding + 52px bottom shadow breathing room = 70px total vertical clearance
+      const measured = rawHeight > 0 ? rawHeight : (isExpanded ? 220 : 60);
+      const targetHeight = Math.max(130, Math.ceil(measured + 70));
+      if (Math.abs(targetHeight - lastHeightRef.current) >= 2) {
+        lastHeightRef.current = targetHeight;
+        invoke("set_chat_pill_size", { width: 640, height: targetHeight }).catch(() => {});
+      }
+    };
+
+    // Initial measurement
+    applyTargetHeight(el.offsetHeight);
+
+    const observer = new ResizeObserver((entries) => {
+      if (rafResizeRef.current !== null) {
+        cancelAnimationFrame(rafResizeRef.current);
+      }
+      rafResizeRef.current = requestAnimationFrame(() => {
+        for (const entry of entries) {
+          const h = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+          applyTargetHeight(h);
+        }
+      });
+    });
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      if (rafResizeRef.current !== null) {
+        cancelAnimationFrame(rafResizeRef.current);
+      }
+    };
+  }, [isAwake, isExpanded]);
 
   // Sync state events from Tauri main process
   useEffect(() => {
@@ -583,6 +640,7 @@ export const ChatPillWindow: React.FC = () => {
   return (
     <div className="chat-pill-desktop-window">
       <ChatPill
+        contentRef={contentRef}
         isAwake={isAwake}
         isDarkMode={isDarkMode}
         userPrompt={lastUserPrompt}
@@ -593,7 +651,11 @@ export const ChatPillWindow: React.FC = () => {
         onToggleSleep={() => {
           const nextAwake = !isAwake;
           setIsAwake(nextAwake);
-          invoke("set_chat_pill_state", { isAwake: nextAwake }).catch(() => {});
+          if (!nextAwake) {
+            resetReplyState();
+          }
+          invoke("set_chat_pill_state", { isAwake: nextAwake, expanded: false }).catch(() => {});
+          invoke("set_chat_pill_size", { width: 640, height: 130 }).catch(() => {});
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: nextAwake ? "wake" : "sleep" }));
           }

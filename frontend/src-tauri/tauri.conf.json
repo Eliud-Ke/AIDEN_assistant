@@ -27,15 +27,16 @@
         "title": "AIDEN Chat",
         "label": "chat_pill",
         "url": "index.html?window=chat_pill",
-        "width": 920,
-        "height": 720,
+        "width": 640,
+        "height": 130,
         "decorations": false,
         "transparent": true,
-        "resizable": false,
+        "resizable": true,
         "maximizable": false,
         "shadow": false,
         "alwaysOnTop": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {

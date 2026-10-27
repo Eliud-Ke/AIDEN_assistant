@@ -80,10 +80,10 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
     /* Razor-thin specular reflection ONLY on top edge */
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
     /* Deep ambient shadow */
-    0 24px 60px rgba(0, 0, 0, 0.65),
-    0 4px 16px rgba(0, 0, 0, 0.4);
+    0 16px 36px -4px rgba(0, 0, 0, 0.65),
+    0 6px 14px rgba(0, 0, 0, 0.45);
   color: #ffffff;
   transition: box-shadow 0.35s ease;
 }
@@ -115,9 +115,9 @@
     rgba(26, 26, 26, 0.0) 100%
   ) !important;
   box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 24px 60px rgba(0, 0, 0, 0.65),
-    0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 16px 36px -4px rgba(0, 0, 0, 0.65),
+    0 6px 14px rgba(0, 0, 0, 0.45) !important;
 }
 
 @keyframes siriPillBloom {
@@ -341,9 +341,9 @@
    ========================================================================== */
 .siri-card {
   width: 100%;
-  max-width: 520px;
-  min-height: 240px;
-  max-height: 580px;
+  max-width: 560px;
+  min-height: 120px;
+  max-height: 640px;
   border-radius: 28px; /* Large squircle corners */
   display: flex;
   flex-direction: column;
@@ -362,9 +362,9 @@
     rgba(26, 26, 26, 0.0) 100%
   ) !important;
   box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 24px 60px rgba(0, 0, 0, 0.65),
-    0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 16px 36px -4px rgba(0, 0, 0, 0.65),
+    0 6px 14px rgba(0, 0, 0, 0.45) !important;
 }
 
 @keyframes siriCardExpand {
