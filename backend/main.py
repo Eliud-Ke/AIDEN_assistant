@@ -93,71 +93,13 @@ TOOL_STATUS_MAP = {
     "control_media_playback": "CONTROLLING MEDIA",
     "set_system_volume": "ADJUSTING VOLUME",
 
-    # YouTube & Visuals
-    "search_youtube": "SEARCHING YOUTUBE",
-    "open_youtube_video": "OPENING YOUTUBE",
-    "search_images": "SEARCHING IMAGES",
-    "fetch_explanatory_media": "ORGANIZING THOUGHTS",
-
-    # Spotify Integration
-    "search_spotify_catalog": "SCANNING SPOTIFY",
-    "get_currently_playing_metadata": "CHECKING SPOTIFY",
-    "get_user_playlists": "READING LIBRARY",
-    "get_playlist_items": "INSPECTING PLAYLIST",
-
-    # Local Files
-    "search_files": "SCANNING FILES",
-
-    # Mail Utilities
-    "search_emails": "SEARCHING INBOX",
-    "read_email_thread": "READING EMAIL",
-    "mark_email_as_read": "MARKING EMAILS AS READ",
-    "open_email_in_app": "OPENING EMAIL",
-    "draft_email": "DRAFTING EMAIL",
-    "send_email": "SENDING EMAIL",
-
-    # Calendar Utilities
-    "list_calendar_events": "SCANNING CALENDAR",
-    "read_event_details": "READING EVENT DETAILS",
-    "add_calendar_event": "BOOKING EVENT",
-    "update_calendar_event": "UPDATING EVENT",
-    "delete_calendar_event": "DELETING EVENT",
-
-    # Notes Vault (Obsidian & Notion)
-    "get_obsidian_vaults": "SEARCHING VAULTS",
-    "scan_obsidian_vault": "ACCESSING VAULT",
-    "read_obsidian_note": "READING NOTE",
-    "modify_obsidian_note": "EDITING NOTE",
-    "open_obsidian_note": "OPENING NOTE",
-    "map_obsidian_graph": "MAPPING VAULT",
-    "scan_notion_workspace": "SCANNING WORKSPACE",
-    "open_notion_page_in_app": "OPENING PAGE"
+    # Visuals & Explanations
+    "fetch_explanatory_media": "ORGANIZING THOUGHTS"
 }
 
 # ---------------------------------------------------------
 # 1. UI EVENT BRIDGE & ROUTERS
 # ---------------------------------------------------------
-
-
-def emit_ui_event(event_type: str, data=None):
-    """
-    Dispatches structured UI events (e.g. VIDEO_CARDS, IMAGE_CARDS) over the WebSocket bridge
-    and logs a summary to the terminal.
-    """
-    if isinstance(data, list):
-        summary = f"({len(data)} items)"
-    elif isinstance(data, dict):
-        summary = f"(keys: {list(data.keys())})"
-    elif data is not None:
-        summary = f"-> {data}"
-    else:
-        summary = ""
-    print(f"\n🖥️ [UI EVENT | {event_type}] {summary}")
-    server.broadcast_event({
-        "type": "ui_event",
-        "eventType": event_type,
-        "data": data,
-    })
 
 
 def route_connectors(user_prompt, connectors_data):
@@ -226,48 +168,6 @@ def execute_and_intercept(tc_id, func_name, arguments_str):
         result = f"Error executing tool: {str(e)}"
 
     tool_result = str(result)
-
-    # --- UI PAYLOAD INTERCEPTORS ---
-    if func_name == "search_youtube" and tool_result.startswith('{"action": "RENDER_VIDEOS"'):
-        try:
-            payload = json.loads(tool_result)
-            emit_ui_event("VIDEO_CARDS", payload["videos"])
-            links_info = " | ".join(
-                [f"'{v['title']}' (URL: {v['link']})" for v in payload["videos"]])
-            tool_result = (
-                "SYSTEM ACTION COMPLETE: Video cards are now instantly displayed on the user's UI. "
-                "CRITICAL INSTRUCTION: You MUST respond with ONLY a single short sentence like 'I found some videos for you.' "
-                "DO NOT read the titles. DO NOT read the URLs. Keep these URLs in your memory. "
-                "If the user asks you to 'open' or 'play' one of these videos, you MUST use the 'open_in_browser' tool "
-                f"with the exact URL. DO NOT use 'launch_app' for these videos. Available videos: {links_info}"
-            )
-        except Exception as e:
-            tool_result = f"Failed to render videos to UI: {e}"
-
-    elif func_name == "fetch_explanatory_media":
-        try:
-            payload = json.loads(tool_result)
-            if payload.get("status") == "success" and payload.get("images"):
-                emit_ui_event("EXPLANATORY_MEDIA", payload["images"])
-        except Exception:
-            pass
-
-    elif func_name == "search_images" and tool_result.startswith('{"action": "RENDER_IMAGES"'):
-        try:
-            payload = json.loads(tool_result)
-            emit_ui_event("IMAGE_CARDS", payload["images"])
-            img_info = " | ".join(
-                [f"Image: '{img['title']}'" for img in payload["images"]])
-            tool_result = (
-                f"SYSTEM ACTION COMPLETE: Visual image examples are now actively rendered horizontally on the user's UI window. "
-                f"Visual Details Present on UI: {img_info}. "
-                f"CRITICAL INSTRUCTION: Synthesize your final answer explaining the core concept clearly. "
-                f"Acknowledge conversationally that you have pulled up these visual references on their display screen. "
-                f"DO NOT read out raw source URLs or explicit image paths."
-            )
-        except Exception as e:
-            tool_result = f"Failed to render web images to UI: {e}"
-
     print(
         f"   📥 [RESULT]: Data received from {func_name} (Length: {len(tool_result)} chars)")
     return {"role": "tool", "tool_call_id": tc_id, "name": func_name, "content": tool_result}
