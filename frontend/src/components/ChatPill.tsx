@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "./ChatPill.css";
 
 interface ChatPillProps {
@@ -25,6 +26,66 @@ type MessagePart =
   | { type: "text"; text: string }
   | { type: "gallery"; items: MediaGalleryItem[] }
   | { type: "loading_gallery" };
+
+function renderFormattedText(rawText: string): React.ReactNode {
+  if (!rawText) return null;
+  // Regex matches markdown links: [Title](https://...)
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(rawText)) !== null) {
+    if (match.index > lastIndex) {
+      elements.push(rawText.slice(lastIndex, match.index));
+    }
+    const title = match[1];
+    const url = match[2];
+    elements.push(
+      <a
+        key={match.index}
+        href={url}
+        className="siri-markdown-link"
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            openUrl(url).catch(() => window.open(url, "_blank"));
+          } catch {
+            window.open(url, "_blank");
+          }
+        }}
+        title={url}
+      >
+        {title}
+        <svg
+          className="siri-link-icon"
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" />
+          <line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+      </a>
+    );
+    lastIndex = linkRegex.lastIndex;
+  }
+
+  if (lastIndex < rawText.length) {
+    elements.push(rawText.slice(lastIndex));
+  }
+
+  return elements.length > 0 ? elements : rawText;
+}
 
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
@@ -332,7 +393,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     if (part.type === "text") {
                       return (
                         <span key={idx} className="siri-text-block">
-                          {part.text}
+                          {renderFormattedText(part.text)}
                           {isLast && isStreaming && <span className="siri-streaming-cursor" />}
                         </span>
                       );

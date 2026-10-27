@@ -937,3 +937,46 @@
   background: rgba(255, 255, 255, 0.25);
   transform: scale(1.1);
 }
+
+/* ==========================================================================
+   GROUNDED SEARCH CITATION & MARKDOWN LINKS
+   Liquid Glass Citation Badges
+   ========================================================================== */
+.siri-markdown-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #93c5fd;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13.5px;
+  padding: 2px 8px;
+  margin: 1px 3px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+}
+
+.siri-markdown-link:hover {
+  color: #ffffff;
+  background: rgba(59, 130, 246, 0.28);
+  border-color: rgba(147, 197, 253, 0.55);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  transform: translateY(-1.5px);
+  text-decoration: none;
+}
+
+.siri-link-icon {
+  opacity: 0.8;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.siri-markdown-link:hover .siri-link-icon {
+  opacity: 1;
+}

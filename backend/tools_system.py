@@ -885,10 +885,93 @@ def fetch_explanatory_media(query: str, additional_queries: list = None, count: 
 
 
 # ---------------------------------------------------------
+# 20. GROUNDED WEB SEARCH TOOL (OPENAI REAL-TIME RESPONSES)
+# ---------------------------------------------------------
+
+def grounded_web_search(query: str, search_context: str = "medium") -> str:
+    """
+    Performs real-time, grounded web search using OpenAI's native Responses engine.
+    Fetches verified facts, recent events, breaking news, live statistics, and source links.
+    """
+    try:
+        from auth_manager import get_api_key
+        from openai import OpenAI
+
+        api_key = get_api_key()
+        if not api_key:
+            return "Error: No OpenAI API key found for web search."
+
+        client = OpenAI(api_key=api_key)
+
+        depth = search_context.lower() if search_context in ["low", "medium", "high"] else "medium"
+
+        print(f"   [WEB SEARCH]: Querying live web via gpt-6-luna (Depth: {depth}): '{query}'")
+
+        resp = client.responses.create(
+            model="gpt-6-luna",
+            input=(
+                f"Search the live web thoroughly and provide verified, up-to-date facts, dates, context, and sources for:\n"
+                f"\"{query}\"\n\n"
+                f"Focus on accuracy, real-time developments, and concrete source attribution."
+            ),
+            tools=[{"type": "web_search", "search_context_size": depth}]
+        )
+
+        text_parts = []
+        raw_citations = []
+
+        for item in resp.output:
+            if hasattr(item, "content"):
+                for c in item.content:
+                    if hasattr(c, "text") and c.text:
+                        text_parts.append(c.text)
+                    if hasattr(c, "annotations") and c.annotations:
+                        for ann in c.annotations:
+                            if getattr(ann, "type", None) == "url_citation":
+                                raw_citations.append({
+                                    "title": getattr(ann, "title", "Source"),
+                                    "url": getattr(ann, "url", "")
+                                })
+
+        full_grounded_text = "".join(text_parts).strip()
+        if not full_grounded_text:
+            return f"No grounded results could be extracted for query: '{query}'."
+
+        # Deduplicate citations by URL
+        seen_urls = set()
+        unique_sources = []
+        for cit in raw_citations:
+            u = cit.get("url")
+            if u and u not in seen_urls:
+                seen_urls.add(u)
+                unique_sources.append(cit)
+
+        formatted_sources = (
+            "\n".join([f"• [{s['title']}]({s['url']})" for s in unique_sources])
+            if unique_sources
+            else "None explicitly provided."
+        )
+
+        return (
+            f"=== GROUNDED WEB SEARCH RESULTS: \"{query}\" ===\n"
+            f"{full_grounded_text}\n\n"
+            f"=== VERIFIED SOURCES ===\n"
+            f"{formatted_sources}\n\n"
+            f"[SYSTEM DIRECTIVE: Synthesize the verified facts above conversationally for the user in your signature Aiden persona. "
+            f"Ground your answer entirely in these verified findings. At the end of your response, list the most relevant sources "
+            f"as clickable Markdown bullets: • [Source Title](URL). NEVER state you lack real-time information.]"
+        )
+
+    except Exception as e:
+        return f"Error executing grounded web search: {str(e)}"
+
+
+# ---------------------------------------------------------
 # MASTER EXPORT BUCKET
 # ---------------------------------------------------------
 
 SYSTEM_TOOLS = {
+    "grounded_web_search": grounded_web_search,
     "fetch_explanatory_media": fetch_explanatory_media,
     "get_system_telemetry": get_system_telemetry,
     "get_current_time_date": get_current_time_date,

@@ -297,6 +297,35 @@ CORE_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "grounded_web_search",
+            "description": (
+                "Performs real-time, grounded web search to retrieve verified, up-to-date facts, breaking news, "
+                "live sports scores, stock prices, weather/forecasts beyond local PC telemetry, documentation, and events "
+                "post-dating your knowledge cutoff. MANDATORY RULE: You MUST call this tool whenever the user asks about "
+                "current events, recent developments, real-time facts, people or entity updates, or questions requiring live verification. "
+                "Returns verified synthesized points and source links."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The specific, targeted search query to find live facts and sources for (e.g. 'latest OpenAI news', '2026 World Cup qualifiers standings', 'current price of gold', 'Python 3.14 changes').",
+                    },
+                    "search_context": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Depth of web search context. Defaults to 'medium'. Use 'high' for complex multi-source research.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fetch_explanatory_media",
             "description": "Retrieves a set of exactly 4 rich, high-resolution explanatory visual images to illustrate an explanation. MANDATORY RULE: You MUST call this tool whenever answering questions that involve explanations, concepts, history, landmarks, places, science, technology, famous figures, animals, or any topic benefiting from visual illustration. Each tool call returns exactly 4 images for a single horizontal row. If your explanation covers multiple distinct eras or topics, call this tool multiple times (once for each section). In your response text, insert each 4-image row at the exact contextually relevant position (at the beginning before text, between paragraphs, or at the end) using this exact markdown tag: ::media-gallery[image_url_1 | Caption 1, image_url_2 | Caption 2, image_url_3 | Caption 3, image_url_4 | Caption 4]::",
             "parameters": {

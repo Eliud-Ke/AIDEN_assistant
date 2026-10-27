@@ -94,7 +94,10 @@ TOOL_STATUS_MAP = {
     "set_system_volume": "ADJUSTING VOLUME",
 
     # Visuals & Explanations
-    "fetch_explanatory_media": "ORGANIZING THOUGHTS"
+    "fetch_explanatory_media": "ORGANIZING THOUGHTS",
+
+    # Web & Grounding
+    "grounded_web_search": "SEARCHING THE WEB"
 }
 
 # ---------------------------------------------------------
