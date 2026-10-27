@@ -71,12 +71,65 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isAwake, showReplyWindow]);
 
-  // Auto-scroll stream to bottom as reply text streams in
+  // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
-    if (streamContainerRef.current) {
-      streamContainerRef.current.scrollTop = streamContainerRef.current.scrollHeight;
+    if (userPrompt && streamContainerRef.current) {
+      streamContainerRef.current.scrollTop = 0;
     }
-  }, [responseMessage, isStreaming, userPrompt]);
+  }, [userPrompt]);
+
+  // Dynamic smooth edge fade mask for scrollable stream container (smooth edge transitions, zero clipping)
+  useLayoutEffect(() => {
+    const el = streamContainerRef.current;
+    if (!el) return;
+
+    const updateMask = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const maxScroll = scrollHeight - clientHeight;
+
+      // If content doesn't overflow, keep it completely crisp with no mask
+      if (maxScroll <= 2) {
+        if (el.dataset.currentMask !== "none") {
+          el.dataset.currentMask = "none";
+          el.style.maskImage = "none";
+          el.style.webkitMaskImage = "none";
+        }
+        return;
+      }
+
+      // Smooth continuous fade depth based on scroll position (up to 28px)
+      const topFade = Math.min(28, Math.max(0, scrollTop));
+      const bottomFade = Math.min(28, Math.max(0, maxScroll - scrollTop));
+
+      const topStop = topFade > 0 ? `transparent 0%, black ${topFade}px` : `black 0px`;
+      const bottomStop = bottomFade > 0 ? `black calc(100% - ${bottomFade}px), transparent 100%` : `black 100%`;
+
+      const mask = `linear-gradient(to bottom, ${topStop}, ${bottomStop})`;
+      if (el.dataset.currentMask !== mask) {
+        el.dataset.currentMask = mask;
+        el.style.maskImage = mask;
+        el.style.webkitMaskImage = mask;
+      }
+    };
+
+    updateMask();
+
+    const onScroll = () => {
+      updateMask();
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateMask();
+    });
+    resizeObserver.observe(el);
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      resizeObserver.disconnect();
+    };
+  }, [showReplyWindow, responseMessage, userPrompt]);
 
   const updateSelection = (el: HTMLInputElement | null) => {
     if (el) {

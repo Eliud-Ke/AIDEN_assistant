@@ -526,22 +526,24 @@
   z-index: 2;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 4px 6px 14px 4px;
-  margin-bottom: 8px;
+  padding: 8px 8px 18px 8px;
+  margin-bottom: 6px;
   max-height: 420px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+
+  /* Invisible scrollbar across all rendering engines while maintaining full scrollability */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .siri-card-stream::-webkit-scrollbar {
-  width: 5px;
-}
-.siri-card-stream::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
-  border-radius: 9999px;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 /* User Prompt Bubble on the right (from Image 2) */
