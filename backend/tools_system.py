@@ -957,7 +957,7 @@ def grounded_web_search(query: str, search_context: str = "medium") -> str:
             f"{full_grounded_text}\n\n"
             f"=== VERIFIED SOURCES ===\n"
             f"{formatted_sources}\n\n"
-            f"[SYSTEM DIRECTIVE: Synthesize the verified facts above conversationally for the user in your signature Aiden persona. "
+            f"[SYSTEM DIRECTIVE: Synthesize the verified facts above conversationally for the user in your signature Aiden persona. Do not copy raw markdown headers like ## or ###; format sections using numbers or capitalized titles and bullets. "
             f"Ground your answer entirely in these verified findings. At the end of your response, list the most relevant sources "
             f"as clickable Markdown bullets: • [Source Title](URL). NEVER state you lack real-time information.]"
         )

@@ -23,6 +23,9 @@ AGENT_NAME = "Aiden"
 
 FORMATTING_VIBE = (
     "Do not use asterisks for emphasis, use CAPS for emphasis instead (only on single words). "
+    "NEVER use Markdown hashtags for headings (strictly NO #, ##, ###, ####). "
+    "NEVER use triple backticks (```) or markdown code fences. "
+    "Format sections, headings, and steps using numbers (1., 2.), capital labels (e.g., STEP 1:, OVERVIEW:), and Unicode bullets (•). "
     "Use emojis naturally to express your current mood."
 )
 

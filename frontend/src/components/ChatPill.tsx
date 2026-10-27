@@ -29,15 +29,22 @@ type MessagePart =
 
 function renderFormattedText(rawText: string): React.ReactNode {
   if (!rawText) return null;
+
+  // Clean strip any accidental Markdown heading hashes (#, ##, ###) and triple backticks
+  const cleanedText = rawText
+    .replace(/^[ \t]*#{1,6}[ \t]*/gm, "")
+    .replace(/```[a-zA-Z0-9_-]*/g, "")
+    .replace(/```/g, "");
+
   // Regex matches markdown links: [Title](https://...)
   const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
   const elements: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = linkRegex.exec(rawText)) !== null) {
+  while ((match = linkRegex.exec(cleanedText)) !== null) {
     if (match.index > lastIndex) {
-      elements.push(rawText.slice(lastIndex, match.index));
+      elements.push(cleanedText.slice(lastIndex, match.index));
     }
     const title = match[1];
     const url = match[2];
@@ -80,11 +87,11 @@ function renderFormattedText(rawText: string): React.ReactNode {
     lastIndex = linkRegex.lastIndex;
   }
 
-  if (lastIndex < rawText.length) {
-    elements.push(rawText.slice(lastIndex));
+  if (lastIndex < cleanedText.length) {
+    elements.push(cleanedText.slice(lastIndex));
   }
 
-  return elements.length > 0 ? elements : rawText;
+  return elements.length > 0 ? elements : cleanedText;
 }
 
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
