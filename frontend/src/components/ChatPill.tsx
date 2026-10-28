@@ -550,11 +550,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="2.4"
+                    strokeWidth="2.1"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
-                    <polyline points="6 9 12 15 18 9" />
+                    <path d="M4 14V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
+                    <rect x="8" y="8" width="13" height="12" rx="2.5" fill="rgba(255, 255, 255, 0.2)" />
                   </svg>
                 </button>
               )}
@@ -832,6 +833,12 @@ export const ChatPillWindow: React.FC = () => {
 
   const hasReplyText = Boolean((replyMessage && replyMessage.length > 0) || isStreaming);
   const isExpanded = Boolean(hasReplyText);
+  const isThinking = Boolean(!hasReplyText && activeUiTag);
+  const currentMode: "idle" | "thinking" | "responding" = hasReplyText
+    ? "responding"
+    : isThinking
+    ? "thinking"
+    : "idle";
 
   // Manage sleep exit animation & native window hide timing
   useEffect(() => {
@@ -874,9 +881,9 @@ export const ChatPillWindow: React.FC = () => {
       // 18px top padding + 52px bottom shadow breathing room = 70px total vertical clearance
       const measured = rawHeight > 0 ? rawHeight : (isExpanded ? 220 : 60);
       const targetHeight = Math.max(130, Math.ceil(measured + 70));
-      if (Math.abs(targetHeight - lastHeightRef.current) >= 2) {
+      if (Math.abs(targetHeight - lastHeightRef.current) >= 2 || currentMode === "thinking") {
         lastHeightRef.current = targetHeight;
-        invoke("set_chat_pill_size", { width: 640, height: targetHeight }).catch(() => {});
+        invoke("set_chat_pill_size", { width: 640, height: targetHeight, pillMode: currentMode }).catch(() => {});
       }
     };
 
@@ -903,7 +910,7 @@ export const ChatPillWindow: React.FC = () => {
         cancelAnimationFrame(rafResizeRef.current);
       }
     };
-  }, [isAwake, isExpanded]);
+  }, [isAwake, isExpanded, currentMode]);
 
   // Sync state events from Tauri main process
   useEffect(() => {
