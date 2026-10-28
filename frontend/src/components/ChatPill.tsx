@@ -238,6 +238,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const [isMultiline, setIsMultiline] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [hasRevealedFollowup, setHasRevealedFollowup] = useState(false);
+  const followupInputRef = useRef<HTMLInputElement>(null);
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
   const cardInputRef = useRef<HTMLTextAreaElement>(null);
   const pillMeasureRef = useRef<HTMLSpanElement>(null);
@@ -254,6 +258,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     : "idle";
 
   const showReplyWindow = pillMode === "responding";
+
+  // Reset follow-up reveal state when leaving responding mode
+  useEffect(() => {
+    if (pillMode !== "responding") {
+      setHasRevealedFollowup(false);
+    }
+  }, [pillMode]);
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
 
@@ -451,8 +462,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
         <div
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
-            isMultiline && pillMode === "idle" ? "multiline" : ""
-          } ${isDarkMode ? "dark-mode" : "light-mode"}`}
+            hasRevealedFollowup ? "revealed" : ""
+          } ${
+            isHovered || isInputFocused || inputText.trim().length > 0 ? "hover-active" : ""
+          } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
+            isDarkMode ? "dark-mode" : "light-mode"
+          }`}
+          onMouseEnter={() => {
+            setIsHovered(true);
+            if (pillMode === "responding") {
+              setHasRevealedFollowup(true);
+            }
+          }}
+          onMouseLeave={() => setIsHovered(false)}
         >
           {/* 1. IDLE / INPUT STATE */}
           {pillMode === "idle" && (
@@ -525,6 +547,35 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           {/* 3. RESPONDING STATE (Expands back to full length and vertically into glass window) */}
           {pillMode === "responding" && (
             <>
+              {/* Floating Circular Glass Close Button (Top-Right) */}
+              {onClearResponse && (
+                <button
+                  type="button"
+                  className="siri-floating-close-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHasRevealedFollowup(false);
+                    onClearResponse();
+                  }}
+                  title="Close (Esc)"
+                  aria-label="Close response"
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+
               {activeUiTag && (
                 <div className="siri-responding-header">
                   <div className="siri-responding-header-left">
@@ -600,6 +651,118 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     })}
                   </div>
                 )}
+              </div>
+
+              {/* Apple-style Persistent Follow-up Command Bar */}
+              <div
+                className={`siri-hover-followup-bar ${
+                  hasRevealedFollowup || isInputFocused || inputText.trim().length > 0 ? "revealed" : ""
+                }`}
+              >
+                <div className="siri-apple-command-bar">
+                  {/* Left: Circular Frosted Glass Plus Button */}
+                  <button
+                    type="button"
+                    className="siri-command-glass-btn plus-btn"
+                    title="Add attachment or action"
+                    aria-label="Add"
+                    tabIndex={hasRevealedFollowup ? 0 : -1}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </button>
+
+                  {/* Center: Frosted Capsule Input with "Ask Aiden" placeholder */}
+                  <div className="siri-command-capsule">
+                    <input
+                      ref={followupInputRef}
+                      type="text"
+                      className="siri-command-input"
+                      placeholder="Ask Aiden"
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      onFocus={() => setIsInputFocused(true)}
+                      onBlur={() => setIsInputFocused(false)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSend();
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          if (selectedLightboxImage) {
+                            setSelectedLightboxImage(null);
+                          } else if (onClearResponse) {
+                            setHasRevealedFollowup(false);
+                            onClearResponse();
+                          }
+                        }
+                      }}
+                      spellCheck={false}
+                    />
+                  </div>
+
+                  {/* Right: Circular Frosted Glass Mic Button OR Send Button */}
+                  {!isSubmitting && inputText.trim().length > 0 ? (
+                    <button
+                      type="button"
+                      className="siri-send-btn command-send-btn"
+                      onClick={handleSend}
+                      title="Send follow up (Enter)"
+                      aria-label="Send"
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="12" y1="19" x2="12" y2="5" />
+                        <polyline points="5 12 12 5 19 12" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="siri-command-glass-btn mic-btn"
+                      title="Dictate with Siri"
+                      aria-label="Voice input"
+                      tabIndex={hasRevealedFollowup ? 0 : -1}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {selectedLightboxImage && (
