@@ -1347,10 +1347,11 @@
   width: 100%;
 }
 
-/* Turn 2+ Stage: Each follow-up turn acts as a full-page canvas so that
-   the previous response can be scrolled cleanly off the top of the viewport */
-.siri-turn-item.pending-turn,
-.siri-turn-item:not(:first-child) {
+/* Turn 2+ Stage: ONLY the active or pending turn gets the stage height so that
+   the previous response can be scrolled cleanly off the top of the viewport.
+   Past turns collapse to their natural text height so spacing between replies and bubbles is always clean and consistent! */
+.siri-unified-stream .siri-turn-item.pending-turn,
+.siri-unified-stream .siri-turn-item:not(:first-child):last-child {
   min-height: 520px;
   min-height: calc(100% - 36px);
   box-sizing: border-box;
