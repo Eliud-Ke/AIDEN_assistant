@@ -258,7 +258,9 @@
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 
@@ -656,7 +658,6 @@
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   padding-top: 12px;
   margin-top: auto;
@@ -731,6 +732,7 @@
 
 .siri-card-input-capsule {
   flex: 1;
+  width: 100%;
   min-height: 42px;
   height: auto;
   background: rgba(0, 0, 0, 0.25); /* Deep recessed neutral tint, zero milky white haze */
@@ -738,15 +740,29 @@
   border-radius: 9999px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 8px 0 16px;
   box-sizing: border-box;
   transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, border-radius 0.2s ease;
 }
 
 .siri-card-input-capsule.multiline {
   border-radius: 20px;
-  padding: 8px 16px;
-  align-items: flex-start;
+  padding: 8px 8px 8px 16px;
+  align-items: flex-end;
+}
+
+.siri-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.siri-card-input-capsule.multiline .siri-card-actions {
+  margin-bottom: 2px;
 }
 
 .siri-card-input-capsule:focus-within {

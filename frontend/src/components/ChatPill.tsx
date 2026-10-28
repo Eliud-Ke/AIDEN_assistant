@@ -191,8 +191,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   contentRef,
 }) => {
   const [inputText, setInputText] = useState("");
-  const [isMicActive, setIsMicActive] = useState(false);
-  const [isVisionActive, setIsVisionActive] = useState(false);
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
 
   // Dynamic Shining Cursor tracking
@@ -527,20 +525,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               </div>
             )}
 
-            {/* Bottom Input Capsule Bar from Image 2 */}
+            {/* Bottom Input Capsule Bar */}
             <div className={`siri-card-bottom-bar ${isMultiline ? "multiline" : ""}`}>
-              <button
-                type="button"
-                className={`siri-card-action-btn ${isVisionActive ? "active" : ""}`}
-                onClick={() => setIsVisionActive((prev) => !prev)}
-                title={isVisionActive ? "Screen context active" : "Add screen context"}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-
               <div className={`siri-card-input-capsule ${isMultiline ? "multiline" : ""}`}>
                 <div className="siri-input-track">
                   {/* Invisible text measurer */}
@@ -559,7 +545,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     ref={cardInputRef}
                     rows={1}
                     className={`siri-card-input ${isMultiline ? "multiline" : ""}`}
-                    placeholder={isMicActive ? "Listening..." : "Ask Aiden"}
+                    placeholder="Ask Aiden"
                     value={inputText}
                     onChange={(e) => {
                       setInputText(e.target.value);
@@ -573,34 +559,23 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     spellCheck={false}
                   />
                 </div>
+
+                <div className="siri-card-actions">
+                  {inputText.trim().length > 0 && (
+                    <button
+                      type="button"
+                      className="siri-send-btn"
+                      onClick={handleSend}
+                      title="Send message (Enter)"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="19" x2="12" y2="5" />
+                        <polyline points="5 12 12 5 19 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
-
-              <button
-                type="button"
-                className={`siri-card-action-btn ${isMicActive ? "mic-listening active" : ""}`}
-                onClick={() => setIsMicActive((prev) => !prev)}
-                title={isMicActive ? "Mute microphone" : "Speak to Aiden"}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              </button>
-
-              {inputText.trim().length > 0 && (
-                <button
-                  type="button"
-                  className="siri-send-btn"
-                  onClick={handleSend}
-                  title="Send message (Enter)"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="19" x2="12" y2="5" />
-                    <polyline points="5 12 12 5 19 12" />
-                  </svg>
-                </button>
-              )}
             </div>
           </div>
         ) : (
@@ -626,7 +601,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   ref={pillInputRef}
                   rows={1}
                   className={`siri-pill-input ${isMultiline ? "multiline" : ""}`}
-                  placeholder={isMicActive ? "Listening for speech..." : "Search or Ask"}
+                  placeholder="Search or Ask"
                   value={inputText}
                   onChange={(e) => {
                     setInputText(e.target.value);
@@ -643,20 +618,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             </div>
 
             <div className="siri-pill-actions">
-              {/* Apple-Style Microphone Button */}
-              <button
-                type="button"
-                className={`siri-pill-btn ${isMicActive ? "mic-listening active" : ""}`}
-                onClick={() => setIsMicActive((prev) => !prev)}
-                title={isMicActive ? "Mute microphone" : "Speak to Aiden"}
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              </button>
-
               {/* Send Button */}
               {inputText.trim().length > 0 && (
                 <button
