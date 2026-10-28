@@ -7,6 +7,9 @@ use std::time::Duration;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+#[cfg(target_os = "windows")]
+mod composition;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -17,6 +20,10 @@ use tauri::{
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct BackendState(Mutex<Option<Child>>);
+
+#[cfg(target_os = "windows")]
+struct CompositionState(std::sync::Mutex<Option<composition::CompositionHost>>);
+
 
 fn find_bundled_engine() -> Option<PathBuf> {
     if let Ok(exe_path) = std::env::current_exe() {
@@ -225,6 +232,17 @@ fn shutdown_aiden(
         let _ = pill_win.set_ignore_cursor_events(true);
         let _ = pill_win.hide();
         let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
+
+        #[cfg(target_os = "windows")]
+        {
+            let comp_state = app.state::<CompositionState>();
+            if let Ok(guard) = comp_state.0.lock() {
+                if let Some(host) = guard.as_ref() {
+                    let _ = host.set_visible(false);
+                    let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                }
+            }
+        }
     }
     let _ = app.emit(
         "chat-pill-sync",
@@ -253,6 +271,17 @@ fn restart_aiden(
         let _ = pill_win.set_ignore_cursor_events(true);
         let _ = pill_win.hide();
         let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
+
+        #[cfg(target_os = "windows")]
+        {
+            let comp_state = app.state::<CompositionState>();
+            if let Ok(guard) = comp_state.0.lock() {
+                if let Some(host) = guard.as_ref() {
+                    let _ = host.set_visible(false);
+                    let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                }
+            }
+        }
     }
     let _ = app.emit(
         "chat-pill-sync",
@@ -541,6 +570,18 @@ fn set_chat_pill_size(app: AppHandle, width: Option<f64>, height: f64) -> Result
         let w = width.unwrap_or(640.0);
         let h = height.max(80.0).min(960.0);
         let _ = pill_win.set_size(LogicalSize::new(w, h));
+
+        #[cfg(target_os = "windows")]
+        {
+            let comp_state = app.state::<CompositionState>();
+            if let Ok(guard) = comp_state.0.lock() {
+                if let Some(host) = guard.as_ref() {
+                    let card_h = (h - 70.0).max(60.0) as f32;
+                    let radius = if card_h > 80.0 { 28.0 } else { 30.0 };
+                    let _ = host.update_shape(40.0, 18.0, 560.0, card_h, radius);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -560,6 +601,17 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
         let _ = pill_win.set_ignore_cursor_events(true);
         let _ = pill_win.hide();
         let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
+
+        #[cfg(target_os = "windows")]
+        {
+            let comp_state = app.state::<CompositionState>();
+            if let Ok(guard) = comp_state.0.lock() {
+                if let Some(host) = guard.as_ref() {
+                    let _ = host.set_visible(false);
+                    let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -577,16 +629,56 @@ fn set_chat_pill_state(
         if let Some(is_exp) = expanded {
             let target_h = if is_exp { 580.0 } else { 130.0 };
             let _ = pill_win.set_size(LogicalSize::new(640.0, target_h));
+
+            #[cfg(target_os = "windows")]
+            {
+                let comp_state = app.state::<CompositionState>();
+                if let Ok(guard) = comp_state.0.lock() {
+                    if let Some(host) = guard.as_ref() {
+                        let (w, h, r) = if is_exp {
+                            (560.0, 510.0, 28.0)
+                        } else {
+                            (560.0, 60.0, 30.0)
+                        };
+                        let _ = host.update_shape(40.0, 18.0, w, h, r);
+                    }
+                }
+            }
         }
         if let Some(awake) = is_awake {
             let _ = pill_win.set_ignore_cursor_events(!awake);
             if awake {
+                #[cfg(target_os = "windows")]
+                {
+                    let comp_state = app.state::<CompositionState>();
+                    if let Ok(guard) = comp_state.0.lock() {
+                        if let Some(host) = guard.as_ref() {
+                            let _ = host.set_visible(true);
+                            if expanded != Some(true) {
+                                let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                            }
+                        }
+                    }
+                }
+
                 let _ = pill_win.show();
                 let _ = pill_win.unminimize();
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_focus();
             } else {
                 let _ = pill_win.set_ignore_cursor_events(true);
+
+                #[cfg(target_os = "windows")]
+                {
+                    let comp_state = app.state::<CompositionState>();
+                    if let Ok(guard) = comp_state.0.lock() {
+                        if let Some(host) = guard.as_ref() {
+                            // Immediately hide and reset the composition shape so no lingering blur box hangs in mid-air
+                            let _ = host.set_visible(false);
+                            let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                        }
+                    }
+                }
             }
         }
     }
@@ -622,6 +714,7 @@ fn show_main_window(app: AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .manage(BackendState(Mutex::new(None)))
+        .manage(CompositionState(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -633,6 +726,24 @@ pub fn run() {
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_ignore_cursor_events(true);
                 let _ = pill_win.hide();
+
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = pill_win.hwnd() {
+                        match composition::CompositionHost::attach(hwnd, 40.0, 18.0, 560.0, 60.0, 30.0) {
+                            Ok(host) => {
+                                let comp_state = app.state::<CompositionState>();
+                                if let Ok(mut guard) = comp_state.0.lock() {
+                                    *guard = Some(host);
+                                }
+                                println!("[DWM] Windows.UI.Composition HostBackdrop attached to chat_pill!");
+                            }
+                            Err(e) => {
+                                eprintln!("[DWM] Failed attaching Windows.UI.Composition: {:?}", e);
+                            }
+                        }
+                    }
+                }
 
                 if let Ok(Some(monitor)) = pill_win.primary_monitor() {
                     let screen_size = monitor.size();
