@@ -4,9 +4,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "./ChatPill.css";
 
+export interface ChatTurn {
+  id: string;
+  userPrompt?: string | null;
+  assistantReply: string;
+  isStreaming?: boolean;
+}
+
 interface ChatPillProps {
   isAwake: boolean;
   isDarkMode: boolean;
+  turns?: ChatTurn[];
+  followupThinkingPrompt?: string | null;
   userPrompt?: string | null;
   onSendMessage?: (message: string) => void;
   onToggleSleep?: () => void;
@@ -217,9 +226,26 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
   return parts;
 }
 
+export const AppleConstellationSpinner: React.FC = () => (
+  <span className="siri-apple-constellation" aria-hidden="true">
+    <svg className="constellation-svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle className="c-dot c-dot-1" cx="12" cy="3.5" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-2" cx="18" cy="6" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-3" cx="20.5" cy="12" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-4" cx="18" cy="18" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-5" cx="12" cy="20.5" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-6" cx="6" cy="18" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-7" cx="3.5" cy="12" r="1.6" fill="currentColor" />
+      <circle className="c-dot c-dot-8" cx="6" cy="6" r="1.6" fill="currentColor" />
+    </svg>
+  </span>
+);
+
 export const ChatPill: React.FC<ChatPillProps> = ({
   isAwake,
   isDarkMode,
+  turns,
+  followupThinkingPrompt = null,
   userPrompt = null,
   onSendMessage,
   onToggleSleep,
@@ -248,7 +274,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const cardMeasureRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
-  const hasReplyText = Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
+  const activeTurns: ChatTurn[] = turns && turns.length > 0
+    ? turns
+    : responseMessage
+    ? [{ id: "single-turn", userPrompt: null, assistantReply: responseMessage, isStreaming }]
+    : [];
+
+  const hasTurns = activeTurns.length > 0;
+  const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
 
   const pillMode: "idle" | "thinking" | "responding" = hasReplyText
@@ -308,6 +341,17 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       streamContainerRef.current.scrollTop = 0;
     }
   }, [userPrompt]);
+
+  // Auto-scroll stream container to bottom when follow-up bubble is added or streaming
+  useLayoutEffect(() => {
+    if (streamContainerRef.current) {
+      const el = streamContainerRef.current;
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [activeTurns, followupThinkingPrompt, isStreaming]);
 
   // Dynamic smooth edge fade mask for scrollable stream container (smooth edge transitions, zero clipping)
   useLayoutEffect(() => {
@@ -432,6 +476,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const trimmed = inputText.trim();
     if (!trimmed || isSubmitting) return;
     setIsSubmitting(true);
+    if (showReplyWindow) {
+      setHasRevealedFollowup(true);
+    }
     if (onSendMessage) {
       onSendMessage(trimmed);
     }
@@ -560,7 +607,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 </button>
               )}
 
-              {activeUiTag && (
+              {activeUiTag && !followupThinkingPrompt && (
                 <div className="siri-responding-header">
                   <div className="siri-responding-header-left">
                     <div className="siri-card-status-tag" key={activeUiTag}>
@@ -579,60 +626,87 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               )}
 
               <div ref={streamContainerRef} className="siri-unified-stream">
-                {responseMessage && (
-                  <div className="siri-assistant-reply">
-                    {parseMessageWithGalleries(responseMessage, isStreaming).map((part, idx, arr) => {
-                      const isLast = idx === arr.length - 1;
-                      if (part.type === "text") {
-                        const lines = splitIntoSpringLines(part.text);
-                        return (
-                          <div key={idx} className="siri-text-block">
-                            {lines.map((line, lineIdx) => {
-                              const isLastLine = lineIdx === lines.length - 1;
-                              return (
-                                <span
-                                  key={lineIdx}
-                                  className="siri-spring-line"
-                                  style={{
-                                    animationDelay: isStreaming ? "0ms" : `${lineIdx * 45}ms`,
-                                  }}
-                                >
-                                  {renderFormattedText(line)}
-                                  {isLastLine && isLast && isStreaming && (
-                                    <span className="siri-streaming-cursor" />
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        );
-                      }
+                {activeTurns.map((turn) => (
+                  <div key={turn.id} className="siri-turn-item">
+                    {/* Turn 2+ user prompt bubble (Turn 1 has userPrompt === null, so zero bubble!) */}
+                    {turn.userPrompt && (
+                      <div className="siri-user-followup-wrap">
+                        <div className="siri-user-followup-bubble">{turn.userPrompt}</div>
+                      </div>
+                    )}
 
-                      if (part.type === "loading_gallery") {
-                        return (
-                          <div key={idx} className="siri-media-gallery loading">
-                            <div className="siri-media-skeleton" />
-                            <div className="siri-media-skeleton" />
-                            <div className="siri-media-skeleton" />
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={idx} className="siri-media-gallery">
-                          {part.items.map((item, imgIdx) => (
-                            <div
-                              key={imgIdx}
-                              className="siri-media-card"
-                              onClick={() => setSelectedLightboxImage(item)}
-                              title={item.title ? `${item.title} (Click to enlarge)` : "Click to enlarge"}
-                            >
-                              <img src={item.url} alt={item.title || "Image"} className="siri-media-img" />
-                              {item.title && <span className="siri-media-caption">{item.title}</span>}
+                    {/* Assistant Reply for this turn */}
+                    {turn.assistantReply && (
+                      <div className="siri-assistant-reply">
+                        {parseMessageWithGalleries(turn.assistantReply, Boolean(turn.isStreaming)).map((part, idx, arr) => {
+                          const isLast = idx === arr.length - 1;
+                          if (part.type === "text") {
+                            const lines = splitIntoSpringLines(part.text);
+                            return (
+                              <div key={idx} className="siri-text-block">
+                                {lines.map((line, lineIdx) => {
+                                  const isLastLine = lineIdx === lines.length - 1;
+                                  return (
+                                    <span
+                                      key={lineIdx}
+                                      className="siri-spring-line"
+                                      style={{
+                                        animationDelay: turn.isStreaming ? "0ms" : `${lineIdx * 45}ms`,
+                                      }}
+                                    >
+                                      {renderFormattedText(line)}
+                                      {isLastLine && isLast && turn.isStreaming && (
+                                        <span className="siri-streaming-cursor" />
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+
+                          if (part.type === "loading_gallery") {
+                            return (
+                              <div key={idx} className="siri-media-gallery loading">
+                                <div className="siri-media-skeleton" />
+                                <div className="siri-media-skeleton" />
+                                <div className="siri-media-skeleton" />
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={idx} className="siri-media-gallery">
+                              {part.items.map((item, imgIdx) => (
+                                <div
+                                  key={imgIdx}
+                                  className="siri-media-card"
+                                  onClick={() => setSelectedLightboxImage(item)}
+                                  title={item.title ? `${item.title} (Click to enlarge)` : "Click to enlarge"}
+                                >
+                                  <img src={item.url} alt={item.title || "Image"} className="siri-media-img" />
+                                  {item.title && <span className="siri-media-caption">{item.title}</span>}
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* In-Flight Follow-up Prompt Bubble + Constellation Spinner (Shown while Turn 2+ is thinking) */}
+                {followupThinkingPrompt && (
+                  <div className="siri-turn-item pending-turn">
+                    <div className="siri-user-followup-wrap">
+                      <div className="siri-user-followup-bubble animated-spawn">
+                        {followupThinkingPrompt}
+                      </div>
+                    </div>
+                    <div className="siri-instream-thinking">
+                      <AppleConstellationSpinner />
+                      <span className="siri-instream-thinking-text">{formatStatusTag(activeUiTag || "Thinking")}</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -771,10 +845,15 @@ interface ChatPillSyncPayload {
 export const ChatPillWindow: React.FC = () => {
   const [isAwake, setIsAwake] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
-  const [replyMessage, setReplyMessage] = useState<string | null>(null);
-  const [lastUserPrompt, setLastUserPrompt] = useState<string | null>(null);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [followupThinkingPrompt, setFollowupThinkingPrompt] = useState<string | null>(null);
   const [activeUiTag, setActiveUiTag] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+
+  const turnsRef = useRef<ChatTurn[]>([]);
+  turnsRef.current = turns;
+  const followupThinkingPromptRef = useRef<string | null>(null);
+  const currentTurnIdRef = useRef<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const targetTextRef = useRef<string>("");
@@ -794,10 +873,11 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  const startSmoothStreamLoop = () => {
+  const startSmoothStreamLoop = (turnId: string) => {
     if (rafIdRef.current !== null) return;
 
     const tick = () => {
+      const activeId = currentTurnIdRef.current || turnId;
       const target = targetTextRef.current;
       const currentLen = displayedLengthRef.current;
 
@@ -806,9 +886,14 @@ export const ChatPillWindow: React.FC = () => {
         const step = Math.max(1, Math.min(Math.ceil(remaining / 3), 6));
         const nextLen = Math.min(currentLen + step, target.length);
         displayedLengthRef.current = nextLen;
-        setReplyMessage(target.slice(0, nextLen));
+        const sliced = target.slice(0, nextLen);
+        setTurns((prev) =>
+          prev.map((t) => (t.id === activeId ? { ...t, assistantReply: sliced, isStreaming: true } : t))
+        );
       } else if (streamEndedRef.current) {
-        setReplyMessage(target);
+        setTurns((prev) =>
+          prev.map((t) => (t.id === activeId ? { ...t, assistantReply: target, isStreaming: false } : t))
+        );
         setIsStreaming(false);
         stopStreamRaf();
         return;
@@ -822,8 +907,10 @@ export const ChatPillWindow: React.FC = () => {
 
   const resetReplyState = () => {
     stopStreamRaf();
-    setLastUserPrompt(null);
-    setReplyMessage(null);
+    currentTurnIdRef.current = null;
+    followupThinkingPromptRef.current = null;
+    setFollowupThinkingPrompt(null);
+    setTurns([]);
     setActiveUiTag(null);
     setIsStreaming(false);
     targetTextRef.current = "";
@@ -831,7 +918,7 @@ export const ChatPillWindow: React.FC = () => {
     streamEndedRef.current = false;
   };
 
-  const hasReplyText = Boolean((replyMessage && replyMessage.length > 0) || isStreaming);
+  const hasReplyText = turns.length > 0 || Boolean(followupThinkingPrompt) || isStreaming;
   const isExpanded = Boolean(hasReplyText);
   const isThinking = Boolean(!hasReplyText && activeUiTag);
   const currentMode: "idle" | "thinking" | "responding" = hasReplyText
@@ -927,7 +1014,7 @@ export const ChatPillWindow: React.FC = () => {
             setIsDarkMode(payload.isDarkMode);
           }
           if (typeof payload.reply === "string") {
-            setReplyMessage(payload.reply);
+            setTurns([{ id: "sync-turn", userPrompt: null, assistantReply: payload.reply }]);
           }
         });
       } catch {
@@ -976,32 +1063,78 @@ export const ChatPillWindow: React.FC = () => {
               streamEndedRef.current = false;
               setIsStreaming(true);
               setActiveUiTag(null);
-              setReplyMessage("");
-              startSmoothStreamLoop();
+
+              const newTurnId = "turn-" + Date.now();
+              currentTurnIdRef.current = newTurnId;
+              const userPromptForTurn = followupThinkingPromptRef.current;
+              followupThinkingPromptRef.current = null;
+              setFollowupThinkingPrompt(null);
+
+              const newTurn: ChatTurn = {
+                id: newTurnId,
+                userPrompt: userPromptForTurn, // null for Turn 1, user query string for Turn 2+
+                assistantReply: "",
+                isStreaming: true,
+              };
+
+              setTurns((prev) => [...prev, newTurn]);
+              startSmoothStreamLoop(newTurnId);
             } else if (msgType === "stream_chunk") {
               setIsStreaming(true);
               setActiveUiTag(null);
+
+              if (!currentTurnIdRef.current) {
+                const newTurnId = "turn-" + Date.now();
+                currentTurnIdRef.current = newTurnId;
+                const userPromptForTurn = followupThinkingPromptRef.current;
+                followupThinkingPromptRef.current = null;
+                setFollowupThinkingPrompt(null);
+                const newTurn: ChatTurn = {
+                  id: newTurnId,
+                  userPrompt: userPromptForTurn,
+                  assistantReply: "",
+                  isStreaming: true,
+                };
+                setTurns((prev) => [...prev, newTurn]);
+              }
+
               if (typeof data.fullContent === "string") {
                 targetTextRef.current = data.fullContent;
               } else if (typeof data.token === "string") {
                 targetTextRef.current += data.token;
               }
-              startSmoothStreamLoop();
+              if (currentTurnIdRef.current) {
+                startSmoothStreamLoop(currentTurnIdRef.current);
+              }
             } else if (msgType === "stream_end") {
               setActiveUiTag(null);
               if (typeof data.fullContent === "string") {
                 targetTextRef.current = data.fullContent;
               }
               streamEndedRef.current = true;
-              startSmoothStreamLoop();
+              if (currentTurnIdRef.current) {
+                startSmoothStreamLoop(currentTurnIdRef.current);
+              }
             } else if (msgType === "error") {
               stopStreamRaf();
               setIsStreaming(false);
               setActiveUiTag("Error");
               const errText = String(data.message || "An unexpected error occurred.");
-              targetTextRef.current = errText;
-              displayedLengthRef.current = errText.length;
-              setReplyMessage(errText);
+              const userPromptForTurn = followupThinkingPromptRef.current;
+              followupThinkingPromptRef.current = null;
+              setFollowupThinkingPrompt(null);
+
+              const errorTurnId = "error-" + Date.now();
+              currentTurnIdRef.current = null;
+              setTurns((prev) => [
+                ...prev,
+                {
+                  id: errorTurnId,
+                  userPrompt: userPromptForTurn,
+                  assistantReply: errText,
+                  isStreaming: false,
+                },
+              ]);
             }
           } catch {
             // Ignore malformed frames
@@ -1050,10 +1183,19 @@ export const ChatPillWindow: React.FC = () => {
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
-    setLastUserPrompt(msg);
-    setReplyMessage(null);
-    setActiveUiTag("THINKING");
     setIsStreaming(false);
+
+    if (turnsRef.current.length === 0) {
+      // Turn 1: No previous conversation -> morph into capsule thinking pill
+      followupThinkingPromptRef.current = null;
+      setFollowupThinkingPrompt(null);
+      setActiveUiTag("THINKING");
+    } else {
+      // Turn 2+: Follow-up query -> keep window expanded, spawn follow-up bubble + in-stream thinking loader!
+      followupThinkingPromptRef.current = msg;
+      setFollowupThinkingPrompt(msg);
+      setActiveUiTag("Thinking");
+    }
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
@@ -1064,7 +1206,17 @@ export const ChatPillWindow: React.FC = () => {
       );
     } else {
       setActiveUiTag("Offline");
-      setReplyMessage("Aiden's backend is not running. Boot up Aiden from the Control Panel first.");
+      const offlineMsg = "Aiden's backend is not running. Boot up Aiden from the Control Panel first.";
+      if (turnsRef.current.length === 0) {
+        setTurns([{ id: "offline", userPrompt: null, assistantReply: offlineMsg, isStreaming: false }]);
+      } else {
+        setTurns((prev) => [
+          ...prev,
+          { id: "offline-" + Date.now(), userPrompt: msg, assistantReply: offlineMsg, isStreaming: false },
+        ]);
+        setFollowupThinkingPrompt(null);
+        followupThinkingPromptRef.current = null;
+      }
     }
   };
 
@@ -1074,8 +1226,8 @@ export const ChatPillWindow: React.FC = () => {
         contentRef={contentRef}
         isAwake={isAwake}
         isDarkMode={isDarkMode}
-        userPrompt={lastUserPrompt}
-        responseMessage={replyMessage}
+        turns={turns}
+        followupThinkingPrompt={followupThinkingPrompt}
         activeUiTag={activeUiTag}
         isStreaming={isStreaming}
         onClearResponse={resetReplyState}
