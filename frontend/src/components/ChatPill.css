@@ -634,6 +634,38 @@
   100% { opacity: 1; transform: translateY(0); }
 }
 
+/* Springy Floating Line Entrance (Apple Intelligence line-by-line reveal) */
+.siri-spring-line {
+  display: block;
+  margin-bottom: 6px;
+  line-height: 1.55;
+  animation: siriLineSpring 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity, filter;
+  transform-origin: left bottom;
+}
+
+.siri-spring-line:last-child {
+  margin-bottom: 0;
+}
+
+@keyframes siriLineSpring {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+    filter: blur(3px);
+  }
+  65% {
+    opacity: 0.95;
+    transform: translateY(-1px) scale(1.002);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
 /* Live Streaming Cursor */
 .siri-streaming-cursor {
   display: inline-block;

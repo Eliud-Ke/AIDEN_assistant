@@ -94,6 +94,45 @@ function renderFormattedText(rawText: string): React.ReactNode {
   return elements.length > 0 ? elements : cleanedText;
 }
 
+function splitIntoSpringLines(text: string): string[] {
+  if (!text) return [];
+
+  const rawParagraphs = text.split("\n");
+  const result: string[] = [];
+
+  for (const para of rawParagraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) continue;
+
+    // Splits paragraphs into sentences/clauses on punctuation (. ! ?) followed by whitespace & capital/emoji
+    const sentenceRegex = /([.!?]+[\s]+)(?=[A-Z0-9\p{Emoji}])/gu;
+    let lastIdx = 0;
+    let match: RegExpExecArray | null;
+
+    const sentences: string[] = [];
+    while ((match = sentenceRegex.exec(para)) !== null) {
+      const end = match.index + match[1].length;
+      const segment = para.slice(lastIdx, end).trim();
+      if (segment) {
+        sentences.push(segment);
+      }
+      lastIdx = end;
+    }
+    const remainder = para.slice(lastIdx).trim();
+    if (remainder) {
+      sentences.push(remainder);
+    }
+
+    if (sentences.length > 0) {
+      result.push(...sentences);
+    } else {
+      result.push(trimmed);
+    }
+  }
+
+  return result.length > 0 ? result : [text];
+}
+
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
@@ -442,11 +481,27 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   {parseMessageWithGalleries(responseMessage, isStreaming).map((part, idx, arr) => {
                     const isLast = idx === arr.length - 1;
                     if (part.type === "text") {
+                      const lines = splitIntoSpringLines(part.text);
                       return (
-                        <span key={idx} className="siri-text-block">
-                          {renderFormattedText(part.text)}
-                          {isLast && isStreaming && <span className="siri-streaming-cursor" />}
-                        </span>
+                        <div key={idx} className="siri-text-block">
+                          {lines.map((line, lineIdx) => {
+                            const isLastLine = lineIdx === lines.length - 1;
+                            return (
+                              <span
+                                key={lineIdx}
+                                className="siri-spring-line"
+                                style={{
+                                  animationDelay: isStreaming ? "0ms" : `${lineIdx * 45}ms`,
+                                }}
+                              >
+                                {renderFormattedText(line)}
+                                {isLastLine && isLast && isStreaming && (
+                                  <span className="siri-streaming-cursor" />
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
                       );
                     }
                     if (part.type === "loading_gallery") {
