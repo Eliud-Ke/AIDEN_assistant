@@ -1224,13 +1224,13 @@
 .siri-unified-pill.mode-responding {
   width: 100%;
   max-width: 560px;
-  min-height: 100px;
+  min-height: 120px;
   height: auto;
-  max-height: 600px;
+  max-height: 620px;
   border-radius: 28px;
   display: flex;
   flex-direction: column;
-  padding: 16px 18px 18px 18px;
+  padding: 16px 18px 20px 18px;
   animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1) forwards;
 }
 
@@ -1252,23 +1252,24 @@
   }
 }
 
-/* Floating Circular Glass Close Button (Top-Right of Responding Window) */
+/* Floating Circular Glass Minimize Button (Top-Right of Responding Window) */
 .siri-floating-close-btn {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 26px;
-  height: 26px;
+  top: 16px;
+  right: 18px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(38, 38, 42, 0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  /* Glass specular edge shine */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38), 0 2px 8px rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  /* Specular glass edge shine */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 8px rgba(0, 0, 0, 0.35);
   color: #ffffff;
   cursor: pointer;
   z-index: 15;
@@ -1281,10 +1282,10 @@
 }
 
 .siri-floating-close-btn:hover {
-  background: rgba(58, 58, 64, 0.88);
+  background: rgba(255, 255, 255, 0.20);
   border-color: rgba(255, 255, 255, 0.28);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 3px 10px rgba(0, 0, 0, 0.5);
-  transform: scale(1.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 14px rgba(0, 0, 0, 0.45);
+  transform: scale(1.06);
 }
 
 .siri-floating-close-btn:active {
@@ -1300,7 +1301,7 @@
   width: 100%;
   height: 24px;
   margin-bottom: 4px;
-  padding-right: 36px; /* Clearance for floating close button */
+  padding-right: 56px; /* Clearance for 48px floating minimize button */
   box-sizing: border-box;
 }
 
@@ -1318,9 +1319,9 @@
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  /* Generously moved text lower for luxury spacing below floating close button */
-  padding: 28px 34px 10px 10px;
+  gap: 12px;
+  /* Generously moved text lower for luxury spacing below 48px floating minimize button */
+  padding: 52px 34px 24px 10px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1359,7 +1360,7 @@
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
-  margin-top: 14px;
+  margin-top: 28px; /* Doubled spacing between last response line and command bar */
   overflow: visible; /* Prevents button scale from clipping on hover */
 }
 

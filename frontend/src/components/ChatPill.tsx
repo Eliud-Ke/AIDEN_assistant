@@ -531,7 +531,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           {/* 3. RESPONDING STATE (Expands back to full length and vertically into glass window) */}
           {pillMode === "responding" && (
             <>
-              {/* Floating Circular Glass Close Button (Top-Right) */}
+              {/* Floating Circular Glass Minimize Button (Top-Right) */}
               {onClearResponse && (
                 <button
                   type="button"
@@ -541,21 +541,20 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     setHasRevealedFollowup(false);
                     onClearResponse();
                   }}
-                  title="Close (Esc)"
-                  aria-label="Close response"
+                  title="Minimize (Esc)"
+                  aria-label="Minimize"
                 >
                   <svg
-                    width="11"
-                    height="11"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="2.6"
+                    strokeWidth="2.4"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
+                    <polyline points="6 9 12 15 18 9" />
                   </svg>
                 </button>
               )}
