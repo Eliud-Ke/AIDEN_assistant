@@ -342,16 +342,34 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [userPrompt]);
 
-  // Auto-scroll stream container to bottom when follow-up bubble is added or streaming
+  // Option A: Single smooth scroll when a follow-up prompt is submitted.
+  // Scrolls the container so the newly submitted turn lands near the top of the viewport,
+  // sliding the previous turn upward. Token streaming NEVER touches or hijacks the scroll!
+  const lastScrolledFollowupRef = useRef<string | null>(null);
+
   useLayoutEffect(() => {
-    if (streamContainerRef.current) {
-      const el = streamContainerRef.current;
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior: "smooth",
-      });
+    if (!followupThinkingPrompt || !streamContainerRef.current) {
+      if (!followupThinkingPrompt) {
+        lastScrolledFollowupRef.current = null;
+      }
+      return;
     }
-  }, [activeTurns, followupThinkingPrompt, isStreaming]);
+    if (lastScrolledFollowupRef.current === followupThinkingPrompt) return;
+    lastScrolledFollowupRef.current = followupThinkingPrompt;
+
+    requestAnimationFrame(() => {
+      const container = streamContainerRef.current;
+      if (!container) return;
+      const pendingEl = container.querySelector(".siri-turn-item.pending-turn") as HTMLElement | null;
+      if (pendingEl) {
+        const targetTop = pendingEl.offsetTop - 56;
+        container.scrollTo({
+          top: Math.max(0, targetTop),
+          behavior: "smooth",
+        });
+      }
+    });
+  }, [followupThinkingPrompt]);
 
   // Dynamic smooth edge fade mask for scrollable stream container (smooth edge transitions, zero clipping)
   useLayoutEffect(() => {
@@ -372,9 +390,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         return;
       }
 
-      // Smooth continuous fade depth based on scroll position (up to 28px)
-      const topFade = Math.min(28, Math.max(0, scrollTop));
-      const bottomFade = Math.min(28, Math.max(0, maxScroll - scrollTop));
+      // Smooth continuous fade depth based on scroll position
+      // Top fade: dissolves smoothly under the floating minimize button
+      const topFade = Math.min(32, Math.max(0, scrollTop));
+      // Bottom fade: ONLY dissolves at the very bottom edge curvature (below the floating command bar)
+      const bottomFade = Math.min(20, Math.max(0, maxScroll - scrollTop));
 
       const topStop = topFade > 0 ? `transparent 0%, black ${topFade}px` : `black 0px`;
       const bottomStop = bottomFade > 0 ? `black calc(100% - ${bottomFade}px), transparent 100%` : `black 100%`;
@@ -404,7 +424,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       el.removeEventListener("scroll", onScroll);
       resizeObserver.disconnect();
     };
-  }, [showReplyWindow, responseMessage, userPrompt]);
+  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt]);
 
   const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
