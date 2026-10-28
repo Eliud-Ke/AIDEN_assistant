@@ -148,7 +148,7 @@
   flex: 1;
   min-height: 28px;
   height: auto;
-  margin-right: 12px;
+  margin-right: 0;
   overflow: visible;
 }
 
@@ -1150,7 +1150,7 @@
   border-radius: 9999px;
   display: flex;
   align-items: center;
-  padding: 0 16px 0 24px;
+  padding: 0 24px;
 }
 
 /* MODE 2: THINKING (Shrinks by 1/3 in width with elastic spring) */
@@ -1226,11 +1226,11 @@
   max-width: 560px;
   min-height: 100px;
   height: auto;
-  max-height: 580px;
+  max-height: 600px;
   border-radius: 28px;
   display: flex;
   flex-direction: column;
-  padding: 14px 18px 16px 18px;
+  padding: 16px 18px 18px 18px;
   animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1) forwards;
 }
 
@@ -1312,14 +1312,15 @@
 .siri-unified-stream {
   position: relative;
   z-index: 2;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* Moved text downwards to make space for floating close button */
-  padding: 14px 34px 8px 8px;
+  /* Generously moved text lower for luxury spacing below floating close button */
+  padding: 28px 34px 10px 10px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1334,6 +1335,7 @@
    APPLE-STYLE PERSISTENT FOLLOW-UP COMMAND BAR ("Ask Aiden")
    ========================================================================== */
 .siri-hover-followup-bar {
+  flex-shrink: 0; /* Ensures bar is never pushed out or truncated */
   width: 100%;
   max-height: 0;
   opacity: 0;
@@ -1341,7 +1343,7 @@
   pointer-events: none;
   overflow: hidden;
   margin-top: 0;
-  padding: 0 2px;
+  padding: 0;
   box-sizing: border-box;
   transition: 
     max-height 0.4s cubic-bezier(0.18, 1.25, 0.32, 1),
@@ -1353,27 +1355,30 @@
 /* Once hovered or active, remains gracefully in expanded state */
 .siri-hover-followup-bar.revealed,
 .siri-hover-followup-bar.active {
-  max-height: 58px;
+  max-height: 84px;
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
-  margin-top: 12px;
+  margin-top: 14px;
+  overflow: visible; /* Prevents button scale from clipping on hover */
 }
 
-/* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic/Send] */
+/* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
 .siri-apple-command-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
+  padding: 4px 0;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 /* Circular Frosted Glass Action Buttons (+ and Mic) */
 .siri-command-glass-btn {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.11);
   backdrop-filter: blur(20px);
@@ -1398,7 +1403,7 @@
 .siri-command-glass-btn:hover {
   background: rgba(255, 255, 255, 0.20);
   border-color: rgba(255, 255, 255, 0.28);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 12px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 14px rgba(0, 0, 0, 0.45);
   transform: scale(1.06);
 }
 
@@ -1409,8 +1414,8 @@
 /* Center Frosted Capsule Field ("Ask Aiden") */
 .siri-command-capsule {
   flex: 1;
-  height: 36px;
-  min-height: 36px;
+  height: 48px;
+  min-height: 48px;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(16px);
@@ -1419,7 +1424,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 20px;
   box-sizing: border-box;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
@@ -1438,9 +1443,9 @@
   outline: none;
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 14.5px;
+  font-size: 15.5px;
   font-weight: 400;
-  line-height: 36px;
+  line-height: 48px;
   padding: 0;
   margin: 0;
   caret-color: #ffffff;
@@ -1449,12 +1454,4 @@
 .siri-command-input::placeholder {
   color: rgba(255, 255, 255, 0.46);
   letter-spacing: 0.15px;
-}
-
-/* Luminous Circular Send Button matching button diameter */
-.siri-send-btn.command-send-btn {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  flex-shrink: 0;
 }
