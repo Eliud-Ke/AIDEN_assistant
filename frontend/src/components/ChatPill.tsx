@@ -237,6 +237,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [cursorLeft, setCursorLeft] = useState(0);
 
   const [isMultiline, setIsMultiline] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
   const cardInputRef = useRef<HTMLTextAreaElement>(null);
   const pillMeasureRef = useRef<HTMLSpanElement>(null);
@@ -244,7 +245,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
   const hasReplyText = Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
-  const showReplyWindow = Boolean(activeUiTag || hasReplyText || userPrompt);
+  const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
+
+  const pillMode: "idle" | "thinking" | "responding" = hasReplyText
+    ? "responding"
+    : isThinking
+    ? "thinking"
+    : "idle";
+
+  const showReplyWindow = pillMode === "responding";
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
 
@@ -256,21 +265,31 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [inputText, selectionIndex, showReplyWindow]);
 
-  // Auto-focus the active input when woken up or transitioning views
+  // Auto-focus input when in idle mode
   useEffect(() => {
-    if (isAwake) {
+    if (isAwake && pillMode === "idle") {
       const timer = window.setTimeout(() => {
-        if (showReplyWindow) {
-          cardInputRef.current?.focus();
-          setSelectionIndex(cardInputRef.current?.selectionStart ?? inputText.length);
-        } else {
-          pillInputRef.current?.focus();
-          setSelectionIndex(pillInputRef.current?.selectionStart ?? inputText.length);
-        }
-      }, 150);
+        pillInputRef.current?.focus();
+        setSelectionIndex(pillInputRef.current?.selectionStart ?? inputText.length);
+      }, 120);
       return () => clearTimeout(timer);
     }
-  }, [isAwake, showReplyWindow]);
+  }, [isAwake, pillMode]);
+
+  // Global Escape key listener to collapse response back to pill
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (selectedLightboxImage) {
+          setSelectedLightboxImage(null);
+        } else if (pillMode === "responding" && onClearResponse) {
+          onClearResponse();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [selectedLightboxImage, pillMode, onClearResponse]);
 
   // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
@@ -400,7 +419,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const handleSend = () => {
     const trimmed = inputText.trim();
-    if (!trimmed) return;
+    if (!trimmed || isSubmitting) return;
+    setIsSubmitting(true);
     if (onSendMessage) {
       onSendMessage(trimmed);
     }
@@ -408,6 +428,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setSelectionIndex(0);
     setCursorLeft(0);
     resetTextarea();
+    window.setTimeout(() => {
+      setIsSubmitting(false);
+    }, 450);
   };
 
   const formatStatusTag = (raw: string): string => {
@@ -426,169 +449,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   return (
     <div className="chat-pill-anchor">
       <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
-        {showReplyWindow ? (
-          /* ==========================================================================
-             EXPANDED STATE: SIRI CONVERSATION CARD (IMAGE 2)
-             ========================================================================== */
-          <div className={`siri-card siri-glass ${isDarkMode ? "dark-mode" : "light-mode"}`}>
-            {/* Card Header Bar: Status/Orb on left, Minimize Button on right (no 'x' button) */}
-            <div className="siri-card-header">
-              {/* Shimmering Status Tag + Tiny String Orb */}
-              {activeUiTag ? (
-                <div className="siri-card-status-tag" key={activeUiTag}>
-                  <span className="siri-string-orb" aria-hidden="true">
-                    <svg className="string-orb-svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                      <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                      <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                      <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
-                    </svg>
-                  </span>
-                  <span className="siri-status-text">{formatStatusTag(activeUiTag)}</span>
-                </div>
-              ) : (
-                <div className="siri-card-header-spacer" />
-              )}
-
-              {/* Minimize / Contract Button on top right (returns expanded UI back to Search or Ask) */}
-              {onClearResponse && (
-                <button
-                  type="button"
-                  className="siri-card-header-btn"
-                  onClick={onClearResponse}
-                  title="Minimize to Search or Ask (Esc)"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="4 14 10 14 10 20" />
-                    <polyline points="20 10 14 10 14 4" />
-                    <line x1="14" y1="10" x2="21" y2="3" />
-                    <line x1="3" y1="21" x2="10" y2="14" />
-                  </svg>
-                </button>
-              )}
-            </div>
-
-            {/* Conversation Stream: User Prompt Bubble on right + Assistant Answer on left */}
-            <div ref={streamContainerRef} className="siri-card-stream">
-              {userPrompt && (
-                <div className="siri-user-prompt-pill">
-                  {userPrompt}
-                </div>
-              )}
-
-              {responseMessage && (
-                <div className="siri-assistant-reply">
-                  {parseMessageWithGalleries(responseMessage, isStreaming).map((part, idx, arr) => {
-                    const isLast = idx === arr.length - 1;
-                    if (part.type === "text") {
-                      const lines = splitIntoSpringLines(part.text);
-                      return (
-                        <div key={idx} className="siri-text-block">
-                          {lines.map((line, lineIdx) => {
-                            const isLastLine = lineIdx === lines.length - 1;
-                            return (
-                              <span
-                                key={lineIdx}
-                                className="siri-spring-line"
-                                style={{
-                                  animationDelay: isStreaming ? "0ms" : `${lineIdx * 45}ms`,
-                                }}
-                              >
-                                {renderFormattedText(line)}
-                                {isLastLine && isLast && isStreaming && (
-                                  <span className="siri-streaming-cursor" />
-                                )}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
-                    if (part.type === "loading_gallery") {
-                      return (
-                        <div key={idx} className="siri-media-gallery loading">
-                          <div className="siri-media-skeleton" />
-                          <div className="siri-media-skeleton" />
-                          <div className="siri-media-skeleton" />
-                          <div className="siri-media-skeleton" />
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={idx} className="siri-media-gallery">
-                        {part.items.map((item, imgIdx) => (
-                          <div
-                            key={imgIdx}
-                            className="siri-media-card"
-                            onClick={() => setSelectedLightboxImage(item)}
-                            title={item.title ? `${item.title} (Click to enlarge)` : "Click to enlarge"}
-                          >
-                            <img
-                              src={item.url}
-                              alt={item.title || "Explanatory media"}
-                              className="siri-media-img"
-                              loading="lazy"
-                              onError={(e) => {
-                                const parent = e.currentTarget.parentElement;
-                                if (parent) parent.style.display = "none";
-                              }}
-                            />
-                            {item.title && (
-                              <div className="siri-media-caption-bar">
-                                <span className="siri-media-caption">{item.title}</span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {!responseMessage && isStreaming && (
-                <div className="siri-assistant-reply">
-                  <span className="siri-streaming-cursor" />
-                </div>
-              )}
-            </div>
-
-            {/* Lightbox Full Image Preview Modal */}
-            {selectedLightboxImage && (
-              <div className="siri-media-lightbox" onClick={() => setSelectedLightboxImage(null)}>
-                <div className="siri-media-lightbox-content" onClick={(e) => e.stopPropagation()}>
-                  <img
-                    src={selectedLightboxImage.url}
-                    alt={selectedLightboxImage.title}
-                    className="siri-lightbox-img"
-                  />
-                  <div className="siri-lightbox-bar">
-                    <span className="siri-lightbox-title">{selectedLightboxImage.title}</span>
-                    <button
-                      type="button"
-                      className="siri-lightbox-close"
-                      onClick={() => setSelectedLightboxImage(null)}
-                      title="Close (Esc)"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Bottom Input Capsule Bar */}
-            <div className={`siri-card-bottom-bar ${isMultiline ? "multiline" : ""}`}>
-              <div className={`siri-card-input-capsule ${isMultiline ? "multiline" : ""}`}>
+        <div
+          className={`siri-unified-pill siri-glass mode-${pillMode} ${
+            isMultiline && pillMode === "idle" ? "multiline" : ""
+          } ${isDarkMode ? "dark-mode" : "light-mode"}`}
+        >
+          {/* 1. IDLE / INPUT STATE */}
+          {pillMode === "idle" && (
+            <>
+              <div className="siri-pill-input-wrap">
                 <div className="siri-input-track">
-                  {/* Invisible text measurer */}
-                  <span ref={cardMeasureRef} className="siri-measure-text" aria-hidden="true">
+                  <span ref={pillMeasureRef} className="siri-measure-text" aria-hidden="true">
                     {cursorPrefix}
                   </span>
-                  {/* Real Shining Animated Cursor */}
                   {!isMultiline && (
                     <span
                       className="siri-shining-cursor"
@@ -597,10 +470,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     />
                   )}
                   <textarea
-                    ref={cardInputRef}
+                    ref={pillInputRef}
                     rows={1}
-                    className={`siri-card-input ${isMultiline ? "multiline" : ""}`}
-                    placeholder="Ask Aiden"
+                    className={`siri-pill-input ${isMultiline ? "multiline" : ""}`}
+                    placeholder="Search or Ask"
                     value={inputText}
                     onChange={(e) => {
                       setInputText(e.target.value);
@@ -614,82 +487,149 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     spellCheck={false}
                   />
                 </div>
-
-                <div className="siri-card-actions">
-                  {inputText.trim().length > 0 && (
-                    <button
-                      type="button"
-                      className="siri-send-btn"
-                      onClick={handleSend}
-                      title="Send message (Enter)"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="19" x2="12" y2="5" />
-                        <polyline points="5 12 12 5 19 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
               </div>
-            </div>
-          </div>
-        ) : (
-          /* ==========================================================================
-             IDLE / INPUT STATE: SLEEK SIRI CAPSULE PILL (IMAGE 1)
-             ========================================================================== */
-          <div className={`siri-pill-capsule siri-glass ${isMultiline ? "multiline" : ""} ${isDarkMode ? "dark-mode" : "light-mode"}`}>
-            <div className="siri-pill-input-wrap">
-              <div className="siri-input-track">
-                {/* Invisible text measurer */}
-                <span ref={pillMeasureRef} className="siri-measure-text" aria-hidden="true">
-                  {cursorPrefix}
-                </span>
-                {/* Real Shining Animated Cursor */}
-                {!isMultiline && (
-                  <span
-                    className="siri-shining-cursor"
-                    style={{ left: `${cursorLeft}px` }}
-                    aria-hidden="true"
-                  />
+
+              <div className="siri-pill-actions">
+                {!isSubmitting && inputText.trim().length > 0 && (
+                  <button
+                    type="button"
+                    className="siri-send-btn"
+                    onClick={handleSend}
+                    title="Send message (Enter)"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="19" x2="12" y2="5" />
+                      <polyline points="5 12 12 5 19 12" />
+                    </svg>
+                  </button>
                 )}
-                <textarea
-                  ref={pillInputRef}
-                  rows={1}
-                  className={`siri-pill-input ${isMultiline ? "multiline" : ""}`}
-                  placeholder="Search or Ask"
-                  value={inputText}
-                  onChange={(e) => {
-                    setInputText(e.target.value);
-                    updateSelection(e.target);
-                    adjustTextareaHeight(e.target);
-                  }}
-                  onSelect={(e) => updateSelection(e.currentTarget)}
-                  onKeyUp={(e) => updateSelection(e.currentTarget)}
-                  onClick={(e) => updateSelection(e.currentTarget)}
-                  onKeyDown={handleKeyDown}
-                  spellCheck={false}
-                />
               </div>
-            </div>
+            </>
+          )}
 
-            <div className="siri-pill-actions">
-              {/* Send Button */}
-              {inputText.trim().length > 0 && (
-                <button
-                  type="button"
-                  className="siri-send-btn"
-                  onClick={handleSend}
-                  title="Send message (Enter)"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="19" x2="12" y2="5" />
-                    <polyline points="5 12 12 5 19 12" />
-                  </svg>
-                </button>
-              )}
+          {/* 2. THINKING STATE (Pill shrinks by 1/3, glowing pulse, shows status tag) */}
+          {pillMode === "thinking" && (
+            <div className="siri-thinking-content">
+              <span className="siri-string-orb thinking-orb" aria-hidden="true">
+                <svg className="string-orb-svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                  <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                  <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                  <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
+                </svg>
+              </span>
+              <span className="siri-thinking-text">{formatStatusTag(activeUiTag || "Thinking")}</span>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* 3. RESPONDING STATE (Expands back to full length and vertically into glass window) */}
+          {pillMode === "responding" && (
+            <>
+              {activeUiTag && (
+                <div className="siri-responding-header">
+                  <div className="siri-responding-header-left">
+                    <div className="siri-card-status-tag" key={activeUiTag}>
+                      <span className="siri-string-orb" aria-hidden="true">
+                        <svg className="string-orb-svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                          <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                          <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                          <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                          <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
+                        </svg>
+                      </span>
+                      <span className="siri-status-text">{formatStatusTag(activeUiTag)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={streamContainerRef} className="siri-unified-stream">
+                {responseMessage && (
+                  <div className="siri-assistant-reply">
+                    {parseMessageWithGalleries(responseMessage, isStreaming).map((part, idx, arr) => {
+                      const isLast = idx === arr.length - 1;
+                      if (part.type === "text") {
+                        const lines = splitIntoSpringLines(part.text);
+                        return (
+                          <div key={idx} className="siri-text-block">
+                            {lines.map((line, lineIdx) => {
+                              const isLastLine = lineIdx === lines.length - 1;
+                              return (
+                                <span
+                                  key={lineIdx}
+                                  className="siri-spring-line"
+                                  style={{
+                                    animationDelay: isStreaming ? "0ms" : `${lineIdx * 45}ms`,
+                                  }}
+                                >
+                                  {renderFormattedText(line)}
+                                  {isLastLine && isLast && isStreaming && (
+                                    <span className="siri-streaming-cursor" />
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        );
+                      }
+
+                      if (part.type === "loading_gallery") {
+                        return (
+                          <div key={idx} className="siri-media-gallery loading">
+                            <div className="siri-media-skeleton" />
+                            <div className="siri-media-skeleton" />
+                            <div className="siri-media-skeleton" />
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={idx} className="siri-media-gallery">
+                          {part.items.map((item, imgIdx) => (
+                            <div
+                              key={imgIdx}
+                              className="siri-media-card"
+                              onClick={() => setSelectedLightboxImage(item)}
+                              title={item.title ? `${item.title} (Click to enlarge)` : "Click to enlarge"}
+                            >
+                              <img src={item.url} alt={item.title || "Image"} className="siri-media-img" />
+                              {item.title && <span className="siri-media-caption">{item.title}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {selectedLightboxImage && (
+                <div className="siri-lightbox-overlay" onClick={() => setSelectedLightboxImage(null)}>
+                  <div className="siri-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                    <img
+                      src={selectedLightboxImage.url}
+                      alt={selectedLightboxImage.title || "Preview"}
+                      className="siri-lightbox-img"
+                    />
+                    <div className="siri-lightbox-bar">
+                      <span className="siri-lightbox-title">{selectedLightboxImage.title}</span>
+                      <button
+                        type="button"
+                        className="siri-lightbox-close"
+                        onClick={() => setSelectedLightboxImage(null)}
+                        title="Close (Esc)"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -769,7 +709,7 @@ export const ChatPillWindow: React.FC = () => {
   };
 
   const hasReplyText = Boolean((replyMessage && replyMessage.length > 0) || isStreaming);
-  const isExpanded = Boolean(activeUiTag || hasReplyText || lastUserPrompt);
+  const isExpanded = Boolean(hasReplyText);
 
   // Manage sleep exit animation & native window hide timing
   useEffect(() => {

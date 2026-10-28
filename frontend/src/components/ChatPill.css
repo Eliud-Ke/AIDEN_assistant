@@ -384,7 +384,8 @@
   display: flex;
   flex-direction: column;
   padding: 16px 18px 16px 18px;
-  animation: siriCardExpand 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: siriCardExpandBouncy 0.44s cubic-bezier(0.18, 1.18, 0.3, 1) forwards;
+  transform-origin: center top;
   /* Top dark vignette, rich grey body, gradual smooth fade across 76%-86% into transparent */
   background: linear-gradient(
     180deg,
@@ -403,14 +404,24 @@
     0 6px 14px rgba(0, 0, 0, 0.45) !important;
 }
 
-@keyframes siriCardExpand {
+@keyframes siriCardExpandBouncy {
   0% {
     opacity: 0;
-    transform: translateY(-10px) scale(0.97);
+    transform: translateY(-8px) scale(0.94);
+    filter: blur(4px);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translateY(2px) scale(1.02);
+    filter: blur(0px);
+  }
+  75% {
+    transform: translateY(-0.8px) scale(0.995);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0px);
   }
 }
 
@@ -1086,4 +1097,219 @@
 
 .siri-markdown-link:hover .siri-link-icon {
   opacity: 1;
+}
+
+/* ==========================================================================
+   UNIFIED SIRI GLASS PILL (ONE SINGLE MORPHING CONTAINER)
+   ========================================================================== */
+.siri-unified-pill {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  box-sizing: border-box;
+  overflow: hidden;
+  will-change: width, max-width, min-height, height, transform, border-radius;
+  cursor: default;
+
+  /* Shared Ultra-Clear Apple Glass Material */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.94) 0%,
+    rgba(8, 8, 8, 0.86) 28%,
+    rgba(20, 20, 20, 0.72) 62%,
+    rgba(22, 22, 22, 0.60) 74%,
+    rgba(24, 24, 24, 0.44) 80%,
+    rgba(26, 26, 26, 0.24) 86%,
+    rgba(26, 26, 26, 0.10) 92%,
+    rgba(26, 26, 26, 0.0) 100%
+  ) !important;
+  backdrop-filter: blur(28px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 16px 36px -4px rgba(0, 0, 0, 0.65),
+    0 6px 14px rgba(0, 0, 0, 0.45) !important;
+
+  /* Continuous Apple Spring Morphing between modes */
+  transition: 
+    width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
+    max-width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
+    min-height 0.35s cubic-bezier(0.18, 1.15, 0.3, 1),
+    border-radius 0.32s ease,
+    padding 0.32s ease,
+    box-shadow 0.25s ease;
+}
+
+/* MODE 1: IDLE / INPUT */
+.siri-unified-pill.mode-idle {
+  width: 100%;
+  max-width: 560px;
+  min-height: 60px;
+  height: auto;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px 0 24px;
+}
+
+/* MODE 2: THINKING (Shrinks by 1/3 in width with elastic spring) */
+.siri-unified-pill.mode-thinking {
+  width: 370px;
+  max-width: 370px;
+  min-height: 52px;
+  height: auto;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 22px;
+  animation: pillThinkingPulse 2.2s infinite ease-in-out;
+}
+
+@keyframes pillThinkingPulse {
+  0%, 100% {
+    box-shadow: 
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 16px 36px -4px rgba(0, 0, 0, 0.65),
+      0 0 14px rgba(255, 255, 255, 0.08) !important;
+  }
+  50% {
+    box-shadow: 
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 16px 36px -4px rgba(0, 0, 0, 0.65),
+      0 0 22px rgba(255, 255, 255, 0.22) !important;
+  }
+}
+
+.siri-thinking-content {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  animation: thinkingFade 0.25s ease forwards;
+}
+
+@keyframes thinkingFade {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.siri-thinking-text {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0.3px;
+  color: #ffffff;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.65) 0%,
+    #ffffff 50%,
+    rgba(255, 255, 255, 0.65) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinkingShimmer 2.2s infinite linear;
+}
+
+@keyframes thinkingShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* MODE 3: RESPONDING (Expands back to full length and vertically into glass answer window) */
+.siri-unified-pill.mode-responding {
+  width: 100%;
+  max-width: 560px;
+  min-height: 100px;
+  height: auto;
+  max-height: 580px;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px 16px 18px;
+  animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1) forwards;
+}
+
+@keyframes siriRespondingBouncy {
+  0% {
+    opacity: 0.5;
+    transform: translateY(-8px) scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.018);
+  }
+  75% {
+    transform: translateY(-0.8px) scale(0.996);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.siri-responding-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 24px;
+  margin-bottom: 8px;
+}
+
+.siri-responding-header-left {
+  display: flex;
+  align-items: center;
+}
+
+.siri-responding-close-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.siri-responding-close-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+.siri-responding-close-btn:active {
+  transform: scale(0.92);
+}
+
+.siri-unified-stream {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 4px 6px 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.siri-unified-stream::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
