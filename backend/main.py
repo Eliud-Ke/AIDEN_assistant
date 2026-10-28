@@ -97,7 +97,17 @@ TOOL_STATUS_MAP = {
     "fetch_explanatory_media": "ORGANIZING THOUGHTS",
 
     # Web & Grounding
-    "grounded_web_search": "SEARCHING THE WEB"
+    "grounded_web_search": "SEARCHING THE WEB",
+
+    # Gmail Connector Tools
+    "gmail_list_unread_emails": "CHECKING UNREAD",
+    "gmail_search_emails": "SEARCHING INBOX",
+    "gmail_read_email": "READING EMAIL",
+    "gmail_draft_email": "CREATING DRAFT",
+    "gmail_send_email": "SENDING EMAIL",
+    "gmail_reply_email": "REPLYING TO EMAIL",
+    "gmail_mark_emails_as_read": "MARKING AS READ",
+    "gmail_archive_email": "ARCHIVING EMAIL"
 }
 
 # ---------------------------------------------------------

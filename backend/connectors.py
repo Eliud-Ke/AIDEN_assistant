@@ -3,6 +3,8 @@ Dynamic Connector Stacks loaded directly into RAM.
 Acts as a lightweight switchboard. Tool schemas will be injected here as they are rebuilt.
 """
 
+import tools_gmail
+
 CONNECTORS_SCHEMA = {
     "spotify_stack": {
         "keywords": [
@@ -13,10 +15,18 @@ CONNECTORS_SCHEMA = {
     },
     "gmail_stack": {
         "keywords": [
-            "email", "gmail", "inbox", "mail", "draft", "send", "message",
-            "read", "reply", "forward", "unread", "spam", "receipt", "account key", "compose"
+            "email", "emails", "gmail", "mail", "mails", "inbox", "mailbox", "outbox",
+            "unread", "draft", "drafts", "send", "compose", "reply", "forward",
+            "recipient", "sender", "subject line", "newsletter", "receipt", "receipts",
+            "spam", "junk", "thread", "threads", "attachment", "attachments",
+            "check email", "check emails", "check mail", "check inbox",
+            "read email", "read mail", "open mail", "open email",
+            "send email", "send mail", "write an email", "shoot an email",
+            "draft email", "draft mail", "reply to email", "email reply",
+            "mark as read", "mark all as read", "mark read", "inbox zero", "clear unread", "read all",
+            "archive", "archive email", "archive emails", "archive mail", "clean inbox", "archive all"
         ],
-        "tools": []
+        "tools": tools_gmail.GMAIL_TOOLS_SCHEMA
     },
     "google_calendar_stack": {
         "keywords": [

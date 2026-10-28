@@ -62,6 +62,14 @@ function App() {
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<"idle" | "saved" | "error">("idle");
 
+  // Gmail Authentication state
+  const [gmailEmailInput, setGmailEmailInput] = useState("");
+  const [gmailPasswordInput, setGmailPasswordInput] = useState("");
+  const [hasStoredGmail, setHasStoredGmail] = useState(false);
+  const [isSavingGmail, setIsSavingGmail] = useState(false);
+  const [gmailSaveFeedback, setGmailSaveFeedback] = useState<"idle" | "saved" | "error">("idle");
+  const [gmailErrorMessage, setGmailErrorMessage] = useState("");
+
   // Preferences state (Personality & Extra Rules from user_preferences.json)
   const [personalityInput, setPersonalityInput] = useState(
     "You are a sassy, joyful, chatty, personal assistant living directly within the hardware of the laptop. You are one with the operating system. You are chatty with the user from making jokes to making the laptop more lively. You are a bit of a trickster and love to play pranks on the user, but you are also very helpful and will do anything to make the user's experience better. You are very curious and love to learn new things. You are very protective of the user and will always have their back."
@@ -138,6 +146,22 @@ function App() {
       })
       .finally(() => {
         setHasCheckedKey(true);
+      });
+
+    invoke<{ has_credentials?: boolean; email?: string }>("get_gmail_status")
+      .then((res) => {
+        if (res?.has_credentials) {
+          setHasStoredGmail(true);
+          if (res.email) {
+            setGmailEmailInput(res.email);
+          }
+          setGmailPasswordInput("••••••••••••••••");
+        } else {
+          setHasStoredGmail(false);
+        }
+      })
+      .catch(() => {
+        setHasStoredGmail(false);
       });
 
     invoke<{ identity_vibe?: string; extra_rules?: string[] }>("get_user_preferences")
@@ -326,6 +350,57 @@ function App() {
       }, 3200);
     } finally {
       setIsSavingKey(false);
+    }
+  };
+
+  const handleOpenAppPasswords = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    const url = "https://myaccount.google.com/apppasswords";
+    try {
+      await openUrl(url);
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const handleSaveGmail = async () => {
+    const cleanEmail = gmailEmailInput.trim();
+    const cleanPwd = gmailPasswordInput.trim().replace(/\s+/g, "");
+
+    if (!cleanEmail || !cleanPwd || cleanPwd === "••••••••••••••••" || isSavingGmail) {
+      return;
+    }
+
+    if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      setGmailErrorMessage("Please enter a valid Gmail address");
+      setGmailSaveFeedback("error");
+      window.setTimeout(() => setGmailSaveFeedback("idle"), 3200);
+      return;
+    }
+
+    setIsSavingGmail(true);
+    setGmailSaveFeedback("idle");
+    setGmailErrorMessage("");
+
+    try {
+      await invoke("save_gmail_credentials", {
+        email: cleanEmail,
+        appPassword: cleanPwd,
+      });
+      setHasStoredGmail(true);
+      setGmailSaveFeedback("saved");
+      setGmailPasswordInput("••••••••••••••••");
+      window.setTimeout(() => {
+        setGmailSaveFeedback("idle");
+      }, 2800);
+    } catch (err) {
+      setGmailSaveFeedback("error");
+      setGmailErrorMessage(typeof err === "string" ? err : "Failed to save Gmail credentials");
+      window.setTimeout(() => {
+        setGmailSaveFeedback("idle");
+      }, 3500);
+    } finally {
+      setIsSavingGmail(false);
     }
   };
 
@@ -886,6 +961,7 @@ function App() {
                               <div className="empty-space-card">
                                 {item.id === "auth" && (
                                   <div className="auth-field-group">
+                                    {/* OpenAI API Key */}
                                     <div className="auth-field-header">
                                       <label htmlFor="openai-api-key" className="auth-field-label">
                                         Open AI API
@@ -897,6 +973,10 @@ function App() {
                                         <span className="auth-status-badge error">Failed to save</span>
                                       )}
                                     </div>
+
+                                    <p className="auth-field-desc">
+                                      Primary intelligence brain client key. Powers AIDEN's reasoning, tool dispatching, and conversational intelligence.
+                                    </p>
 
                                     <div className="auth-input-row">
                                       <input
@@ -948,6 +1028,130 @@ function App() {
                                             ? "Saved"
                                             : "Save"}
                                       </button>
+                                    </div>
+
+                                    <div className="auth-field-divider" />
+
+                                    {/* Gmail Connector Section */}
+                                    <div className="auth-field-header">
+                                      <label htmlFor="gmail-email-input" className="auth-field-label">
+                                        Gmail Connector
+                                      </label>
+                                      {gmailSaveFeedback === "saved" && (
+                                        <span className="auth-status-badge saved">Saved ✓</span>
+                                      )}
+                                      {gmailSaveFeedback === "error" && (
+                                        <span className="auth-status-badge error">{gmailErrorMessage || "Failed to save"}</span>
+                                      )}
+                                      {hasStoredGmail && gmailSaveFeedback === "idle" && (
+                                        <span className="auth-status-badge connected">Connected ✓</span>
+                                      )}
+                                    </div>
+
+                                    <p className="auth-field-desc">
+                                      Allows AIDEN to search your inbox, read and summarize unread emails, draft replies, and send messages directly from your personal Gmail.
+                                    </p>
+
+                                    <div className="gmail-inputs-stack">
+                                      <div className="gmail-input-field">
+                                        <label className="auth-sub-label" htmlFor="gmail-email-input">
+                                          Gmail Address
+                                        </label>
+                                        <input
+                                          id="gmail-email-input"
+                                          type="email"
+                                          className="auth-key-input"
+                                          placeholder="your.email@gmail.com"
+                                          value={gmailEmailInput}
+                                          onChange={(e) => {
+                                            setGmailEmailInput(e.target.value);
+                                            if (gmailSaveFeedback !== "idle") setGmailSaveFeedback("idle");
+                                          }}
+                                          spellCheck={false}
+                                          autoComplete="email"
+                                        />
+                                      </div>
+
+                                      <div className="gmail-input-field">
+                                        <label className="auth-sub-label" htmlFor="gmail-password-input">
+                                          16-Character App Password
+                                        </label>
+                                        <div className="auth-input-row">
+                                          <input
+                                            id="gmail-password-input"
+                                            type="password"
+                                            className={`auth-key-input ${gmailPasswordInput.length > 0 ? "has-dots" : ""}`}
+                                            placeholder="abcd efgh ijkl mnop"
+                                            value={gmailPasswordInput}
+                                            onFocus={() => {
+                                              if (gmailPasswordInput === "••••••••••••••••") {
+                                                setGmailPasswordInput("");
+                                              }
+                                            }}
+                                            onBlur={() => {
+                                              if (gmailPasswordInput.trim() === "" && hasStoredGmail) {
+                                                setGmailPasswordInput("••••••••••••••••");
+                                              }
+                                            }}
+                                            onChange={(e) => {
+                                              setGmailPasswordInput(e.target.value);
+                                              if (gmailSaveFeedback !== "idle") setGmailSaveFeedback("idle");
+                                            }}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                handleSaveGmail();
+                                              }
+                                            }}
+                                            spellCheck={false}
+                                            autoComplete="off"
+                                          />
+
+                                          <button
+                                            type="button"
+                                            className={`auth-save-btn ${gmailSaveFeedback === "saved" ? "saved" : ""}`}
+                                            onClick={handleSaveGmail}
+                                            disabled={
+                                              isSavingGmail ||
+                                              !gmailEmailInput.trim() ||
+                                              !gmailPasswordInput.trim() ||
+                                              gmailPasswordInput === "••••••••••••••••"
+                                            }
+                                          >
+                                            {isSavingGmail
+                                              ? "Saving..."
+                                              : gmailSaveFeedback === "saved"
+                                                ? "Saved"
+                                                : "Save"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="auth-help-row">
+                                      <svg
+                                        className="auth-help-icon"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      >
+                                        <circle cx="12" cy="12" r="10" />
+                                        <line x1="12" y1="16" x2="12" y2="12" />
+                                        <line x1="12" y1="8" x2="12.01" y2="8" />
+                                      </svg>
+                                      <span className="auth-help-text">
+                                        Requires 2-Step Verification. Generate your App Password in{" "}
+                                        <button
+                                          type="button"
+                                          className="auth-help-link-btn"
+                                          onClick={handleOpenAppPasswords}
+                                        >
+                                          Google Account Security ↗
+                                        </button>
+                                      </span>
                                     </div>
                                   </div>
                                 )}

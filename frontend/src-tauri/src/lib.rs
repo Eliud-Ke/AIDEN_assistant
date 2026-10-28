@@ -424,6 +424,74 @@ fn check_openai_key() -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn save_gmail_credentials(email: String, app_password: String) -> Result<String, String> {
+    let clean_email = email.trim();
+    let clean_pwd = app_password.trim().replace(" ", "");
+    if clean_email.is_empty() || clean_pwd.is_empty() {
+        return Err("Email and App Password cannot be empty.".to_string());
+    }
+
+    let payload = serde_json::json!({
+        "email": clean_email,
+        "app_password": clean_pwd,
+    });
+
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--save-gmail-stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(payload.to_string().as_bytes())
+            .map_err(|e| format!("Failed to pass Gmail credentials to backend: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+
+    if output.status.success() {
+        Ok("Gmail credentials saved to Windows Credential Manager.".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        Err(format!("Backend failed to save Gmail credentials: {} {}", stdout.trim(), stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn get_gmail_status() -> Result<serde_json::Value, String> {
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--get-gmail")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to check Gmail status: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+            return Ok(parsed);
+        }
+    }
+    Ok(serde_json::json!({ "has_credentials": false, "email": "" }))
+}
+
+#[tauri::command]
 fn get_user_preferences() -> Result<serde_json::Value, String> {
     let mut cmd = build_backend_command("configuration.py")?;
     cmd.arg("--get")
@@ -821,6 +889,8 @@ pub fn run() {
             show_main_window,
             save_openai_key,
             check_openai_key,
+            save_gmail_credentials,
+            get_gmail_status,
             get_user_preferences,
             save_user_preferences,
             get_user_memories,
