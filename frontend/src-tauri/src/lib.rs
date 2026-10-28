@@ -637,7 +637,7 @@ fn set_chat_pill_size(
     app: AppHandle,
     width: Option<f64>,
     height: f64,
-    pill_mode: Option<String>,
+    _pill_mode: Option<String>,
 ) -> Result<(), String> {
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let w = width.unwrap_or(640.0);
@@ -649,17 +649,10 @@ fn set_chat_pill_size(
             let comp_state = app.state::<CompositionState>();
             if let Ok(guard) = comp_state.0.lock() {
                 if let Some(host) = guard.as_ref() {
-                    let mode = pill_mode.as_deref().unwrap_or("idle");
-                    if mode == "thinking" {
-                        // When in thinking mode, hide the 560px static DWM backdrop
-                        // so no static remainder blur halo extends past the 370px spring pill
-                        let _ = host.set_visible(false);
-                    } else {
-                        let _ = host.set_visible(true);
-                        let card_h = (h - 70.0).max(60.0) as f32;
-                        let radius = if card_h > 80.0 { 28.0 } else { 30.0 };
-                        let _ = host.update_shape(40.0, 18.0, 560.0, card_h, radius);
-                    }
+                    let _ = host.set_visible(true);
+                    let card_h = (h - 70.0).max(60.0) as f32;
+                    let radius = if card_h > 80.0 { 28.0 } else { 30.0 };
+                    let _ = host.update_shape(40.0, 18.0, 560.0, card_h, radius);
                 }
             }
         }
