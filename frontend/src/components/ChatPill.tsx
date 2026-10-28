@@ -14,6 +14,7 @@ export interface ChatTurn {
 interface ChatPillProps {
   isAwake: boolean;
   isDarkMode: boolean;
+  isMaxHeight?: boolean;
   turns?: ChatTurn[];
   followupThinkingPrompt?: string | null;
   userPrompt?: string | null;
@@ -244,6 +245,7 @@ export const AppleConstellationSpinner: React.FC = () => (
 export const ChatPill: React.FC<ChatPillProps> = ({
   isAwake,
   isDarkMode,
+  isMaxHeight = false,
   turns,
   followupThinkingPrompt = null,
   userPrompt = null,
@@ -358,16 +360,18 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     lastScrolledFollowupRef.current = followupThinkingPrompt;
 
     requestAnimationFrame(() => {
-      const container = streamContainerRef.current;
-      if (!container) return;
-      const pendingEl = container.querySelector(".siri-turn-item.pending-turn") as HTMLElement | null;
-      if (pendingEl) {
-        const targetTop = pendingEl.offsetTop - 56;
-        container.scrollTo({
-          top: Math.max(0, targetTop),
-          behavior: "smooth",
-        });
-      }
+      requestAnimationFrame(() => {
+        const container = streamContainerRef.current;
+        if (!container) return;
+        const pendingEl = container.querySelector(".siri-turn-item.pending-turn") as HTMLElement | null;
+        if (pendingEl) {
+          const targetTop = pendingEl.offsetTop - 52;
+          container.scrollTo({
+            top: Math.max(0, targetTop),
+            behavior: "smooth",
+          });
+        }
+      });
     });
   }, [followupThinkingPrompt]);
 
@@ -529,6 +533,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
         <div
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
+            isMaxHeight ? "max-height" : ""
+          } ${
             hasRevealedFollowup ? "revealed" : ""
           } ${
             isHovered || isInputFocused || inputText.trim().length > 0 ? "hover-active" : ""
@@ -869,6 +875,7 @@ export const ChatPillWindow: React.FC = () => {
   const [followupThinkingPrompt, setFollowupThinkingPrompt] = useState<string | null>(null);
   const [activeUiTag, setActiveUiTag] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isMaxHeight, setIsMaxHeight] = useState(false);
 
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
@@ -933,6 +940,7 @@ export const ChatPillWindow: React.FC = () => {
     setTurns([]);
     setActiveUiTag(null);
     setIsStreaming(false);
+    setIsMaxHeight(false);
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -986,9 +994,9 @@ export const ChatPillWindow: React.FC = () => {
 
     const applyTargetHeight = (rawHeight: number) => {
       // 18px top padding + 52px bottom shadow breathing room = 70px total vertical clearance
-      const measured = rawHeight > 0 ? rawHeight : (isExpanded ? 220 : 60);
+      const measured = isMaxHeight ? 620 : (rawHeight > 0 ? rawHeight : (isExpanded ? 220 : 60));
       const targetHeight = Math.max(130, Math.ceil(measured + 70));
-      if (Math.abs(targetHeight - lastHeightRef.current) >= 2 || currentMode === "thinking") {
+      if (Math.abs(targetHeight - lastHeightRef.current) >= 2 || currentMode === "thinking" || isMaxHeight) {
         lastHeightRef.current = targetHeight;
         invoke("set_chat_pill_size", { width: 640, height: targetHeight, pillMode: currentMode }).catch(() => {});
       }
@@ -1017,7 +1025,7 @@ export const ChatPillWindow: React.FC = () => {
         cancelAnimationFrame(rafResizeRef.current);
       }
     };
-  }, [isAwake, isExpanded, currentMode]);
+  }, [isAwake, isExpanded, currentMode, isMaxHeight]);
 
   // Sync state events from Tauri main process
   useEffect(() => {
@@ -1210,8 +1218,10 @@ export const ChatPillWindow: React.FC = () => {
       followupThinkingPromptRef.current = null;
       setFollowupThinkingPrompt(null);
       setActiveUiTag("THINKING");
+      setIsMaxHeight(false);
     } else {
-      // Turn 2+: Follow-up query -> keep window expanded, spawn follow-up bubble + in-stream thinking loader!
+      // Turn 2+: Follow-up query -> expand window to max luxury height, spawn follow-up bubble + in-stream thinking loader!
+      setIsMaxHeight(true);
       followupThinkingPromptRef.current = msg;
       setFollowupThinkingPrompt(msg);
       setActiveUiTag("Thinking");
@@ -1246,6 +1256,7 @@ export const ChatPillWindow: React.FC = () => {
         contentRef={contentRef}
         isAwake={isAwake}
         isDarkMode={isDarkMode}
+        isMaxHeight={isMaxHeight}
         turns={turns}
         followupThinkingPrompt={followupThinkingPrompt}
         activeUiTag={activeUiTag}

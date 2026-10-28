@@ -1235,6 +1235,11 @@
   animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1) forwards;
 }
 
+.siri-unified-pill.mode-responding.max-height {
+  height: 620px;
+  min-height: 620px;
+}
+
 @keyframes siriRespondingBouncy {
   0% {
     opacity: 0.5;
@@ -1340,6 +1345,16 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+}
+
+/* Turn 2+ Stage: Each follow-up turn acts as a full-page canvas so that
+   the previous response can be scrolled cleanly off the top of the viewport */
+.siri-turn-item.pending-turn,
+.siri-turn-item:not(:first-child) {
+  min-height: 520px;
+  min-height: calc(100% - 36px);
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .siri-user-followup-wrap {
