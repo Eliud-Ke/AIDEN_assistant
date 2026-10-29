@@ -457,7 +457,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         if (!container) return;
         const pendingEl = container.querySelector(".siri-turn-item.pending-turn") as HTMLElement | null;
         if (pendingEl) {
-          const targetTop = pendingEl.offsetTop - 52;
+          // Land cleanly at the top of the new turn stage, sliding the past turn off the viewport
+          const targetTop = pendingEl.offsetTop - 16;
           container.scrollTo({
             top: Math.max(0, targetTop),
             behavior: "smooth",

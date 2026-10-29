@@ -1395,7 +1395,9 @@
   display: flex;
   justify-content: flex-end;
   width: 100%;
-  margin: 14px 0 8px 0;
+  /* Apple Siri layout: 24px clearance from past turns when scrolled,
+     and 38px generous clearance below so the thinking animation & response appear lower */
+  margin: 24px 0 38px 0;
   padding-right: 4px;
 }
 
@@ -1435,24 +1437,32 @@
 
 .siri-user-followup-bubble.animated-spawn {
   transform-origin: right bottom;
-  animation: appleBubbleFlyUp 0.46s cubic-bezier(0.18, 1.28, 0.35, 1) forwards;
+  animation: appleBubbleFlyUpFromMic 1.04s cubic-bezier(0.16, 1.08, 0.3, 1) both;
+  will-change: transform, opacity, filter;
 }
 
-@keyframes appleBubbleFlyUp {
+@keyframes appleBubbleFlyUpFromMic {
   0% {
     opacity: 0;
-    transform: translateY(48px) scale(1.08);
+    transform: translateY(360px) scale(0.22);
+    filter: blur(4px);
   }
-  55% {
+  20% {
+    opacity: 0.95;
+    filter: blur(1px);
+  }
+  72% {
     opacity: 1;
-    transform: translateY(-5px) scale(0.97);
+    transform: translateY(-4px) scale(1.018);
+    filter: blur(0px);
   }
-  78% {
-    transform: translateY(2px) scale(1.01);
+  88% {
+    transform: translateY(1px) scale(0.998);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0px);
   }
 }
 
@@ -1461,7 +1471,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 4px 14px 4px;
+  padding: 0 4px 14px 4px;
   animation: instreamFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
