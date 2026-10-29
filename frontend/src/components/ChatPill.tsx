@@ -18,7 +18,7 @@ interface ChatPillProps {
   turns?: ChatTurn[];
   followupThinkingPrompt?: string | null;
   userPrompt?: string | null;
-  onSendMessage?: (message: string) => void;
+  onSendMessage?: (message: string, isFollowup?: boolean) => void;
   onToggleSleep?: () => void;
   responseMessage?: string | null;
   activeUiTag?: string | null;
@@ -293,14 +293,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const showReplyWindow = pillMode === "responding";
 
-  // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in multi-turn conversation
+  // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in-stream thinking
   const isControlsVisible = Boolean(
-    isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt || isMaxHeight
+    isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt
   );
 
-  // Reset hover state when leaving responding mode so new turns start clean and unhovered
+  const respondingMountedAtRef = useRef<number>(0);
+
+  // Reset hover state when entering or leaving responding mode
   useEffect(() => {
-    if (pillMode !== "responding") {
+    if (pillMode === "responding") {
+      respondingMountedAtRef.current = Date.now();
+      setIsHovered(false);
+    } else {
       setIsHovered(false);
     }
   }, [pillMode]);
@@ -506,7 +511,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setIsSubmitting(true);
     setIsHovered(false);
     if (onSendMessage) {
-      onSendMessage(trimmed);
+      onSendMessage(trimmed, showReplyWindow);
     }
     setInputText("");
     setSelectionIndex(0);
@@ -543,9 +548,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
             isDarkMode ? "dark-mode" : "light-mode"
           }`}
-          onMouseEnter={() => setIsHovered(true)}
+          onMouseEnter={() => {
+            if (Date.now() - respondingMountedAtRef.current >= 100) {
+              setIsHovered(true);
+            }
+          }}
           onMouseMove={() => {
-            if (!isHovered) setIsHovered(true);
+            if (Date.now() - respondingMountedAtRef.current >= 100) {
+              if (!isHovered) setIsHovered(true);
+            }
           }}
           onMouseLeave={() => setIsHovered(false)}
         >
@@ -936,10 +947,12 @@ export const ChatPillWindow: React.FC = () => {
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
+    turnsRef.current = [];
     setTurns([]);
     setActiveUiTag(null);
     setIsStreaming(false);
     setIsMaxHeight(false);
+    lastHeightRef.current = 130;
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -961,16 +974,18 @@ export const ChatPillWindow: React.FC = () => {
         window.clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
+      resetReplyState();
       invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
     } else {
       // Immediately pass cursor events through so background clicks work while fading out
       invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
 
+      // Immediately clear reply state so sleeping pill never retains old turns
+      resetReplyState();
+
       // Wait 300ms for the smooth glide-up & fade-out animation to complete before hiding the native Win32 window
       hideTimerRef.current = window.setTimeout(() => {
         invoke("hide_chat_pill").catch(() => {});
-        resetReplyState();
-        lastHeightRef.current = 130;
         hideTimerRef.current = null;
       }, 300);
     }
@@ -1104,7 +1119,7 @@ export const ChatPillWindow: React.FC = () => {
                 isStreaming: true,
               };
 
-              setTurns((prev) => [...prev, newTurn]);
+              setTurns((prev) => (userPromptForTurn ? [...prev, newTurn] : [newTurn]));
               startSmoothStreamLoop(newTurnId);
             } else if (msgType === "stream_chunk") {
               setIsStreaming(true);
@@ -1122,7 +1137,7 @@ export const ChatPillWindow: React.FC = () => {
                   assistantReply: "",
                   isStreaming: true,
                 };
-                setTurns((prev) => [...prev, newTurn]);
+                setTurns((prev) => (userPromptForTurn ? [...prev, newTurn] : [newTurn]));
               }
 
               if (typeof data.fullContent === "string") {
@@ -1205,15 +1220,17 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, []);
 
-  const handleSendMessage = (msg: string) => {
+  const handleSendMessage = (msg: string, isFollowup?: boolean) => {
     stopStreamRaf();
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
     setIsStreaming(false);
 
-    if (turnsRef.current.length === 0) {
-      // Turn 1: No previous conversation -> morph into capsule thinking pill
+    if (!isFollowup) {
+      // Turn 1 (Fresh query from idle pill): completely clean past turns, start compact
+      turnsRef.current = [];
+      setTurns([]);
       followupThinkingPromptRef.current = null;
       setFollowupThinkingPrompt(null);
       setActiveUiTag("THINKING");
