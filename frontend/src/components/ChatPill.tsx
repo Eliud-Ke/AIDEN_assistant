@@ -268,7 +268,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [hasRevealedFollowup, setHasRevealedFollowup] = useState(false);
   const followupInputRef = useRef<HTMLInputElement>(null);
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
   const cardInputRef = useRef<HTMLTextAreaElement>(null);
@@ -294,10 +293,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const showReplyWindow = pillMode === "responding";
 
-  // Reset follow-up reveal state when leaving responding mode
+  // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in multi-turn conversation
+  const isControlsVisible = Boolean(
+    isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt || isMaxHeight
+  );
+
+  // Reset hover state when leaving responding mode so new turns start clean and unhovered
   useEffect(() => {
     if (pillMode !== "responding") {
-      setHasRevealedFollowup(false);
+      setIsHovered(false);
     }
   }, [pillMode]);
 
@@ -500,9 +504,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const trimmed = inputText.trim();
     if (!trimmed || isSubmitting) return;
     setIsSubmitting(true);
-    if (showReplyWindow) {
-      setHasRevealedFollowup(true);
-    }
+    setIsHovered(false);
     if (onSendMessage) {
       onSendMessage(trimmed);
     }
@@ -535,17 +537,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
             isMaxHeight ? "max-height" : ""
           } ${
-            hasRevealedFollowup ? "revealed" : ""
+            isControlsVisible ? "controls-visible" : ""
           } ${
             isHovered || isInputFocused || inputText.trim().length > 0 ? "hover-active" : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
             isDarkMode ? "dark-mode" : "light-mode"
           }`}
-          onMouseEnter={() => {
-            setIsHovered(true);
-            if (pillMode === "responding") {
-              setHasRevealedFollowup(true);
-            }
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseMove={() => {
+            if (!isHovered) setIsHovered(true);
           }}
           onMouseLeave={() => setIsHovered(false)}
         >
@@ -611,11 +611,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   className="siri-floating-close-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setHasRevealedFollowup(false);
+                    setIsHovered(false);
                     onClearResponse();
                   }}
                   title="Minimize (Esc)"
                   aria-label="Minimize"
+                  tabIndex={isControlsVisible ? 0 : -1}
                 >
                   <svg
                     width="20"
@@ -739,9 +740,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
               {/* Apple-style Persistent Follow-up Command Bar */}
               <div
-                className={`siri-hover-followup-bar ${
-                  hasRevealedFollowup || isInputFocused || inputText.trim().length > 0 ? "revealed" : ""
-                }`}
+                className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
               >
                 <div className="siri-apple-command-bar">
                   {/* Left: Circular Frosted Glass Plus Button */}
@@ -750,7 +749,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     className="siri-command-glass-btn plus-btn"
                     title="Add attachment or action"
                     aria-label="Add"
-                    tabIndex={hasRevealedFollowup ? 0 : -1}
+                    tabIndex={isControlsVisible ? 0 : -1}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <svg
@@ -788,7 +787,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                           if (selectedLightboxImage) {
                             setSelectedLightboxImage(null);
                           } else if (onClearResponse) {
-                            setHasRevealedFollowup(false);
+                            setIsHovered(false);
                             onClearResponse();
                           }
                         }
@@ -803,7 +802,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     className="siri-command-glass-btn mic-btn"
                     title="Dictate with Siri"
                     aria-label="Voice input"
-                    tabIndex={hasRevealedFollowup ? 0 : -1}
+                    tabIndex={isControlsVisible ? 0 : -1}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <svg

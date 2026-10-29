@@ -1224,7 +1224,7 @@
 .siri-unified-pill.mode-responding {
   width: 100%;
   max-width: 560px;
-  min-height: 180px;
+  min-height: 68px;
   height: auto;
   max-height: 620px;
   border-radius: 28px;
@@ -1233,6 +1233,18 @@
   padding: 16px 18px 16px 18px;
   position: relative;
   animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1) forwards;
+  transition: 
+    width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
+    max-width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
+    min-height 0.38s cubic-bezier(0.18, 1.25, 0.32, 1),
+    border-radius 0.32s ease,
+    padding 0.32s ease,
+    box-shadow 0.25s ease;
+}
+
+/* Hover/active state: expands to comfortable 180px height to cradle minimize button & command bar */
+.siri-unified-pill.mode-responding.controls-visible {
+  min-height: 180px;
 }
 
 .siri-unified-pill.mode-responding.max-height {
@@ -1281,21 +1293,52 @@
   z-index: 15;
   padding: 0;
   outline: none;
-  transition: background 0.18s ease,
+  /* Unhovered initial state: hidden above top boundary */
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-26px) scale(0.85);
+  transition: opacity 0.22s ease-out,
+              transform 0.24s cubic-bezier(0.32, 0, 0.2, 1),
+              background 0.18s ease,
               border-color 0.18s ease,
-              box-shadow 0.18s ease,
-              transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+              box-shadow 0.18s ease;
 }
 
-.siri-floating-close-btn:hover {
+/* Hover state: Springs down from the top with bouncy settle */
+.siri-unified-pill.controls-visible .siri-floating-close-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  animation: minimizeBtnSpringDown 0.44s cubic-bezier(0.18, 1.25, 0.35, 1) forwards;
+}
+
+@keyframes minimizeBtnSpringDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-26px) scale(0.85);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.04);
+  }
+  80% {
+    transform: translateY(-1px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.siri-unified-pill.controls-visible .siri-floating-close-btn:hover {
   background: rgba(255, 255, 255, 0.20);
   border-color: rgba(255, 255, 255, 0.28);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 14px rgba(0, 0, 0, 0.45);
-  transform: scale(1.06);
+  transform: translateY(0) scale(1.06) !important;
 }
 
-.siri-floating-close-btn:active {
-  transform: scale(0.92);
+.siri-unified-pill.controls-visible .siri-floating-close-btn:active {
+  transform: translateY(0) scale(0.92) !important;
 }
 
 .siri-responding-header {
@@ -1326,10 +1369,17 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Top clearance for 48px floating minimize button, 84px bottom padding to scroll past floating command bar */
-  padding: 52px 30px 84px 10px;
+  /* Unhovered state: natural, compact padding */
+  padding: 8px 24px 10px 10px;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Springy padding transition: pushes text down on hover, pulls back up on unhover */
+  transition: padding 0.42s cubic-bezier(0.18, 1.25, 0.32, 1);
+}
+
+/* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar */
+.siri-unified-pill.controls-visible .siri-unified-stream {
+  padding: 52px 30px 76px 10px;
 }
 
 .siri-unified-stream::-webkit-scrollbar {
@@ -1492,6 +1542,7 @@
 
 /* ==========================================================================
    APPLE-STYLE PERSISTENT FOLLOW-UP COMMAND BAR ("Ask Aiden")
+   With Staggered Wave-like Float-Up Animation
    ========================================================================== */
 .siri-hover-followup-bar {
   position: absolute;
@@ -1501,38 +1552,65 @@
   z-index: 10;
   width: auto;
   pointer-events: none;
-  opacity: 0;
-  transform: translateY(48px) scale(0.94);
   box-sizing: border-box;
-  transition: opacity 0.22s ease-out,
-              transform 0.28s cubic-bezier(0.32, 0, 0.2, 1);
 }
 
-/* Once hovered or active, springs upward the full height of the bar (48px) with bouncy settle */
-.siri-hover-followup-bar.revealed,
-.siri-hover-followup-bar.active {
-  opacity: 1;
-  transform: translateY(0) scale(1);
+.siri-unified-pill.controls-visible .siri-hover-followup-bar {
   pointer-events: auto;
-  animation: followupBarSpringUp 0.46s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes followupBarSpringUp {
+/* Wave Float-Up Keyframe for individual command bar elements */
+@keyframes commandWaveSpringUp {
   0% {
     opacity: 0;
-    transform: translateY(48px) scale(0.94);
+    transform: translateY(44px) scale(0.90);
   }
   55% {
     opacity: 1;
-    transform: translateY(-4px) scale(1.012);
+    transform: translateY(-4px) scale(1.02);
   }
   78% {
-    transform: translateY(1.5px) scale(0.996);
+    transform: translateY(1.5px) scale(0.995);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* Unhovered state: all 3 elements tucked below bottom edge */
+.siri-command-glass-btn.plus-btn,
+.siri-command-capsule,
+.siri-command-glass-btn.mic-btn {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(44px) scale(0.92);
+  transition: opacity 0.2s ease-out,
+              transform 0.22s cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+/* 1. The + button comes and springs first (0ms delay) */
+.siri-unified-pill.controls-visible .siri-command-glass-btn.plus-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms forwards;
+}
+
+/* 2. Then the text box capsule comes (70ms delay) */
+.siri-unified-pill.controls-visible .siri-command-capsule {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 70ms forwards;
+}
+
+/* 3. Then the mic button comes (140ms delay) and all settle */
+.siri-unified-pill.controls-visible .siri-command-glass-btn.mic-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms forwards;
 }
 
 /* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
@@ -1572,15 +1650,15 @@
               transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.siri-command-glass-btn:hover {
+.siri-unified-pill.controls-visible .siri-command-glass-btn:hover {
   background: rgba(60, 60, 70, 0.82);
   border-color: rgba(255, 255, 255, 0.28);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 14px rgba(0, 0, 0, 0.45);
-  transform: scale(1.06);
+  transform: translateY(0) scale(1.06) !important;
 }
 
-.siri-command-glass-btn:active {
-  transform: scale(0.92);
+.siri-unified-pill.controls-visible .siri-command-glass-btn:active {
+  transform: translateY(0) scale(0.92) !important;
 }
 
 /* Center Frosted Capsule Field ("Ask Aiden") */
