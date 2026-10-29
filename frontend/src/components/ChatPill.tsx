@@ -104,6 +104,8 @@ function renderFormattedText(rawText: string): React.ReactNode {
   return elements.length > 0 ? elements : cleanedText;
 }
 
+const LINE_LENGTH_THRESHOLD = 75;
+
 function splitIntoSpringLines(text: string): string[] {
   if (!text) return [];
 
@@ -114,8 +116,14 @@ function splitIntoSpringLines(text: string): string[] {
     const trimmed = para.trim();
     if (!trimmed) continue;
 
-    // Splits paragraphs into sentences/clauses on punctuation (. ! ?) followed by whitespace & capital/emoji
-    const sentenceRegex = /([.!?]+[\s]+)(?=[A-Z0-9\p{Emoji}])/gu;
+    // If paragraph is shorter than threshold, keep it intact as a single spring line
+    if (trimmed.length < LINE_LENGTH_THRESHOLD) {
+      result.push(trimmed);
+      continue;
+    }
+
+    // For longer paragraphs exceeding threshold, split on sentence ends (. ! ? :) followed by space
+    const sentenceRegex = /([.!?:]+[\s]+)(?=[A-Z0-9\p{Emoji}]|$)/gu;
     let lastIdx = 0;
     let match: RegExpExecArray | null;
 
@@ -123,10 +131,10 @@ function splitIntoSpringLines(text: string): string[] {
     while ((match = sentenceRegex.exec(para)) !== null) {
       const end = match.index + match[1].length;
       const segment = para.slice(lastIdx, end).trim();
-      if (segment) {
+      if (segment && (segment.length >= 35 || sentences.length > 0)) {
         sentences.push(segment);
+        lastIdx = end;
       }
-      lastIdx = end;
     }
     const remainder = para.slice(lastIdx).trim();
     if (remainder) {
@@ -141,6 +149,81 @@ function splitIntoSpringLines(text: string): string[] {
   }
 
   return result.length > 0 ? result : [text];
+}
+
+function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: boolean): number {
+  if (fromIndex >= text.length) {
+    return text.length;
+  }
+
+  if (isStreamEnded) {
+    return text.length;
+  }
+
+  // Skip leading newlines right at fromIndex
+  let start = fromIndex;
+  while (start < text.length && (text[start] === "\n" || text[start] === "\r")) {
+    start++;
+  }
+
+  if (start >= text.length) {
+    return fromIndex;
+  }
+
+  const unrevealed = text.slice(start);
+
+  // Media gallery boundary: don't split inside ::media-gallery[...]::
+  const galleryIdx = unrevealed.indexOf("::media-");
+  if (galleryIdx !== -1) {
+    if (galleryIdx > 0) {
+      return start + galleryIdx;
+    }
+    const galleryEnd = unrevealed.indexOf("::", 8);
+    if (galleryEnd !== -1) {
+      return start + galleryEnd + 2;
+    }
+    return fromIndex;
+  }
+
+  // 1. Check for explicit newline (\n)
+  const newlineIdx = unrevealed.indexOf("\n");
+  if (newlineIdx !== -1) {
+    let end = start + newlineIdx + 1;
+    // Consume consecutive newlines (\n\n or \r\n) so the next line starts with content
+    while (end < text.length && (text[end] === "\n" || text[end] === "\r")) {
+      end++;
+    }
+    return end;
+  }
+
+  // 2. Length threshold for paragraphs without newlines
+  if (unrevealed.length >= LINE_LENGTH_THRESHOLD) {
+    const sentenceRegex = /([.!?:]+[\s]+)(?=[A-Z0-9\p{Emoji}])/gu;
+    let match: RegExpExecArray | null;
+    let bestCut = -1;
+
+    while ((match = sentenceRegex.exec(unrevealed)) !== null) {
+      const cutPos = match.index + match[1].length;
+      if (cutPos >= 35) {
+        bestCut = cutPos;
+        break;
+      }
+    }
+
+    if (bestCut !== -1) {
+      return start + bestCut;
+    }
+
+    // If paragraph is very long (>= 110 chars) without punctuation, break cleanly on a word boundary
+    if (unrevealed.length >= 110) {
+      const lastSpace = unrevealed.lastIndexOf(" ", 100);
+      if (lastSpace >= 45) {
+        return start + lastSpace + 1;
+      }
+    }
+  }
+
+  return fromIndex;
 }
 
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
@@ -683,26 +766,21 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     {/* Assistant Reply for this turn */}
                     {turn.assistantReply && (
                       <div className="siri-assistant-reply">
-                        {parseMessageWithGalleries(turn.assistantReply, Boolean(turn.isStreaming)).map((part, idx, arr) => {
-                          const isLast = idx === arr.length - 1;
+                        {parseMessageWithGalleries(turn.assistantReply, Boolean(turn.isStreaming)).map((part, idx) => {
                           if (part.type === "text") {
                             const lines = splitIntoSpringLines(part.text);
                             return (
                               <div key={idx} className="siri-text-block">
                                 {lines.map((line, lineIdx) => {
-                                  const isLastLine = lineIdx === lines.length - 1;
                                   return (
                                     <span
-                                      key={lineIdx}
+                                      key={`spring-line-${lineIdx}`}
                                       className="siri-spring-line"
                                       style={{
-                                        animationDelay: turn.isStreaming ? "0ms" : `${lineIdx * 45}ms`,
+                                        animationDelay: turn.isStreaming ? "0ms" : `${lineIdx * 40}ms`,
                                       }}
                                     >
                                       {renderFormattedText(line)}
-                                      {isLastLine && isLast && turn.isStreaming && (
-                                        <span className="siri-streaming-cursor" />
-                                      )}
                                     </span>
                                   );
                                 })}
@@ -910,6 +988,7 @@ export const ChatPillWindow: React.FC = () => {
   const displayedLengthRef = useRef<number>(0);
   const streamEndedRef = useRef<boolean>(false);
   const rafIdRef = useRef<number | null>(null);
+  const lastLineEmittedTimeRef = useRef<number>(0);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef<number>(0);
@@ -930,17 +1009,23 @@ export const ChatPillWindow: React.FC = () => {
       const activeId = currentTurnIdRef.current || turnId;
       const target = targetTextRef.current;
       const currentLen = displayedLengthRef.current;
+      const isEnded = streamEndedRef.current;
 
-      if (currentLen < target.length) {
-        const remaining = target.length - currentLen;
-        const step = Math.max(1, Math.min(Math.ceil(remaining / 3), 6));
-        const nextLen = Math.min(currentLen + step, target.length);
-        displayedLengthRef.current = nextLen;
-        const sliced = target.slice(0, nextLen);
+      const nextBoundary = findNextLineBoundary(target, currentLen, isEnded);
+
+      const now = Date.now();
+      const elapsedSinceLastLine = now - lastLineEmittedTimeRef.current;
+      // Minimum pacing between line reveals to let the Apple spring bounce play (85ms)
+      const MIN_LINE_INTERVAL = 85;
+
+      if (nextBoundary > currentLen && (elapsedSinceLastLine >= MIN_LINE_INTERVAL || currentLen === 0)) {
+        displayedLengthRef.current = nextBoundary;
+        lastLineEmittedTimeRef.current = now;
+        const sliced = target.slice(0, nextBoundary);
         setTurns((prev) =>
           prev.map((t) => (t.id === activeId ? { ...t, assistantReply: sliced, isStreaming: true } : t))
         );
-      } else if (streamEndedRef.current) {
+      } else if (isEnded && currentLen >= target.length) {
         setTurns((prev) =>
           prev.map((t) => (t.id === activeId ? { ...t, assistantReply: target, isStreaming: false } : t))
         );
@@ -969,6 +1054,7 @@ export const ChatPillWindow: React.FC = () => {
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
+    lastLineEmittedTimeRef.current = 0;
   };
 
   const hasReplyText = turns.length > 0 || Boolean(followupThinkingPrompt) || isStreaming;
@@ -1116,6 +1202,7 @@ export const ChatPillWindow: React.FC = () => {
               targetTextRef.current = "";
               displayedLengthRef.current = 0;
               streamEndedRef.current = false;
+              lastLineEmittedTimeRef.current = 0;
               setIsStreaming(true);
               setActiveUiTag(null);
 
@@ -1238,6 +1325,7 @@ export const ChatPillWindow: React.FC = () => {
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
+    lastLineEmittedTimeRef.current = 0;
     setIsStreaming(false);
 
     if (!isFollowup) {
