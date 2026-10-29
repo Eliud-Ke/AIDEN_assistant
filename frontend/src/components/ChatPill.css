@@ -1309,7 +1309,8 @@
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  animation: minimizeBtnSpringDown 0.44s cubic-bezier(0.18, 1.25, 0.35, 1) forwards;
+  transition: none;
+  animation: minimizeBtnSpringDown 0.44s cubic-bezier(0.18, 1.25, 0.35, 1) both;
 }
 
 @keyframes minimizeBtnSpringDown {
@@ -1632,7 +1633,8 @@
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms forwards;
+  transition: none;
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms both;
 }
 
 /* 2. Then the text box capsule comes (70ms delay) */
@@ -1640,7 +1642,8 @@
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 70ms forwards;
+  transition: none;
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 70ms both;
 }
 
 /* 3. Then the mic button comes (140ms delay) and all settle */
@@ -1648,7 +1651,8 @@
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms forwards;
+  transition: none;
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms both;
 }
 
 /* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
