@@ -1502,19 +1502,37 @@
   width: auto;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(10px) scale(0.97);
+  transform: translateY(48px) scale(0.94);
   box-sizing: border-box;
-  transition: 
-    opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.35s cubic-bezier(0.18, 1.25, 0.32, 1);
+  transition: opacity 0.22s ease-out,
+              transform 0.28s cubic-bezier(0.32, 0, 0.2, 1);
 }
 
-/* Once hovered or active, remains gracefully in expanded state */
+/* Once hovered or active, springs upward the full height of the bar (48px) with bouncy settle */
 .siri-hover-followup-bar.revealed,
 .siri-hover-followup-bar.active {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
+  animation: followupBarSpringUp 0.46s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes followupBarSpringUp {
+  0% {
+    opacity: 0;
+    transform: translateY(48px) scale(0.94);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.012);
+  }
+  78% {
+    transform: translateY(1.5px) scale(0.996);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
