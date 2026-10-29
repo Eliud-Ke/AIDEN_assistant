@@ -393,8 +393,24 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       const { scrollTop, scrollHeight, clientHeight } = el;
       const maxScroll = scrollHeight - clientHeight;
 
-      // If content doesn't overflow, keep it completely crisp with no mask
-      if (maxScroll <= 2) {
+      // Top fade: dissolves smoothly under the floating minimize button when scrolled
+      const topFade = Math.min(32, Math.max(0, scrollTop));
+      const topStop = topFade > 0 ? `transparent 0%, black ${topFade}px` : `black 0px`;
+
+      // Bottom fade:
+      // When controls are visible, dissolve text softly across the command bar zone (84px)
+      // When unhovered, dissolve at bottom edge only if content overflows
+      let bottomStop: string;
+      if (isControlsVisible) {
+        bottomStop = `black calc(100% - 84px), transparent calc(100% - 16px)`;
+      } else if (maxScroll > 2) {
+        const bottomFade = Math.min(24, Math.max(0, maxScroll - scrollTop));
+        bottomStop = bottomFade > 0 ? `black calc(100% - ${bottomFade}px), transparent 100%` : `black 100%`;
+      } else {
+        bottomStop = `black 100%`;
+      }
+
+      if (topStop === "black 0px" && bottomStop === "black 100%") {
         if (el.dataset.currentMask !== "none") {
           el.dataset.currentMask = "none";
           el.style.maskImage = "none";
@@ -402,15 +418,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         }
         return;
       }
-
-      // Smooth continuous fade depth based on scroll position
-      // Top fade: dissolves smoothly under the floating minimize button
-      const topFade = Math.min(32, Math.max(0, scrollTop));
-      // Bottom fade: ONLY dissolves at the very bottom edge curvature (below the floating command bar)
-      const bottomFade = Math.min(20, Math.max(0, maxScroll - scrollTop));
-
-      const topStop = topFade > 0 ? `transparent 0%, black ${topFade}px` : `black 0px`;
-      const bottomStop = bottomFade > 0 ? `black calc(100% - ${bottomFade}px), transparent 100%` : `black 100%`;
 
       const mask = `linear-gradient(to bottom, ${topStop}, ${bottomStop})`;
       if (el.dataset.currentMask !== mask) {
@@ -437,7 +444,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       el.removeEventListener("scroll", onScroll);
       resizeObserver.disconnect();
     };
-  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt]);
+  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible]);
 
   const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
@@ -748,6 +755,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Apple-style Bottom Frosted Dissolve Shroud */}
+              <div
+                className={`siri-bottom-dissolve-shroud ${isControlsVisible ? "controls-visible" : ""}`}
+                aria-hidden="true"
+              />
 
               {/* Apple-style Persistent Follow-up Command Bar */}
               <div
