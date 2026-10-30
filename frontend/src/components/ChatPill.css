@@ -1432,6 +1432,7 @@
 /* MODE 1.5 -> 1: REVERSE EXPAND MORPH (Voice Exit back to Idle Search Capsule) */
 .siri-unified-pill.mode-idle.exiting-voice {
   transition: none !important;
+  padding: 0 !important;
   animation: siriVoicePillExpand 0.48s cubic-bezier(0.18, 1.25, 0.35, 1) both;
 }
 
@@ -1441,6 +1442,7 @@
     min-height: 80px;
     height: 80px;
     border-radius: 40px;
+    padding: 0;
     transform: scale(1);
   }
   /* 1. Anticipation squash: gathers kinetic energy before popping open */
@@ -1449,6 +1451,7 @@
     min-height: 84px;
     height: 84px;
     border-radius: 40px;
+    padding: 0;
     transform: scaleX(0.96) scaleY(1.04);
   }
   /* 2. Explosive spring expansion: blooms outward past 560px */
@@ -1457,6 +1460,7 @@
     min-height: 56px;
     height: 56px;
     border-radius: 28px;
+    padding: 0 16px;
     transform: scaleX(1.045) scaleY(0.95);
   }
   /* 3. Elastic rebound cushion */
@@ -1465,6 +1469,7 @@
     min-height: 61px;
     height: 61px;
     border-radius: 30px;
+    padding: 0 24px;
     transform: scaleX(0.99) scaleY(1.01);
   }
   /* 4. Settles cleanly at standard idle search pill */
@@ -1473,6 +1478,7 @@
     min-height: 60px;
     height: 60px;
     border-radius: 30px;
+    padding: 0 24px;
     transform: scale(1);
   }
 }

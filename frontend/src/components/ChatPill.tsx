@@ -30,6 +30,7 @@ interface ChatPillProps {
   onToggleTts?: (turnId: string, text: string) => void;
   isVoiceActive?: boolean;
   onToggleVoice?: (active: boolean) => void;
+  isExitingVoice?: boolean;
 }
 
 interface MediaGalleryItem {
@@ -349,45 +350,34 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onToggleTts,
   isVoiceActive,
   onToggleVoice,
+  isExitingVoice,
 }) => {
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
   const [localVoiceActive, setLocalVoiceActive] = useState(false);
   const voiceActive = isVoiceActive !== undefined ? isVoiceActive : localVoiceActive;
 
-  const [isExitingVoice, setIsExitingVoice] = useState(false);
-  const exitingVoiceTimerRef = useRef<number | null>(null);
-  const prevVoiceActiveRef = useRef(voiceActive);
-
-  useEffect(() => {
-    if (prevVoiceActiveRef.current && !voiceActive) {
-      setIsExitingVoice(true);
-      if (exitingVoiceTimerRef.current !== null) {
-        window.clearTimeout(exitingVoiceTimerRef.current);
-      }
-      exitingVoiceTimerRef.current = window.setTimeout(() => {
-        setIsExitingVoice(false);
-        exitingVoiceTimerRef.current = null;
-      }, 480);
-    } else if (voiceActive) {
-      setIsExitingVoice(false);
-      if (exitingVoiceTimerRef.current !== null) {
-        window.clearTimeout(exitingVoiceTimerRef.current);
-        exitingVoiceTimerRef.current = null;
-      }
-    }
-    prevVoiceActiveRef.current = voiceActive;
-  }, [voiceActive]);
-
-  useEffect(() => {
-    return () => {
-      if (exitingVoiceTimerRef.current !== null) {
-        window.clearTimeout(exitingVoiceTimerRef.current);
-      }
-    };
-  }, []);
+  const [localExitingVoice, setLocalExitingVoice] = useState(false);
+  const localExitingTimerRef = useRef<number | null>(null);
+  const effectiveExitingVoice = isExitingVoice !== undefined ? isExitingVoice : localExitingVoice;
 
   const toggleVoiceMode = (active: boolean) => {
+    if (!active && voiceActive) {
+      setLocalExitingVoice(true);
+      if (localExitingTimerRef.current !== null) {
+        window.clearTimeout(localExitingTimerRef.current);
+      }
+      localExitingTimerRef.current = window.setTimeout(() => {
+        setLocalExitingVoice(false);
+        localExitingTimerRef.current = null;
+      }, 480);
+    } else if (active) {
+      setLocalExitingVoice(false);
+      if (localExitingTimerRef.current !== null) {
+        window.clearTimeout(localExitingTimerRef.current);
+        localExitingTimerRef.current = null;
+      }
+    }
     setLocalVoiceActive(active);
     if (onToggleVoice) onToggleVoice(active);
   };
@@ -684,7 +674,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
         <div
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
-            isExitingVoice && pillMode === "idle" ? "exiting-voice" : ""
+            effectiveExitingVoice && pillMode === "idle" ? "exiting-voice" : ""
           } ${
             isMaxHeight ? "max-height" : ""
           } ${
@@ -1120,6 +1110,30 @@ export const ChatPillWindow: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMaxHeight, setIsMaxHeight] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isExitingVoice, setIsExitingVoice] = useState(false);
+  const exitingVoiceTimerRef = useRef<number | null>(null);
+
+  const handleToggleVoice = useCallback((active: boolean) => {
+    setIsVoiceActive((prev) => {
+      if (prev && !active) {
+        setIsExitingVoice(true);
+        if (exitingVoiceTimerRef.current !== null) {
+          window.clearTimeout(exitingVoiceTimerRef.current);
+        }
+        exitingVoiceTimerRef.current = window.setTimeout(() => {
+          setIsExitingVoice(false);
+          exitingVoiceTimerRef.current = null;
+        }, 480);
+      } else if (active) {
+        setIsExitingVoice(false);
+        if (exitingVoiceTimerRef.current !== null) {
+          window.clearTimeout(exitingVoiceTimerRef.current);
+          exitingVoiceTimerRef.current = null;
+        }
+      }
+      return active;
+    });
+  }, []);
 
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
@@ -1274,6 +1288,11 @@ export const ChatPillWindow: React.FC = () => {
     stopStreamRaf();
     stopAudio();
     setIsVoiceActive(false);
+    setIsExitingVoice(false);
+    if (exitingVoiceTimerRef.current !== null) {
+      window.clearTimeout(exitingVoiceTimerRef.current);
+      exitingVoiceTimerRef.current = null;
+    }
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
@@ -1339,10 +1358,18 @@ export const ChatPillWindow: React.FC = () => {
     const rect = pillEl.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    const shapeX = Math.round(rect.left);
-    const shapeY = Math.round(rect.top);
-    const shapeW = Math.round(rect.width);
-    const shapeH = Math.round(rect.height);
+    let shapeX = Math.round(rect.left);
+    let shapeY = Math.round(rect.top);
+    let shapeW = Math.round(rect.width);
+    let shapeH = Math.round(rect.height);
+
+    // Guard: Prevent un-rendered 560px layout from flashing during the instant of voice exit
+    if (isExitingVoice && shapeW > 400 && shapeH < 75) {
+      shapeW = 280;
+      shapeX = 180;
+      shapeH = 80;
+    }
+
     const shapeR = currentMode === "responding" ? (shapeH > 80 ? 28 : 30) : Math.round(shapeH / 2);
 
     const winH = targetWinHeight ?? (
@@ -1361,7 +1388,7 @@ export const ChatPillWindow: React.FC = () => {
       shapeH,
       shapeR,
     }).catch(() => {});
-  }, [isAwake, currentMode]);
+  }, [isAwake, currentMode, isExitingVoice]);
 
   // Launch smooth frame-by-frame rAF tracker during morph transitions (550ms)
   const startMorphTracking = useCallback((durationMs = 550) => {
@@ -1617,6 +1644,11 @@ export const ChatPillWindow: React.FC = () => {
     stopStreamRaf();
     stopAudio();
     setIsVoiceActive(false);
+    setIsExitingVoice(false);
+    if (exitingVoiceTimerRef.current !== null) {
+      window.clearTimeout(exitingVoiceTimerRef.current);
+      exitingVoiceTimerRef.current = null;
+    }
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -1686,7 +1718,8 @@ export const ChatPillWindow: React.FC = () => {
         isAudioPlaying={isAudioPlaying}
         onToggleTts={handleToggleTts}
         isVoiceActive={isVoiceActive}
-        onToggleVoice={setIsVoiceActive}
+        onToggleVoice={handleToggleVoice}
+        isExitingVoice={isExitingVoice}
       />
     </div>
   );
