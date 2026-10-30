@@ -2107,6 +2107,17 @@
   animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 140ms both !important;
 }
 
+/* Give text content comfortable clearance above bottom aurora glow in expanded voice mode */
+.siri-unified-pill.expanded-voice-active .siri-unified-stream {
+  padding-bottom: 96px !important;
+}
+
+/* Suppress bottom dissolve shroud in voice mode so it does not overlap */
+.siri-unified-pill.expanded-voice-active .siri-bottom-dissolve-shroud {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* 2. Space Pressed -> Cascade animating back up into position: [+] starts -> text box -> Mic */
 .siri-unified-pill.expanded-voice-returning .siri-command-glass-btn.plus-btn {
   pointer-events: auto !important;
@@ -2274,7 +2285,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 96px;
+  height: 104px;
   border-radius: 0 0 28px 28px;
   overflow: hidden;
   pointer-events: auto;
@@ -2282,6 +2293,30 @@
   z-index: 12;
   animation: siriAuroraFadeIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
   transition: box-shadow 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Expanded UI Variant: Smooth upward dissipation to absolute transparency (zero top cutoff line) */
+.siri-aurora-edge-container:not(.compact) {
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 28%,
+    rgba(0, 0, 0, 0.72) 48%,
+    rgba(0, 0, 0, 0.28) 68%,
+    rgba(0, 0, 0, 0.06) 82%,
+    rgba(0, 0, 0, 0) 90%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 28%,
+    rgba(0, 0, 0, 0.72) 48%,
+    rgba(0, 0, 0, 0.28) 68%,
+    rgba(0, 0, 0, 0.06) 82%,
+    rgba(0, 0, 0, 0) 90%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 /* Natural glass rim reflection hugging the curved bottom contour (zero artificial lines) */
