@@ -1128,11 +1128,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     const rawMid = audioMeter.mid || 0;
                     const rawBass = audioMeter.bass || 0;
                     const vocalEnergy = Math.max(rawLevel, rawMid * 0.95, rawBass * 0.75);
-                    const voiceIntensity = isRecording ? Math.min(1.0, Math.pow(vocalEnergy * 2.4, 0.75)) : 0;
-                    const activeScaleY = 1 + voiceIntensity * 0.95;
-                    const activeScaleX = 1 + voiceIntensity * 0.18;
-                    const rimGlow = 14 + voiceIntensity * 28;
-                    const rimBlue = 26 + voiceIntensity * 42;
+                    const voiceIntensity = isRecording ? Math.min(1.0, Math.pow(vocalEnergy * 2.0, 0.75)) : 0;
+                    const activeScaleY = 1 + voiceIntensity * 0.48;
+                    const activeScaleX = 1 + voiceIntensity * 0.09;
+                    const rimGlow = 14 + voiceIntensity * 14;
+                    const rimBlue = 26 + voiceIntensity * 20;
                     return (
                       <div
                         className="siri-aurora-layer active-layer"

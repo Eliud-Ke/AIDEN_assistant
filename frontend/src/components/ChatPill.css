@@ -2315,7 +2315,7 @@
 .siri-aurora-layer.active-layer {
   opacity: 0;
   transform: scaleY(0.90);
-  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.08s ease-out;
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.12s ease-out;
 }
 
 .siri-aurora-edge-container.recording .siri-aurora-layer.active-layer {
