@@ -31,6 +31,7 @@ interface ChatPillProps {
   isVoiceActive?: boolean;
   onToggleVoice?: (active: boolean) => void;
   isExitingVoice?: boolean;
+  isEnteringVoice?: boolean;
 }
 
 interface MediaGalleryItem {
@@ -351,6 +352,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   isVoiceActive,
   onToggleVoice,
   isExitingVoice,
+  isEnteringVoice,
 }) => {
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
@@ -361,8 +363,17 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const localExitingTimerRef = useRef<number | null>(null);
   const effectiveExitingVoice = isExitingVoice !== undefined ? isExitingVoice : localExitingVoice;
 
+  const [localEnteringVoice, setLocalEnteringVoice] = useState(false);
+  const localEnteringTimerRef = useRef<number | null>(null);
+  const effectiveEnteringVoice = isEnteringVoice !== undefined ? isEnteringVoice : localEnteringVoice;
+
   const toggleVoiceMode = (active: boolean) => {
     if (!active && voiceActive) {
+      setLocalEnteringVoice(false);
+      if (localEnteringTimerRef.current !== null) {
+        window.clearTimeout(localEnteringTimerRef.current);
+        localEnteringTimerRef.current = null;
+      }
       setLocalExitingVoice(true);
       if (localExitingTimerRef.current !== null) {
         window.clearTimeout(localExitingTimerRef.current);
@@ -377,10 +388,29 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         window.clearTimeout(localExitingTimerRef.current);
         localExitingTimerRef.current = null;
       }
+      setLocalEnteringVoice(true);
+      if (localEnteringTimerRef.current !== null) {
+        window.clearTimeout(localEnteringTimerRef.current);
+      }
+      localEnteringTimerRef.current = window.setTimeout(() => {
+        setLocalEnteringVoice(false);
+        localEnteringTimerRef.current = null;
+      }, 160);
     }
     setLocalVoiceActive(active);
     if (onToggleVoice) onToggleVoice(active);
   };
+
+  useEffect(() => {
+    return () => {
+      if (localExitingTimerRef.current !== null) {
+        window.clearTimeout(localExitingTimerRef.current);
+      }
+      if (localEnteringTimerRef.current !== null) {
+        window.clearTimeout(localEnteringTimerRef.current);
+      }
+    };
+  }, []);
 
   // Dynamic Shining Cursor tracking
   const [selectionIndex, setSelectionIndex] = useState(0);
@@ -697,9 +727,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           onMouseLeave={() => setIsHovered(false)}
         >
           {/* 1. IDLE / INPUT STATE */}
-          {pillMode === "idle" && (
+          {(pillMode === "idle" || effectiveEnteringVoice) && (
             <>
-              <div className="siri-pill-input-wrap">
+              <div
+                className={`siri-pill-input-wrap ${
+                  effectiveEnteringVoice ? "entering-voice" : ""
+                }`}
+              >
                 <div className="siri-input-track">
                   <span ref={pillMeasureRef} className="siri-measure-text" aria-hidden="true">
                     {cursorPrefix}
@@ -734,7 +768,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               {/* Minimalist Bare Mic Icon (No background circle, just clean icon) */}
               <button
                 type="button"
-                className="siri-idle-bare-mic-btn"
+                className={`siri-idle-bare-mic-btn ${
+                  effectiveEnteringVoice ? "entering-voice" : ""
+                }`}
                 title="Voice Input (Click or Hold Shift)"
                 aria-label="Voice input"
                 onClick={(e) => {
@@ -762,7 +798,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           )}
 
           {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule) */}
-          {pillMode === "listening" && (
+          {pillMode === "listening" && !effectiveEnteringVoice && (
             <div
               className="siri-listening-content"
               onClick={(e) => {
@@ -1112,10 +1148,17 @@ export const ChatPillWindow: React.FC = () => {
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isExitingVoice, setIsExitingVoice] = useState(false);
   const exitingVoiceTimerRef = useRef<number | null>(null);
+  const [isEnteringVoice, setIsEnteringVoice] = useState(false);
+  const enteringVoiceTimerRef = useRef<number | null>(null);
 
   const handleToggleVoice = useCallback((active: boolean) => {
     setIsVoiceActive((prev) => {
       if (prev && !active) {
+        setIsEnteringVoice(false);
+        if (enteringVoiceTimerRef.current !== null) {
+          window.clearTimeout(enteringVoiceTimerRef.current);
+          enteringVoiceTimerRef.current = null;
+        }
         setIsExitingVoice(true);
         if (exitingVoiceTimerRef.current !== null) {
           window.clearTimeout(exitingVoiceTimerRef.current);
@@ -1130,6 +1173,14 @@ export const ChatPillWindow: React.FC = () => {
           window.clearTimeout(exitingVoiceTimerRef.current);
           exitingVoiceTimerRef.current = null;
         }
+        setIsEnteringVoice(true);
+        if (enteringVoiceTimerRef.current !== null) {
+          window.clearTimeout(enteringVoiceTimerRef.current);
+        }
+        enteringVoiceTimerRef.current = window.setTimeout(() => {
+          setIsEnteringVoice(false);
+          enteringVoiceTimerRef.current = null;
+        }, 160);
       }
       return active;
     });
@@ -1292,6 +1343,11 @@ export const ChatPillWindow: React.FC = () => {
     if (exitingVoiceTimerRef.current !== null) {
       window.clearTimeout(exitingVoiceTimerRef.current);
       exitingVoiceTimerRef.current = null;
+    }
+    setIsEnteringVoice(false);
+    if (enteringVoiceTimerRef.current !== null) {
+      window.clearTimeout(enteringVoiceTimerRef.current);
+      enteringVoiceTimerRef.current = null;
     }
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
@@ -1647,6 +1703,11 @@ export const ChatPillWindow: React.FC = () => {
       window.clearTimeout(exitingVoiceTimerRef.current);
       exitingVoiceTimerRef.current = null;
     }
+    setIsEnteringVoice(false);
+    if (enteringVoiceTimerRef.current !== null) {
+      window.clearTimeout(enteringVoiceTimerRef.current);
+      enteringVoiceTimerRef.current = null;
+    }
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -1718,6 +1779,7 @@ export const ChatPillWindow: React.FC = () => {
         isVoiceActive={isVoiceActive}
         onToggleVoice={handleToggleVoice}
         isExitingVoice={isExitingVoice}
+        isEnteringVoice={isEnteringVoice}
       />
     </div>
   );

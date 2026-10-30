@@ -1383,6 +1383,7 @@
     min-height: 60px;
     height: 60px;
     border-radius: 30px;
+    padding: 0 24px;
     transform: scale(1);
   }
   /* 1. Anticipation stretch: edges stretch out just a tiny bit */
@@ -1391,6 +1392,7 @@
     min-height: 56px;
     height: 56px;
     border-radius: 28px;
+    padding: 0 24px;
     transform: scaleX(1.045) scaleY(0.95);
   }
   /* 2. Move inwards as if the pill is shrinking: half size width (280px), gaining height (80px) */
@@ -1483,20 +1485,64 @@
   }
 }
 
-/* Staggered Content Reveal on Voice Exit: Keeps search placeholder & mic hidden until pill blooms */
-.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap,
-.siri-unified-pill.mode-idle.exiting-voice .siri-idle-bare-mic-btn {
-  animation: siriVoiceContentExpandIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both;
+/* Staggered Content Reveal on Voice Exit: Fade in near center separated, then spring outwards to ends */
+.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap {
+  animation: siriVoiceSearchSpringOut 0.28s cubic-bezier(0.18, 1.25, 0.35, 1) 0.20s both;
 }
 
-@keyframes siriVoiceContentExpandIn {
+.siri-unified-pill.mode-idle.exiting-voice .siri-idle-bare-mic-btn {
+  animation: siriVoiceMicSpringOut 0.28s cubic-bezier(0.18, 1.25, 0.35, 1) 0.20s both;
+}
+
+@keyframes siriVoiceSearchSpringOut {
   0% {
     opacity: 0;
-    transform: scale(0.93);
+    transform: translateX(135px) scale(0.95);
+  }
+  30% {
+    opacity: 1;
+  }
+  75% {
+    transform: translateX(-5px) scale(1.01);
   }
   100% {
     opacity: 1;
-    transform: scale(1);
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes siriVoiceMicSpringOut {
+  0% {
+    opacity: 0;
+    transform: translateX(-145px) scale(0.95);
+  }
+  30% {
+    opacity: 1;
+  }
+  75% {
+    transform: translateX(5px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Content Fade Out when Entering Voice Mode ("they just fade there") */
+.siri-pill-input-wrap.entering-voice,
+.siri-idle-bare-mic-btn.entering-voice {
+  pointer-events: none !important;
+  animation: siriVoiceContentFadeThere 0.14s ease-out forwards !important;
+}
+
+@keyframes siriVoiceContentFadeThere {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
   }
 }
 
