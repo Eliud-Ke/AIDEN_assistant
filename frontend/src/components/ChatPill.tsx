@@ -1218,14 +1218,14 @@ export const ChatPillWindow: React.FC = () => {
   const [audioMeter, setAudioMeter] = useState({ level: 0, bass: 0, mid: 0, high: 0 });
   const wasOriginVoiceRef = useRef<boolean>(false);
 
-  const handleToggleVoice = useCallback((active: boolean) => {
+  const handleToggleVoice = useCallback((active: boolean, skipSocket?: boolean) => {
     if (active) {
       wasOriginVoiceRef.current = true;
     } else {
       wasOriginVoiceRef.current = false;
     }
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (!skipSocket && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: active ? "voice_start" : "voice_stop" }));
     }
 
@@ -1633,6 +1633,9 @@ export const ChatPillWindow: React.FC = () => {
                 mid: Number(data.mid || 0),
                 high: Number(data.high || 0),
               });
+            } else if (msgType === "voice_active") {
+              const active = Boolean(data.active);
+              handleToggleVoice(active, true);
             } else if (msgType === "voice_transcription") {
               const text = String(data.text || "").trim();
               if (text) {

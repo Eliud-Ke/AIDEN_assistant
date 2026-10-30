@@ -134,6 +134,13 @@ def _on_voice_status(status: str):
     })
 
 
+def _on_voice_active(active: bool):
+    broadcast_event({
+        "type": "voice_active",
+        "active": active,
+    })
+
+
 async def broadcast_state_async(
     is_awake: bool,
     wake_source: Optional[str] = None,
@@ -329,6 +336,7 @@ async def start_ws_server(host: str = "127.0.0.1", port: int = 8765):
         on_meter=_on_audio_meter,
         on_transcription=_on_voice_transcription,
         on_status=_on_voice_status,
+        on_active=_on_voice_active,
         loop=_server_loop,
     )
     _ws_server = await websockets.serve(handle_connection, host, port)

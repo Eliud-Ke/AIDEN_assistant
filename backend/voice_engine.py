@@ -1,6 +1,7 @@
 """
 AIDEN Assistant - Voice Engine & Real-Time Audio Meter
-Provides simultaneous real-time audio amplitude/frequency metering + Google Keyless STT.
+Provides Push-to-Talk (Hold Shift to speak, release to send) + Real-Time Audio Metering + Google Keyless STT.
+Zero VAD / silence complications: purely controlled by holding Shift or clicking the mic.
 """
 
 import asyncio
@@ -15,11 +16,15 @@ import scipy.io.wavfile as wavfile
 import sounddevice as sd
 import speech_recognition as sr
 
+try:
+    import keyboard
+except ImportError:
+    keyboard = None
+
 SAMPLE_RATE = 16000
 CHANNELS = 1
-BLOCK_SIZE = 512  # ~32ms per audio slice for smooth ~30 FPS updates
-SILENCE_TIMEOUT = 1.3  # Seconds of silence after speech before auto-finalizing
-MIN_SPEECH_DURATION = 0.35  # Minimum seconds of audio to attempt transcription
+BLOCK_SIZE = 512  # ~32ms per audio slice for ultra-smooth ~30 FPS updates
+MIN_SPEECH_DURATION = 0.35  # Ignore taps shorter than 350ms (e.g. typing capital letters)
 
 
 def calculate_band_energies(audio_chunk: np.ndarray, sample_rate: int = SAMPLE_RATE) -> tuple[float, float, float]:
@@ -72,27 +77,36 @@ def transcribe_google_free(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE)
 
 
 class VoiceEngine:
-    """Manages microphone input, real-time audio metering, and speech transcription."""
+    """
+    Manages push-to-talk audio capture, live metering, and transcription.
+    Zero VAD: Records while Shift is held down (or mic mode is active),
+    and stops/transcribes when Shift is released (or mic mode is deactivated).
+    """
 
     def __init__(self,
                  on_meter: Optional[Callable[[float, float, float, float], None]] = None,
                  on_transcription: Optional[Callable[[str], None]] = None,
                  on_status: Optional[Callable[[str], None]] = None,
+                 on_active: Optional[Callable[[bool], None]] = None,
                  loop: Optional[asyncio.AbstractEventLoop] = None):
         self.on_meter = on_meter
         self.on_transcription = on_transcription
         self.on_status = on_status
+        self.on_active = on_active
         self.loop = loop
 
         self.is_listening = False
         self._stream: Optional[sd.InputStream] = None
         self._audio_chunks: list[np.ndarray] = []
-        self._speech_detected = False
-        self._last_speech_time = 0.0
         self._start_time = 0.0
         self._last_meter_emit = 0.0
         self._lock = threading.Lock()
-        self._is_finalizing = False
+        self._shift_monitor_running = False
+        self._stop_monitor = threading.Event()
+
+        # Start background Shift key push-to-talk listener thread
+        if keyboard is not None:
+            self._start_shift_monitor()
 
     def _dispatch(self, fn: Optional[Callable], *args):
         """Safely dispatches callback across thread or asyncio event loop."""
@@ -112,18 +126,42 @@ class VoiceEngine:
             except Exception:
                 pass
 
-    def start_listening(self):
+    def _start_shift_monitor(self):
+        """Monitors Shift key for Push-to-Talk in a dedicated thread."""
+        self._stop_monitor.clear()
+        t = threading.Thread(target=self._shift_monitor_loop, daemon=True, name="VoiceEngine-ShiftMonitor")
+        t.start()
+
+    def _shift_monitor_loop(self):
+        """Loops waiting for Shift to be held down and released."""
+        while not self._stop_monitor.is_set():
+            try:
+                if keyboard and keyboard.is_pressed("shift"):
+                    # Shift was pressed down!
+                    if not self.is_listening:
+                        self.start_listening(origin="shift")
+                        self._dispatch(self.on_active, True)
+
+                    # Keep recording while Shift is held
+                    while keyboard and keyboard.is_pressed("shift") and not self._stop_monitor.is_set():
+                        time.sleep(0.01)
+
+                    # Shift was released!
+                    if self.is_listening:
+                        self.stop_listening(and_transcribe=True)
+                time.sleep(0.015)
+            except Exception:
+                time.sleep(0.05)
+
+    def start_listening(self, origin: str = "ui"):
         """Starts real-time microphone capture and volume metering."""
         with self._lock:
             if self.is_listening:
                 return
 
             self._audio_chunks = []
-            self._speech_detected = False
-            self._last_speech_time = time.time()
             self._start_time = time.time()
             self._last_meter_emit = 0.0
-            self._is_finalizing = False
             self.is_listening = True
 
             try:
@@ -135,7 +173,7 @@ class VoiceEngine:
                     blocksize=BLOCK_SIZE,
                 )
                 self._stream.start()
-                print("🎙️ [VOICE ENGINE] Microphone stream active. Listening...")
+                print(f"🎙️ [VOICE ENGINE] Microphone active ({origin.upper()}). Speak now...")
                 self._dispatch(self.on_status, "listening")
             except Exception as e:
                 print(f"❌ [VOICE ENGINE] Failed to open microphone stream: {e}")
@@ -144,8 +182,8 @@ class VoiceEngine:
                 self._dispatch(self.on_status, "error")
 
     def _audio_callback(self, indata, frames, time_info, status):
-        """Callback running on SoundDevice real-time audio thread."""
-        if not self.is_listening or self._is_finalizing:
+        """Real-time audio callback calculating volume & frequency bands."""
+        if not self.is_listening:
             return
 
         chunk = indata.copy()
@@ -157,27 +195,14 @@ class VoiceEngine:
         bass, mid, high = calculate_band_energies(indata.flatten())
 
         now = time.time()
-
-        # VAD detection
-        if level > 0.16 or rms > 30.0:
-            self._speech_detected = True
-            self._last_speech_time = now
-
         # Throttled live meter broadcast (~30 FPS)
         if now - self._last_meter_emit >= 0.033:
             self._last_meter_emit = now
             if self.on_meter:
                 self._dispatch(self.on_meter, level, bass, mid, high)
 
-        # Automatic silence finalization after speech
-        elapsed = now - self._start_time
-        silence_duration = now - self._last_speech_time
-        if self._speech_detected and silence_duration >= SILENCE_TIMEOUT and elapsed >= MIN_SPEECH_DURATION:
-            self._is_finalizing = True
-            threading.Thread(target=self._finalize_recording, daemon=True).start()
-
     def stop_listening(self, and_transcribe: bool = True):
-        """Stops the audio stream and optionally triggers speech transcription."""
+        """Stops the audio stream and triggers transcription if audio is long enough."""
         with self._lock:
             if not self.is_listening:
                 return
@@ -195,9 +220,10 @@ class VoiceEngine:
             threading.Thread(target=self._finalize_recording, daemon=True).start()
         else:
             self._dispatch(self.on_status, "idle")
+            self._dispatch(self.on_active, False)
 
     def _finalize_recording(self):
-        """Transcribes accumulated audio buffer in background thread."""
+        """Processes accumulated audio buffer and sends transcription."""
         with self._lock:
             self.is_listening = False
             if self._stream:
@@ -210,18 +236,19 @@ class VoiceEngine:
 
             chunks = list(self._audio_chunks)
             self._audio_chunks = []
-            self._is_finalizing = False
 
         if not chunks:
             self._dispatch(self.on_status, "idle")
+            self._dispatch(self.on_active, False)
             return
 
         full_audio = np.concatenate(chunks, axis=0)
         duration = len(full_audio) / SAMPLE_RATE
 
-        if duration < MIN_SPEECH_DURATION or not self._speech_detected:
-            print(f"🎙️ [VOICE ENGINE] Audio too short ({duration:.2f}s) or silence. Ignoring.")
+        if duration < MIN_SPEECH_DURATION:
+            # Shift was tapped briefly (e.g. typing a capital letter), silently ignore
             self._dispatch(self.on_status, "idle")
+            self._dispatch(self.on_active, False)
             return
 
         print(f"⏳ [VOICE ENGINE] Transcribing {duration:.2f}s audio buffer via Google Keyless STT...")
@@ -235,6 +262,12 @@ class VoiceEngine:
         else:
             print("🎙️ [VOICE ENGINE] No recognizable speech detected.")
             self._dispatch(self.on_status, "idle")
+            self._dispatch(self.on_active, False)
+
+    def shutdown(self):
+        """Gracefully shuts down voice engine and background threads."""
+        self._stop_monitor.set()
+        self.stop_listening(and_transcribe=False)
 
 
 # Global singleton instance
@@ -245,7 +278,15 @@ def get_voice_engine() -> Optional[VoiceEngine]:
     return voice_engine
 
 
-def init_voice_engine(on_meter=None, on_transcription=None, on_status=None, loop=None) -> VoiceEngine:
+def init_voice_engine(on_meter=None, on_transcription=None, on_status=None, on_active=None, loop=None) -> VoiceEngine:
     global voice_engine
-    voice_engine = VoiceEngine(on_meter=on_meter, on_transcription=on_transcription, on_status=on_status, loop=loop)
+    if voice_engine is not None:
+        voice_engine.shutdown()
+    voice_engine = VoiceEngine(
+        on_meter=on_meter,
+        on_transcription=on_transcription,
+        on_status=on_status,
+        on_active=on_active,
+        loop=loop
+    )
     return voice_engine
