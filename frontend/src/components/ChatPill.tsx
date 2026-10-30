@@ -886,7 +886,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     <div className="siri-aurora-cloud idle-cloud-3" />
                     <div className="siri-aurora-cloud idle-cloud-crest" />
                   </div>
-                  <div className="siri-aurora-specular-rim idle-rim" />
                 </div>
 
                 {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
@@ -902,7 +901,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     <div className="siri-aurora-cloud active-cloud-white" />
                     <div className="siri-aurora-cloud active-cloud-amber" />
                   </div>
-                  <div className="siri-aurora-specular-rim active-rim" />
                 </div>
               </div>
             </div>
@@ -1126,7 +1124,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       <div className="siri-aurora-cloud idle-cloud-3" />
                       <div className="siri-aurora-cloud idle-cloud-crest" />
                     </div>
-                    <div className="siri-aurora-specular-rim idle-rim" />
                   </div>
 
                   {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
@@ -1142,7 +1139,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       <div className="siri-aurora-cloud active-cloud-white" />
                       <div className="siri-aurora-cloud active-cloud-amber" />
                     </div>
-                    <div className="siri-aurora-specular-rim active-rim" />
                   </div>
                 </div>
               )}
