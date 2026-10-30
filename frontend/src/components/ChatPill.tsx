@@ -377,12 +377,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const [isExpandedVoiceReturning, setIsExpandedVoiceReturning] = useState(false);
   const expandedVoiceReturnTimerRef = useRef<number | null>(null);
+  const [isExpandedVoiceCascading, setIsExpandedVoiceCascading] = useState(false);
+  const expandedVoiceCascadeTimerRef = useRef<number | null>(null);
 
   const toggleVoiceMode = (active: boolean) => {
     const isResponding = pillMode === "responding";
 
     if (!active && voiceActive) {
       if (isResponding) {
+        setIsExpandedVoiceCascading(false);
+        if (expandedVoiceCascadeTimerRef.current !== null) {
+          window.clearTimeout(expandedVoiceCascadeTimerRef.current);
+          expandedVoiceCascadeTimerRef.current = null;
+        }
         setIsExpandedVoiceReturning(true);
         if (expandedVoiceReturnTimerRef.current !== null) {
           window.clearTimeout(expandedVoiceReturnTimerRef.current);
@@ -413,6 +420,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           window.clearTimeout(expandedVoiceReturnTimerRef.current);
           expandedVoiceReturnTimerRef.current = null;
         }
+        setIsExpandedVoiceCascading(true);
+        if (expandedVoiceCascadeTimerRef.current !== null) {
+          window.clearTimeout(expandedVoiceCascadeTimerRef.current);
+        }
+        expandedVoiceCascadeTimerRef.current = window.setTimeout(() => {
+          setIsExpandedVoiceCascading(false);
+          expandedVoiceCascadeTimerRef.current = null;
+        }, 320);
         followupInputRef.current?.blur();
         setIsInputFocused(false);
       } else {
@@ -446,6 +461,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       if (expandedVoiceReturnTimerRef.current !== null) {
         window.clearTimeout(expandedVoiceReturnTimerRef.current);
       }
+      if (expandedVoiceCascadeTimerRef.current !== null) {
+        window.clearTimeout(expandedVoiceCascadeTimerRef.current);
+      }
     };
   }, []);
 
@@ -471,7 +489,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     : [];
 
   const hasTurns = activeTurns.length > 0;
-  const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
+  const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || isStreaming || followupThinkingPrompt);
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
 
   const pillMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
@@ -496,9 +514,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const activeScaleY = 1 + voiceIntensity * 0.48;
   const activeScaleX = 1 + voiceIntensity * 0.09;
 
-  // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in-stream thinking
+  // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in-stream thinking (text mode only)
   const isControlsVisible = Boolean(
-    isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt
+    !voiceActive && (isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt)
   );
 
   const respondingMountedAtRef = useRef<number>(0);
@@ -765,6 +783,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             pillMode === "responding" && voiceActive ? "expanded-voice-active" : ""
           } ${
             isExpandedVoiceReturning ? "expanded-voice-returning" : ""
+          } ${
+            isExpandedVoiceCascading ? "expanded-voice-cascading" : ""
           } ${
             isMaxHeight ? "max-height" : ""
           } ${

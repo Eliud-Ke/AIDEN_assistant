@@ -1711,7 +1711,8 @@
 }
 
 /* Hover state: Springs down from the top with bouncy settle */
-.siri-unified-pill.controls-visible .siri-floating-close-btn {
+.siri-unified-pill.controls-visible .siri-floating-close-btn,
+.siri-unified-pill.hover-active .siri-floating-close-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
@@ -1737,14 +1738,16 @@
   }
 }
 
-.siri-unified-pill.controls-visible .siri-floating-close-btn:hover {
+.siri-unified-pill.controls-visible .siri-floating-close-btn:hover,
+.siri-unified-pill.hover-active .siri-floating-close-btn:hover {
   background: rgba(255, 255, 255, 0.20);
   border-color: rgba(255, 255, 255, 0.28);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 14px rgba(0, 0, 0, 0.45);
   transform: translateY(0) scale(1.06) !important;
 }
 
-.siri-unified-pill.controls-visible .siri-floating-close-btn:active {
+.siri-unified-pill.controls-visible .siri-floating-close-btn:active,
+.siri-unified-pill.hover-active .siri-floating-close-btn:active {
   transform: translateY(0) scale(0.92) !important;
 }
 
@@ -2045,7 +2048,7 @@
 }
 
 /* 1. The + button comes and springs first (0ms delay) */
-.siri-unified-pill.controls-visible .siri-command-glass-btn.plus-btn {
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-glass-btn.plus-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
@@ -2054,7 +2057,7 @@
 }
 
 /* 2. Then the text box capsule comes (70ms delay) */
-.siri-unified-pill.controls-visible .siri-command-capsule {
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-capsule {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
@@ -2063,7 +2066,7 @@
 }
 
 /* 3. Then the mic button comes (140ms delay) and all settle */
-.siri-unified-pill.controls-visible .siri-command-glass-btn.mic-btn {
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-glass-btn.mic-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
@@ -2091,18 +2094,39 @@
   }
 }
 
-/* 1. Mic Clicked in Expanded UI -> Cascade animating downwards: [+] starts -> text box -> Mic */
-.siri-unified-pill.expanded-voice-active .siri-command-glass-btn.plus-btn {
+/* While in Expanded Voice Mode, completely suppress follow-up command bar & buttons */
+.siri-unified-pill.expanded-voice-active:not(.expanded-voice-cascading):not(.expanded-voice-returning) .siri-hover-followup-bar {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+.siri-unified-pill.expanded-voice-active:not(.expanded-voice-cascading):not(.expanded-voice-returning) .siri-command-glass-btn,
+.siri-unified-pill.expanded-voice-active:not(.expanded-voice-cascading):not(.expanded-voice-returning) .siri-command-capsule {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(44px) scale(0.92) !important;
+  animation: none !important;
+  visibility: hidden !important;
+}
+
+/* 1. Mic Clicked in Expanded UI -> ONLY cascade downwards when explicitly transitioning from visible text mode */
+.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-hover-followup-bar {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-command-glass-btn.plus-btn {
   pointer-events: none !important;
   animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 0ms both !important;
 }
 
-.siri-unified-pill.expanded-voice-active .siri-command-capsule {
+.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-command-capsule {
   pointer-events: none !important;
   animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 70ms both !important;
 }
 
-.siri-unified-pill.expanded-voice-active .siri-command-glass-btn.mic-btn {
+.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-command-glass-btn.mic-btn {
   pointer-events: none !important;
   animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 140ms both !important;
 }
@@ -2119,6 +2143,12 @@
 }
 
 /* 2. Space Pressed -> Cascade animating back up into position: [+] starts -> text box -> Mic */
+.siri-unified-pill.expanded-voice-returning .siri-hover-followup-bar {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
 .siri-unified-pill.expanded-voice-returning .siri-command-glass-btn.plus-btn {
   pointer-events: auto !important;
   animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms both !important;
