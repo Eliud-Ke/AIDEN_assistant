@@ -2263,28 +2263,277 @@
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.50);
 }
 
-.siri-expanded-voice-indicator {
+/* ==========================================================================
+   APPLE SIRI FLUID AURORA EDGE GLOW (EXPANDED UI VOICE MODE)
+   ========================================================================== */
+
+.siri-aurora-edge-container {
   position: absolute;
-  bottom: 12px;
   left: 0;
   right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  pointer-events: none;
-  animation: fadeIn 0.24s ease-out both;
-  z-index: 15;
+  bottom: 0;
+  height: 54px;
+  border-radius: 0 0 28px 28px;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 12;
+  animation: siriAuroraFadeIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.siri-expanded-voice-label {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  letter-spacing: -0.2px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+@keyframes siriAuroraFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
+.siri-aurora-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: bottom center;
+  will-change: opacity, transform;
+}
+
+/* 1. Idle Grey/White Aurora Layer (Slow, relaxed, undulating) */
+.siri-aurora-layer.idle-layer {
+  opacity: 1;
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.siri-aurora-edge-container.recording .siri-aurora-layer.idle-layer {
+  opacity: 0;
+  transform: scaleY(0.90);
+}
+
+/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */
+.siri-aurora-layer.active-layer {
+  opacity: 0;
+  transform: scaleY(0.90);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.siri-aurora-edge-container.recording .siri-aurora-layer.active-layer {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Cloud Stage (Diffused / Blurred Smoke) */
+.siri-aurora-cloud-stage {
+  position: absolute;
+  inset: 0;
+  filter: blur(14px);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.siri-aurora-cloud {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* --- Idle Grey/White Glowing Clouds (Slow, relaxed, undulating) --- */
+.siri-aurora-cloud.idle-cloud-1 {
+  width: 72%;
+  height: 52px;
+  left: 4%;
+  bottom: -6px;
+  background: radial-gradient(ellipse 65% 55% at 40% 100%, rgba(255, 255, 255, 0.50) 0%, rgba(220, 225, 235, 0.28) 42%, rgba(180, 185, 195, 0.08) 68%, transparent 85%);
+  animation: siriIdleSmokeDrift1 9.5s ease-in-out infinite alternate;
+}
+
+.siri-aurora-cloud.idle-cloud-2 {
+  width: 76%;
+  height: 48px;
+  right: 4%;
+  bottom: -4px;
+  background: radial-gradient(ellipse 70% 60% at 65% 100%, rgba(245, 248, 255, 0.45) 0%, rgba(205, 212, 222, 0.22) 45%, rgba(160, 168, 180, 0.06) 72%, transparent 88%);
+  animation: siriIdleSmokeDrift2 11.5s ease-in-out infinite alternate;
+}
+
+.siri-aurora-cloud.idle-cloud-3 {
+  width: 60%;
+  height: 44px;
+  left: 20%;
+  bottom: -4px;
+  background: radial-gradient(ellipse 80% 50% at 50% 100%, rgba(255, 255, 255, 0.60) 0%, rgba(230, 235, 245, 0.25) 50%, transparent 80%);
+  animation: siriIdleSmokeBreathe 7.5s ease-in-out infinite alternate;
+}
+
+@keyframes siriIdleSmokeDrift1 {
+  0% {
+    transform: translateX(-10%) scaleY(0.95);
+  }
+  50% {
+    transform: translateX(8%) scaleY(1.08);
+  }
+  100% {
+    transform: translateX(-4%) scaleY(0.98);
+  }
+}
+
+@keyframes siriIdleSmokeDrift2 {
+  0% {
+    transform: translateX(8%) scaleY(1.04);
+  }
+  50% {
+    transform: translateX(-10%) scaleY(0.92);
+  }
+  100% {
+    transform: translateX(4%) scaleY(1.02);
+  }
+}
+
+@keyframes siriIdleSmokeBreathe {
+  0% {
+    opacity: 0.65;
+    transform: scaleX(0.92) scaleY(0.90);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.08) scaleY(1.15);
+  }
+  100% {
+    opacity: 0.72;
+    transform: scaleX(0.96) scaleY(0.96);
+  }
+}
+
+/* --- Active Cyan/Blue/White Glowing Clouds (Vibrant, voice-reactive) --- */
+.siri-aurora-cloud.active-cloud-cyan {
+  width: 66%;
+  height: 56px;
+  left: 8%;
+  bottom: -6px;
+  background: radial-gradient(ellipse 65% 55% at 38% 100%, rgba(56, 189, 248, 0.92) 0%, rgba(34, 211, 238, 0.62) 42%, rgba(59, 130, 246, 0.18) 70%, transparent 88%);
+  animation: siriActiveDrift1 4.2s ease-in-out infinite alternate;
+}
+
+.siri-aurora-cloud.active-cloud-blue {
+  width: 72%;
+  height: 52px;
+  right: 6%;
+  bottom: -4px;
+  background: radial-gradient(ellipse 75% 60% at 66% 100%, rgba(59, 130, 246, 0.88) 0%, rgba(96, 165, 250, 0.58) 46%, rgba(56, 189, 248, 0.15) 74%, transparent 90%);
+  animation: siriActiveDrift2 4.8s ease-in-out infinite alternate;
+}
+
+.siri-aurora-cloud.active-cloud-white {
+  width: 56%;
+  height: 50px;
+  left: 22%;
+  bottom: -4px;
+  background: radial-gradient(ellipse 60% 45% at 50% 100%, rgba(255, 255, 255, 1.0) 0%, rgba(186, 230, 253, 0.80) 38%, rgba(56, 189, 248, 0.28) 68%, transparent 86%);
+  animation: siriActiveCorePulse 2.8s ease-in-out infinite alternate;
+}
+
+.siri-aurora-cloud.active-cloud-amber {
+  width: 40%;
+  height: 40px;
+  left: 30%;
+  bottom: -2px;
+  background: radial-gradient(ellipse 45% 35% at 52% 100%, rgba(251, 191, 36, 0.45) 0%, rgba(245, 158, 11, 0.18) 42%, transparent 75%);
+  animation: siriActiveCorePulse 3.4s ease-in-out infinite alternate;
+}
+
+@keyframes siriActiveDrift1 {
+  0% {
+    transform: translateX(-12%) scale(0.96);
+  }
+  50% {
+    transform: translateX(10%) scale(1.08);
+  }
+  100% {
+    transform: translateX(-5%) scale(1.01);
+  }
+}
+
+@keyframes siriActiveDrift2 {
+  0% {
+    transform: translateX(10%) scale(1.06);
+  }
+  50% {
+    transform: translateX(-12%) scale(0.94);
+  }
+  100% {
+    transform: translateX(6%) scale(1.02);
+  }
+}
+
+@keyframes siriActiveCorePulse {
+  0% {
+    opacity: 0.82;
+    transform: scaleX(0.94) scaleY(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.06) scaleY(1.16);
+  }
+  100% {
+    opacity: 0.88;
+    transform: scaleX(0.98) scaleY(1.02);
+  }
+}
+
+/* Razor-sharp Specular Glass Bottom Lip Highlight */
+.siri-aurora-specular-rim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.2px;
+  pointer-events: none;
+  border-radius: 0 0 28px 28px;
+}
+
+.siri-aurora-specular-rim.idle-rim {
+  background: linear-gradient(
+    90deg,
+    transparent 6%,
+    rgba(255, 255, 255, 0.25) 20%,
+    rgba(255, 255, 255, 0.92) 50%,
+    rgba(255, 255, 255, 0.25) 80%,
+    transparent 94%
+  );
+  box-shadow: 
+    0 0 10px rgba(255, 255, 255, 0.60),
+    0 -1px 8px rgba(255, 255, 255, 0.35);
+  animation: siriRimBreathe 7s ease-in-out infinite alternate;
+}
+
+.siri-aurora-specular-rim.active-rim {
+  background: linear-gradient(
+    90deg,
+    transparent 4%,
+    rgba(56, 189, 248, 0.65) 18%,
+    rgba(255, 255, 255, 1.0) 50%,
+    rgba(56, 189, 248, 0.65) 82%,
+    transparent 96%
+  );
+  box-shadow: 
+    0 0 14px rgba(56, 189, 248, 0.95),
+    0 0 26px rgba(59, 130, 246, 0.65),
+    0 -2px 12px rgba(255, 255, 255, 0.95);
+}
+
+@keyframes siriRimBreathe {
+  0% {
+    opacity: 0.70;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.75;
+  }
+}
+
 
 
 /* Voice Armed & Push-to-Talk Resting/Active states */
@@ -2392,20 +2641,4 @@
   text-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
 
-.siri-expanded-voice-indicator.idle {
-  gap: 8px;
-}
 
-.siri-expanded-voice-indicator.recording .siri-expanded-voice-label {
-  color: #93c5fd;
-}
-
-.siri-voice-mini-mic {
-  color: #60a5fa;
-  flex-shrink: 0;
-}
-
-.siri-voice-space-hint {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 12px;
-}

@@ -1100,35 +1100,54 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 aria-hidden="true"
               />
 
+              {/* Apple Siri Fluid Aurora Edge Glow (Expanded UI Voice Mode) */}
+              {voiceActive && pillMode === "responding" && (
+                <div
+                  className={`siri-aurora-edge-container ${isRecording ? "recording" : "idle"}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleVoiceMode(false);
+                  }}
+                  title="Press Space or click to exit Voice Mode"
+                  aria-hidden="true"
+                >
+                  {/* 1. Idle Grey/White Smoky Aurora Layer (Slow, relaxed, undulating) */}
+                  <div className="siri-aurora-layer idle-layer">
+                    <div className="siri-aurora-cloud-stage">
+                      <div className="siri-aurora-cloud idle-cloud-1" />
+                      <div className="siri-aurora-cloud idle-cloud-2" />
+                      <div className="siri-aurora-cloud idle-cloud-3" />
+                    </div>
+                    <div className="siri-aurora-specular-rim idle-rim" />
+                  </div>
+
+                  {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
+                  <div
+                    className="siri-aurora-layer active-layer"
+                    style={{
+                      transform: `scaleY(${1 + (audioMeter.level || 0) * 0.45})`,
+                    }}
+                  >
+                    <div className="siri-aurora-cloud-stage">
+                      <div className="siri-aurora-cloud active-cloud-cyan" />
+                      <div className="siri-aurora-cloud active-cloud-blue" />
+                      <div className="siri-aurora-cloud active-cloud-white" />
+                      <div className="siri-aurora-cloud active-cloud-amber" />
+                    </div>
+                    <div
+                      className="siri-aurora-specular-rim active-rim"
+                      style={{
+                        opacity: 0.85 + (audioMeter.level || 0) * 0.15,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Apple-style Persistent Follow-up Command Bar */}
               <div
                 className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
               >
-                {voiceActive && pillMode === "responding" && (
-                  <div className={`siri-expanded-voice-indicator ${isRecording ? "recording" : "idle"}`}>
-                    {isRecording ? (
-                      <>
-                        <div className="siri-audio-wave-meter mini">
-                          <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-                          <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
-                          <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
-                          <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
-                          <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-                        </div>
-                        <span className="siri-expanded-voice-label recording">Listening... (Release Shift to send)</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="siri-voice-mini-mic">
-                          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                          <line x1="12" y1="19" x2="12" y2="22" />
-                        </svg>
-                        <span className="siri-expanded-voice-label">Hold <kbd className="siri-kbd-pill mini">Shift</kbd> to speak <span className="siri-voice-space-hint">• Space to exit</span></span>
-                      </>
-                    )}
-                  </div>
-                )}
                 <div className="siri-apple-command-bar">
                   {/* Left: Circular Frosted Glass Plus Button */}
                   <button
