@@ -2658,3 +2658,61 @@
 }
 
 
+
+/* Refined Ethereal Glass Specular Lip (Feathered edge falloff, zero harshness) */
+.siri-aurora-specular-rim {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 0;
+  height: 1.5px;
+  pointer-events: none;
+  filter: blur(0.5px);
+}
+
+.siri-aurora-specular-rim.idle-rim {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 15%,
+    rgba(255, 255, 255, 0.08) 28%,
+    rgba(255, 255, 255, 0.65) 50%,
+    rgba(255, 255, 255, 0.08) 72%,
+    transparent 85%,
+    transparent 100%
+  );
+  box-shadow: 0 -1px 6px rgba(255, 255, 255, 0.35);
+  animation: siriRimFeatheredDrift 4.2s ease-in-out infinite alternate;
+}
+
+.siri-aurora-specular-rim.active-rim {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 14%,
+    rgba(56, 189, 248, 0.25) 28%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(56, 189, 248, 0.25) 72%,
+    transparent 86%,
+    transparent 100%
+  );
+  box-shadow: 
+    0 -1px 8px rgba(56, 189, 248, 0.60),
+    0 -2px 14px rgba(59, 130, 246, 0.40);
+  animation: siriRimFeatheredDrift 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes siriRimFeatheredDrift {
+  0% {
+    opacity: 0.55;
+    transform: scaleX(0.90) translateX(-3%);
+  }
+  50% {
+    opacity: 0.90;
+    transform: scaleX(1.05) translateX(3%);
+  }
+  100% {
+    opacity: 0.65;
+    transform: scaleX(0.95) translateX(-1%);
+  }
+}
