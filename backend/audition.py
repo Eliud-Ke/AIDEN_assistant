@@ -1,13 +1,22 @@
 """
-AIDEN Assistant - OpenAI TTS-1 Voice Audition
-Audition all official OpenAI `tts-1` voices using real-time chunk streaming.
+AIDEN Assistant - STT Push-to-Talk Audition (Hold Shift to Speak)
+Test script for Google Keyless Chromium STT using a global Push-To-Talk shortcut.
+
+Usage:
+  1. Run this script in your terminal:
+     backend\\venv\\Scripts\\python.exe backend\\audition.py
+  2. Hold down either SHIFT key and speak (take your time, say 'uhmm', etc.).
+  3. Release the SHIFT key when you're finished.
+  4. Audio is transcribed via Google's free keyless endpoint with latency metrics.
+  5. Press Ctrl+C to quit.
 """
 
+import io
 import os
 import sys
-from pathlib import Path
+import time
 
-# Ensure UTF-8 output on Windows console
+# UTF-8 Windows terminal support
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -15,156 +24,119 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Add backend directory to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+import keyboard
+import numpy as np
+import scipy.io.wavfile as wavfile
+import sounddevice as sd
+import speech_recognition as sr
 
-try:
-    from auth_manager import get_api_key
-except ImportError:
-    get_api_key = lambda: os.environ.get("OPENAI_API_KEY")
-
-import openai
-
-AUDITION_TEXT = (
-    "Hello! I am Aiden, your desktop assistant. I can search through your local files, "
-    "answer complex questions, control your media playback, and draft emails whenever you need a hand. "
-    "Running quietly right on your machine, I aim to keep your workflow fast, seamless, and completely natural. "
-    "Tell me, how does my voice sound to you?"
-)
-
-OUTPUT_DIR = Path(__file__).resolve().parent / "auditions"
-
-# All official OpenAI TTS-1 voices
-CANDIDATE_VOICES = [
-    {
-        "id": "nova",
-        "gender": "Female",
-        "style": "Warm, lively, energetic conversational assistant (ChatGPT favorite)",
-    },
-    {
-        "id": "shimmer",
-        "gender": "Female",
-        "style": "Clear, bright, articulate, and optimistic assistant tone",
-    },
-    {
-        "id": "alloy",
-        "gender": "Neutral / Female",
-        "style": "Balanced, modern, crisp, and versatile tone",
-    },
-    {
-        "id": "fable",
-        "gender": "Female / Expressive",
-        "style": "British-inflected, expressive, and narrative tone",
-    },
-    {
-        "id": "echo",
-        "gender": "Male",
-        "style": "Warm, calm, grounded, and conversational tone",
-    },
-    {
-        "id": "onyx",
-        "gender": "Male",
-        "style": "Deep, authoritative, resonant, and smooth tone",
-    },
-]
+SAMPLE_RATE = 16000
+CHANNELS = 1
 
 
-def stream_voice_sample(client: openai.OpenAI, voice_id: str, text: str, output_path: Path):
+def record_while_key_pressed(key: str = "shift"):
     """
-    Streams raw audio byte chunks directly from OpenAI tts-1 without waiting
-    for the whole download to finish, saving to disk and measuring latency.
+    Waits for the key to be pressed down, streams audio from the microphone
+    into RAM, and stops the recording immediately when the key is released.
     """
-    with client.audio.speech.with_streaming_response.create(
-        model="tts-1",
-        voice=voice_id,
-        input=text,
-        response_format="mp3",
-    ) as response:
-        with open(output_path, "wb") as f:
-            chunk_count = 0
-            total_bytes = 0
-            for chunk in response.iter_bytes(chunk_size=4096):
-                f.write(chunk)
-                chunk_count += 1
-                total_bytes += len(chunk)
-    return total_bytes, chunk_count
+    # 1. Wait for key press
+    while not keyboard.is_pressed(key):
+        time.sleep(0.01)
+
+    print(f"\n🔴 [LISTENING...] Key '{key.upper()}' held. Speak now! (Release to transcribe)")
+
+    audio_chunks = []
+
+    def callback(indata, frames, time_info, status):
+        audio_chunks.append(indata.copy())
+
+    # Open microphone stream (16kHz 16-bit mono)
+    stream = sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=CHANNELS,
+        dtype="int16",
+        callback=callback,
+        blocksize=1024,
+    )
+
+    start_time = time.time()
+    with stream:
+        # Keep recording as long as the key remains pressed down
+        while keyboard.is_pressed(key):
+            time.sleep(0.01)
+
+    duration = time.time() - start_time
+    print(f"⏹️  [RELEASED] Captured {duration:.2f}s of audio. Transcribing...")
+
+    if not audio_chunks:
+        return None, duration
+
+    full_audio = np.concatenate(audio_chunks, axis=0)
+    return full_audio, duration
 
 
-def generate_all_samples():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    api_key = get_api_key() or os.environ.get("OPENAI_API_KEY")
+def transcribe_google_free(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE) -> tuple[str, float]:
+    """Transcribes audio using Google's Keyless Chromium Endpoint (Free, 0 API keys)."""
+    t0 = time.time()
+    buf = io.BytesIO()
+    wavfile.write(buf, sample_rate, audio_np)
+    buf.seek(0)
 
-    if not api_key:
-        print("❌ Error: No OpenAI API Key found in vault or OPENAI_API_KEY environment variable.")
-        return []
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(buf) as source:
+        audio_data = recognizer.record(source)
 
-    client = openai.OpenAI(api_key=api_key)
-
-    print("=" * 72)
-    print(" AIDEN ASSISTANT - OPENAI TTS-1 REAL-TIME STREAMING AUDITION")
-    print("=" * 72)
-    print(f"\nSentence:\n\"{AUDITION_TEXT}\"\n")
-    print("-" * 72)
-
-    generated = []
-    for idx, v in enumerate(CANDIDATE_VOICES, start=1):
-        filename = f"openai_tts1_{idx:02d}_{v['id']}.mp3"
-        out_file = OUTPUT_DIR / filename
-        print(f"[{idx}/{len(CANDIDATE_VOICES)}] Streaming '{v['id']}' ({v['gender']}) - {v['style']}...")
-        try:
-            total_bytes, chunks = stream_voice_sample(client, v["id"], AUDITION_TEXT, out_file)
-            size_kb = total_bytes / 1024
-            print(f"    -> Complete! {chunks} streamed chunks ({size_kb:.1f} KB) -> {filename}")
-            generated.append((idx, v, out_file))
-        except Exception as e:
-            print(f"    -> Error generating {v['id']}: {e}")
-
-    print("\n" + "=" * 72)
-    print(" ALL SAMPLES STREAMED & READY TO AUDITION!")
-    print("=" * 72)
-    return generated
-
-
-def interactive_player(samples):
-    print("\nYou can now audition each voice.")
-    print("Enter the voice number (1-6) to play, 'list' to view info, or 'q' to quit.")
-
-    while True:
-        try:
-            choice = input("\nSelect voice to play (1-6, q to quit): ").strip().lower()
-            if choice in ("q", "quit", "exit"):
-                print("Audition closed.")
-                break
-            if choice == "list":
-                for idx, v, _ in samples:
-                    print(f"  [{idx}] {v['id'].upper()} ({v['gender']}): {v['style']}")
-                continue
-            if not choice.isdigit():
-                print("Please enter a number between 1 and 6, or 'q'.")
-                continue
-
-            num = int(choice)
-            matched = next((item for item in samples if item[0] == num), None)
-            if not matched:
-                print(f"Voice #{num} not found. Choose 1 to {len(samples)}.")
-                continue
-
-            _, v, out_path = matched
-            print(f"▶ Playing [{num}] {v['id'].upper()} ({v['gender']})...")
-            os.startfile(str(out_path))
-        except (KeyboardInterrupt, EOFError):
-            print("\nExiting.")
-            break
+    try:
+        text = recognizer.recognize_google(audio_data, language="en-US")
+        latency = time.time() - t0
+        return text, latency
+    except sr.UnknownValueError:
+        return "[Could not understand audio / silence]", time.time() - t0
+    except sr.RequestError as e:
+        return f"[Google STT Service Error: {e}]", time.time() - t0
 
 
 def main():
-    samples = generate_all_samples()
-    if sys.stdin.isatty():
-        interactive_player(samples)
-    else:
-        print("\nSummary of Generated Samples:")
-        for idx, v, out_file in samples:
-            print(f"  [{idx}] {v['id'].upper()} ({v['gender']}): {out_file.name}")
+    print("=" * 74)
+    print(" AIDEN ASSISTANT - PUSH-TO-TALK STT AUDITION (GOOGLE KEYLESS)")
+    print("=" * 74)
+    print("Workflow:")
+    print("  • HOLD either Shift key down and speak (take your time, say 'uhmm', etc.)")
+    print("  • RELEASE Shift as soon as you're done speaking.")
+    print("  • Audio is sent to Google's keyless speech endpoint (100% free, 0 API key).")
+    print("  • Press Ctrl+C in this window at any time to exit.")
+    print("=" * 74)
+
+    test_num = 1
+    while True:
+        try:
+            print(f"\n[Test #{test_num}] Ready! Press and HOLD 'SHIFT' to speak...")
+            audio_data, duration = record_while_key_pressed("shift")
+
+            if audio_data is None or len(audio_data) < SAMPLE_RATE * 0.3:
+                print("⚠️ Utterance too short (< 0.3s). Try speaking for at least 1-2 seconds.")
+                time.sleep(0.4)
+                continue
+
+            print("⏳ Transcribing with Google Keyless endpoint...")
+            google_text, latency = transcribe_google_free(audio_data)
+
+            print("\n" + "-" * 74)
+            print(f"📊 TRANSCRIPTION RESULT:")
+            print(f"  🗣️  Text:    \"{google_text}\"")
+            print(f"  ⏱️  Latency: {latency:.2f}s")
+            print(f"  🎙️  Audio:   {duration:.2f}s")
+            print("-" * 74)
+
+            test_num += 1
+            # Wait for user to fully let go of Shift before next prompt
+            while keyboard.is_pressed("shift"):
+                time.sleep(0.05)
+            time.sleep(0.3)
+
+        except KeyboardInterrupt:
+            print("\n\nSTT Audition ended. Goodbye!")
+            break
 
 
 if __name__ == "__main__":

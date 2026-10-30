@@ -1278,6 +1278,53 @@
   padding: 0 24px;
 }
 
+/* Minimalist Bare Mic Icon in Initial Idle Pill (No Circle, Just Icon) */
+.siri-idle-bare-mic-btn {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  margin-left: 10px;
+  padding: 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none;
+  border-radius: 0 !important;
+  color: rgba(255, 255, 255, 0.46);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.18s ease;
+}
+
+.siri-idle-bare-mic-btn:hover {
+  color: rgba(255, 255, 255, 0.95);
+  transform: scale(1.12);
+}
+
+.siri-idle-bare-mic-btn:active {
+  color: #0A84FF;
+  transform: scale(0.92);
+}
+
+.siri-unified-pill.light-mode .siri-idle-bare-mic-btn {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.siri-unified-pill.light-mode .siri-idle-bare-mic-btn:hover {
+  color: rgba(0, 0, 0, 0.95);
+}
+
+.siri-unified-pill.light-mode .siri-idle-bare-mic-btn:active {
+  color: #007AFF;
+}
+
 /* MODE 2: THINKING (Full width capsule pill with left-aligned string orb and thinking shimmer) */
 .siri-unified-pill.mode-thinking {
   width: 100%;
