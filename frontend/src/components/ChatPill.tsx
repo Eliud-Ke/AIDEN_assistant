@@ -367,35 +367,61 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const localEnteringTimerRef = useRef<number | null>(null);
   const effectiveEnteringVoice = isEnteringVoice !== undefined ? isEnteringVoice : localEnteringVoice;
 
+  const [isExpandedVoiceReturning, setIsExpandedVoiceReturning] = useState(false);
+  const expandedVoiceReturnTimerRef = useRef<number | null>(null);
+
   const toggleVoiceMode = (active: boolean) => {
+    const isResponding = pillMode === "responding";
+
     if (!active && voiceActive) {
-      setLocalEnteringVoice(false);
-      if (localEnteringTimerRef.current !== null) {
-        window.clearTimeout(localEnteringTimerRef.current);
-        localEnteringTimerRef.current = null;
-      }
-      setLocalExitingVoice(true);
-      if (localExitingTimerRef.current !== null) {
-        window.clearTimeout(localExitingTimerRef.current);
-      }
-      localExitingTimerRef.current = window.setTimeout(() => {
-        setLocalExitingVoice(false);
-        localExitingTimerRef.current = null;
-      }, 480);
-    } else if (active) {
-      setLocalExitingVoice(false);
-      if (localExitingTimerRef.current !== null) {
-        window.clearTimeout(localExitingTimerRef.current);
-        localExitingTimerRef.current = null;
-      }
-      setLocalEnteringVoice(true);
-      if (localEnteringTimerRef.current !== null) {
-        window.clearTimeout(localEnteringTimerRef.current);
-      }
-      localEnteringTimerRef.current = window.setTimeout(() => {
+      if (isResponding) {
+        setIsExpandedVoiceReturning(true);
+        if (expandedVoiceReturnTimerRef.current !== null) {
+          window.clearTimeout(expandedVoiceReturnTimerRef.current);
+        }
+        expandedVoiceReturnTimerRef.current = window.setTimeout(() => {
+          setIsExpandedVoiceReturning(false);
+          expandedVoiceReturnTimerRef.current = null;
+        }, 520);
+      } else {
         setLocalEnteringVoice(false);
-        localEnteringTimerRef.current = null;
-      }, 160);
+        if (localEnteringTimerRef.current !== null) {
+          window.clearTimeout(localEnteringTimerRef.current);
+          localEnteringTimerRef.current = null;
+        }
+        setLocalExitingVoice(true);
+        if (localExitingTimerRef.current !== null) {
+          window.clearTimeout(localExitingTimerRef.current);
+        }
+        localExitingTimerRef.current = window.setTimeout(() => {
+          setLocalExitingVoice(false);
+          localExitingTimerRef.current = null;
+        }, 480);
+      }
+    } else if (active) {
+      if (isResponding) {
+        setIsExpandedVoiceReturning(false);
+        if (expandedVoiceReturnTimerRef.current !== null) {
+          window.clearTimeout(expandedVoiceReturnTimerRef.current);
+          expandedVoiceReturnTimerRef.current = null;
+        }
+        followupInputRef.current?.blur();
+        setIsInputFocused(false);
+      } else {
+        setLocalExitingVoice(false);
+        if (localExitingTimerRef.current !== null) {
+          window.clearTimeout(localExitingTimerRef.current);
+          localExitingTimerRef.current = null;
+        }
+        setLocalEnteringVoice(true);
+        if (localEnteringTimerRef.current !== null) {
+          window.clearTimeout(localEnteringTimerRef.current);
+        }
+        localEnteringTimerRef.current = window.setTimeout(() => {
+          setLocalEnteringVoice(false);
+          localEnteringTimerRef.current = null;
+        }, 160);
+      }
     }
     setLocalVoiceActive(active);
     if (onToggleVoice) onToggleVoice(active);
@@ -408,6 +434,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       }
       if (localEnteringTimerRef.current !== null) {
         window.clearTimeout(localEnteringTimerRef.current);
+      }
+      if (expandedVoiceReturnTimerRef.current !== null) {
+        window.clearTimeout(expandedVoiceReturnTimerRef.current);
       }
     };
   }, []);
@@ -485,9 +514,16 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isAwake, pillMode]);
 
-  // Global Escape key listener to collapse response back to pill
+  // Global key listener: Space to exit voice in responding mode, Escape to collapse
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === " " || e.code === "Space") {
+        if (pillMode === "responding" && voiceActive) {
+          e.preventDefault();
+          toggleVoiceMode(false);
+          return;
+        }
+      }
       if (e.key === "Escape") {
         if (selectedLightboxImage) {
           setSelectedLightboxImage(null);
@@ -706,6 +742,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
             effectiveExitingVoice && pillMode === "idle" ? "exiting-voice" : ""
           } ${
+            pillMode === "responding" && voiceActive ? "expanded-voice-active" : ""
+          } ${
+            isExpandedVoiceReturning ? "expanded-voice-returning" : ""
+          } ${
             isMaxHeight ? "max-height" : ""
           } ${
             isControlsVisible ? "controls-visible" : ""
@@ -727,7 +767,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           onMouseLeave={() => setIsHovered(false)}
         >
           {/* 1. IDLE / INPUT STATE */}
-          {(pillMode === "idle" || effectiveEnteringVoice) && (
+          {(pillMode === "idle" || (effectiveEnteringVoice && pillMode !== "responding")) && (
             <>
               <div
                 className={`siri-pill-input-wrap ${
@@ -1070,10 +1110,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   <button
                     type="button"
                     className="siri-command-glass-btn mic-btn"
-                    title="Dictate with Siri"
+                    title="Dictate with Siri (Press Space to cancel)"
                     aria-label="Voice input"
                     tabIndex={isControlsVisible ? 0 : -1}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleVoiceMode(true);
+                    }}
                   >
                     <svg
                       width="20"
@@ -1153,6 +1196,11 @@ export const ChatPillWindow: React.FC = () => {
 
   const handleToggleVoice = useCallback((active: boolean) => {
     setIsVoiceActive((prev) => {
+      const isResponding = turnsRef.current.length > 0 || Boolean(followupThinkingPromptRef.current);
+      if (isResponding) {
+        return active;
+      }
+
       if (prev && !active) {
         setIsEnteringVoice(false);
         if (enteringVoiceTimerRef.current !== null) {

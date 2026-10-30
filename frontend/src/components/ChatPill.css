@@ -2069,6 +2069,58 @@
   animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms both;
 }
 
+/* ==========================================================================
+   EXPANDED UI VOICE CASCADE ANIMATIONS
+   ========================================================================== */
+
+/* Downward Cascade Keyframe for Individual Command Bar Elements */
+@keyframes commandCascadeDown {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.015);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(48px) scale(0.90);
+  }
+}
+
+/* 1. Mic Clicked in Expanded UI -> Cascade animating downwards: [+] starts -> text box -> Mic */
+.siri-unified-pill.expanded-voice-active .siri-command-glass-btn.plus-btn {
+  pointer-events: none !important;
+  animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 0ms both !important;
+}
+
+.siri-unified-pill.expanded-voice-active .siri-command-capsule {
+  pointer-events: none !important;
+  animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 70ms both !important;
+}
+
+.siri-unified-pill.expanded-voice-active .siri-command-glass-btn.mic-btn {
+  pointer-events: none !important;
+  animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 140ms both !important;
+}
+
+/* 2. Space Pressed -> Cascade animating back up into position: [+] starts -> text box -> Mic */
+.siri-unified-pill.expanded-voice-returning .siri-command-glass-btn.plus-btn {
+  pointer-events: auto !important;
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms both !important;
+}
+
+.siri-unified-pill.expanded-voice-returning .siri-command-capsule {
+  pointer-events: auto !important;
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 70ms both !important;
+}
+
+.siri-unified-pill.expanded-voice-returning .siri-command-glass-btn.mic-btn {
+  pointer-events: auto !important;
+  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms both !important;
+}
+
 /* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
 .siri-apple-command-bar {
   display: flex;
