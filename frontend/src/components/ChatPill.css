@@ -1429,6 +1429,8 @@
   justify-content: center;
   position: relative;
   cursor: pointer;
+  overflow: hidden;
+  border-radius: 40px;
 }
 
 /* MODE 1.5 -> 1: REVERSE EXPAND MORPH (Voice Exit back to Idle Search Capsule) */
@@ -2279,6 +2281,17 @@
   cursor: pointer;
   z-index: 12;
   animation: siriAuroraFadeIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Compact Capsule Variant (Initial Voice Mode) */
+.siri-aurora-edge-container.compact {
+  inset: 0;
+  height: 100%;
+  border-radius: 40px;
+}
+
+.siri-aurora-specular-rim.compact {
+  border-radius: 0 0 40px 40px;
 }
 
 @keyframes siriAuroraFadeIn {

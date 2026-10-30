@@ -484,6 +484,20 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const showReplyWindow = pillMode === "responding";
 
+  // Shared Apple Siri Fluid Aurora Vocal Energy & Intensity
+  const rawVocal = Math.max(
+    audioMeter.level || 0,
+    (audioMeter.mid || 0) * 0.95,
+    (audioMeter.bass || 0) * 0.75
+  );
+  const voiceIntensity = isRecording
+    ? Math.min(1.0, Math.pow(rawVocal * 2.0, 0.75))
+    : 0;
+  const activeScaleY = 1 + voiceIntensity * 0.48;
+  const activeScaleX = 1 + voiceIntensity * 0.09;
+  const rimGlow = 14 + voiceIntensity * 14;
+  const rimBlue = 26 + voiceIntensity * 20;
+
   // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in-stream thinking
   const isControlsVisible = Boolean(
     isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt
@@ -845,7 +859,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             </>
           )}
 
-          {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule with Audio Wave Meter) */}
+          {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule with Apple Siri Aurora) */}
           {pillMode === "listening" && !effectiveEnteringVoice && (
             <div
               className="siri-listening-content"
@@ -853,51 +867,52 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 e.stopPropagation();
                 toggleVoiceMode(false);
               }}
-              title="Click or press Esc to return to Search"
+              onMouseDown={(e) => {
+                if (e.button === 0) onStartRecording?.();
+              }}
+              onMouseUp={(e) => {
+                if (e.button === 0) onStopRecording?.();
+              }}
+              title="Hold Shift to speak • Click or press Esc to return to Search"
             >
-              {isRecording ? (
+              {/* Apple Siri Fluid Aurora Edge Glow (Compact Capsule Mode) */}
+              <div
+                className={`siri-aurora-edge-container compact ${isRecording ? "recording" : "idle"}`}
+                aria-hidden="true"
+              >
+                {/* 1. Idle Grey/White Smoky Aurora Layer (Gentle undulating hill) */}
+                <div className="siri-aurora-layer idle-layer">
+                  <div className="siri-aurora-cloud-stage">
+                    <div className="siri-aurora-cloud idle-cloud-1" />
+                    <div className="siri-aurora-cloud idle-cloud-2" />
+                    <div className="siri-aurora-cloud idle-cloud-3" />
+                    <div className="siri-aurora-cloud idle-cloud-crest" />
+                  </div>
+                  <div className="siri-aurora-specular-rim idle-rim compact" />
+                </div>
+
+                {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
                 <div
-                  className="siri-voice-recording-wrapper"
-                  onMouseUp={(e) => {
-                    e.stopPropagation();
-                    onStopRecording?.();
+                  className="siri-aurora-layer active-layer"
+                  style={{
+                    transform: `scaleY(${activeScaleY.toFixed(3)}) scaleX(${activeScaleX.toFixed(3)})`,
                   }}
                 >
-                  <div className="siri-audio-wave-meter active-wave">
-                    <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-                    <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
-                    <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
-                    <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
-                    <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                  <div className="siri-aurora-cloud-stage">
+                    <div className="siri-aurora-cloud active-cloud-cyan" />
+                    <div className="siri-aurora-cloud active-cloud-blue" />
+                    <div className="siri-aurora-cloud active-cloud-white" />
+                    <div className="siri-aurora-cloud active-cloud-amber" />
                   </div>
-                  <span className="siri-voice-status-sub">Listening... Release Shift to send</span>
-                </div>
-              ) : (
-                <div className="siri-voice-idle-wrapper">
                   <div
-                    className="siri-voice-idle-icon-ring"
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      onStartRecording?.();
+                    className="siri-aurora-specular-rim active-rim compact"
+                    style={{
+                      opacity: 0.85 + voiceIntensity * 0.15,
+                      boxShadow: `0 0 ${rimGlow}px rgba(56, 189, 248, ${(0.90 + voiceIntensity * 0.10).toFixed(2)}), 0 0 ${rimBlue}px rgba(59, 130, 246, ${(0.70 + voiceIntensity * 0.25).toFixed(2)}), 0 -2px 14px rgba(255, 255, 255, 0.95)`,
                     }}
-                    onMouseUp={(e) => {
-                      e.stopPropagation();
-                      onStopRecording?.();
-                    }}
-                    title="Click and hold to speak"
-                  >
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="siri-voice-idle-mic-svg">
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="22" />
-                    </svg>
-                  </div>
-                  <div className="siri-voice-idle-text-block">
-                    <span className="siri-voice-idle-title">Hold <kbd className="siri-kbd-pill">Shift</kbd> to speak</span>
-                    <span className="siri-voice-idle-hint">Release to send • Esc to exit</span>
-                  </div>
+                  />
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1123,39 +1138,26 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
 
                   {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
-                  {(() => {
-                    const rawLevel = audioMeter.level || 0;
-                    const rawMid = audioMeter.mid || 0;
-                    const rawBass = audioMeter.bass || 0;
-                    const vocalEnergy = Math.max(rawLevel, rawMid * 0.95, rawBass * 0.75);
-                    const voiceIntensity = isRecording ? Math.min(1.0, Math.pow(vocalEnergy * 2.0, 0.75)) : 0;
-                    const activeScaleY = 1 + voiceIntensity * 0.48;
-                    const activeScaleX = 1 + voiceIntensity * 0.09;
-                    const rimGlow = 14 + voiceIntensity * 14;
-                    const rimBlue = 26 + voiceIntensity * 20;
-                    return (
-                      <div
-                        className="siri-aurora-layer active-layer"
-                        style={{
-                          transform: `scaleY(${activeScaleY.toFixed(3)}) scaleX(${activeScaleX.toFixed(3)})`,
-                        }}
-                      >
-                        <div className="siri-aurora-cloud-stage">
-                          <div className="siri-aurora-cloud active-cloud-cyan" />
-                          <div className="siri-aurora-cloud active-cloud-blue" />
-                          <div className="siri-aurora-cloud active-cloud-white" />
-                          <div className="siri-aurora-cloud active-cloud-amber" />
-                        </div>
-                        <div
-                          className="siri-aurora-specular-rim active-rim"
-                          style={{
-                            opacity: 0.85 + voiceIntensity * 0.15,
-                            boxShadow: `0 0 ${rimGlow}px rgba(56, 189, 248, ${0.90 + voiceIntensity * 0.10}), 0 0 ${rimBlue}px rgba(59, 130, 246, ${0.70 + voiceIntensity * 0.25}), 0 -2px 14px rgba(255, 255, 255, 0.95)`,
-                          }}
-                        />
-                      </div>
-                    );
-                  })()}
+                  <div
+                    className="siri-aurora-layer active-layer"
+                    style={{
+                      transform: `scaleY(${activeScaleY.toFixed(3)}) scaleX(${activeScaleX.toFixed(3)})`,
+                    }}
+                  >
+                    <div className="siri-aurora-cloud-stage">
+                      <div className="siri-aurora-cloud active-cloud-cyan" />
+                      <div className="siri-aurora-cloud active-cloud-blue" />
+                      <div className="siri-aurora-cloud active-cloud-white" />
+                      <div className="siri-aurora-cloud active-cloud-amber" />
+                    </div>
+                    <div
+                      className="siri-aurora-specular-rim active-rim"
+                      style={{
+                        opacity: 0.85 + voiceIntensity * 0.15,
+                        boxShadow: `0 0 ${rimGlow}px rgba(56, 189, 248, ${(0.90 + voiceIntensity * 0.10).toFixed(2)}), 0 0 ${rimBlue}px rgba(59, 130, 246, ${(0.70 + voiceIntensity * 0.25).toFixed(2)}), 0 -2px 14px rgba(255, 255, 255, 0.95)`,
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 
