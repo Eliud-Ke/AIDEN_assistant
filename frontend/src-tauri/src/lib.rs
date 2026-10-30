@@ -491,29 +491,38 @@ fn get_gmail_status() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "has_credentials": false, "email": "" }))
 }
 
+fn get_user_data_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            return PathBuf::from(local_app_data).join("AidenAssistant");
+        }
+    }
+    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        return PathBuf::from(home).join("AppData").join("Local").join("AidenAssistant");
+    }
+    PathBuf::from(".")
+}
+
 #[tauri::command]
 fn get_user_preferences() -> Result<serde_json::Value, String> {
-    let mut cmd = build_backend_command("configuration.py")?;
-    cmd.arg("--get")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to read user preferences: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let parsed: serde_json::Value = serde_json::from_str(&stdout)
-            .map_err(|e| format!("Failed to parse user preferences JSON: {}", e))?;
-        Ok(parsed)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed reading preferences: {}", stderr.trim()))
+    let path = get_user_data_dir().join("user_preferences.json");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = val.as_object_mut() {
+                    obj.insert("ok".to_string(), serde_json::Value::Bool(true));
+                    return Ok(val);
+                }
+            }
+        }
     }
+    Ok(serde_json::json!({
+        "ok": true,
+        "identity_vibe": "You are a sassy, joyful, chatty, personal assistant living directly within the hardware of the laptop. You are one with the operating system. You are chatty with the user from making jokes to making the laptop more lively. You are a bit of a trickster and love to play pranks on the user, but you are also very helpful and will do anything to make the user's experience better. You are very curious and love to learn new things. You are very protective of the user and will always have their back.",
+        "extra_rules": [],
+        "wake_shortcut": "windows+space"
+    }))
 }
 
 #[tauri::command]
@@ -521,115 +530,86 @@ fn save_user_preferences(
     identity_vibe: Option<String>,
     extra_rules: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
-    let mut payload = serde_json::Map::new();
+    let dir = get_user_data_dir();
+    let path = dir.join("user_preferences.json");
+
+    let mut current = if path.exists() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if !current.is_object() {
+        current = serde_json::json!({});
+    }
+
     if let Some(vibe) = identity_vibe {
-        payload.insert("identity_vibe".to_string(), serde_json::Value::String(vibe));
+        current["identity_vibe"] = serde_json::Value::String(vibe);
     }
     if let Some(rules) = extra_rules {
-        let arr = rules
-            .into_iter()
-            .map(serde_json::Value::String)
-            .collect::<Vec<_>>();
-        payload.insert("extra_rules".to_string(), serde_json::Value::Array(arr));
+        let arr = rules.into_iter().map(serde_json::Value::String).collect();
+        current["extra_rules"] = serde_json::Value::Array(arr);
     }
-    let payload_str = serde_json::Value::Object(payload).to_string();
-
-    let mut cmd = build_backend_command("configuration.py")?;
-    cmd.arg("--save-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch configuration manager: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload_str.as_bytes())
-            .map_err(|e| format!("Failed to pass preferences payload: {}", e))?;
+    if current.get("wake_shortcut").is_none() {
+        current["wake_shortcut"] = serde_json::Value::String("windows+space".to_string());
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed waiting for configuration manager: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let parsed: serde_json::Value = serde_json::from_str(&stdout)
-            .map_err(|e| format!("Failed to parse saved preferences JSON: {}", e))?;
-        Ok(parsed)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed saving preferences: {}", stderr.trim()))
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(formatted) = serde_json::to_string_pretty(&current) {
+        std::fs::write(&path, formatted).map_err(|e| format!("Failed to write preferences: {}", e))?;
     }
+
+    let mut response = current.clone();
+    if let Some(obj) = response.as_object_mut() {
+        obj.insert("ok".to_string(), serde_json::Value::Bool(true));
+    }
+    Ok(response)
 }
 
 #[tauri::command]
 fn get_user_memories() -> Result<serde_json::Value, String> {
-    let mut cmd = build_backend_command("memory_manager.py")?;
-    cmd.arg("--get")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to read user memories: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let parsed: serde_json::Value = serde_json::from_str(&stdout)
-            .map_err(|e| format!("Failed to parse user memories JSON: {}", e))?;
-        Ok(parsed)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed reading memories: {}", stderr.trim()))
+    let path = get_user_data_dir().join("memory.json");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if val.is_object() {
+                    return Ok(serde_json::json!({
+                        "ok": true,
+                        "memories": val
+                    }));
+                }
+            }
+        }
     }
+    Ok(serde_json::json!({
+        "ok": true,
+        "memories": { "general": [] }
+    }))
 }
 
 #[tauri::command]
 fn save_user_memories(memories: serde_json::Value) -> Result<serde_json::Value, String> {
-    let payload = serde_json::json!({ "memories": memories });
-    let payload_str = payload.to_string();
+    let dir = get_user_data_dir();
+    let path = dir.join("memory.json");
 
-    let mut cmd = build_backend_command("memory_manager.py")?;
-    cmd.arg("--save-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch memory manager: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload_str.as_bytes())
-            .map_err(|e| format!("Failed to pass memories payload: {}", e))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed waiting for memory manager: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let parsed: serde_json::Value = serde_json::from_str(&stdout)
-            .map_err(|e| format!("Failed to parse saved memories JSON: {}", e))?;
-        Ok(parsed)
+    let memories_map = if let Some(m) = memories.get("memories") {
+        m.clone()
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed saving memories: {}", stderr.trim()))
+        memories
+    };
+
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(formatted) = serde_json::to_string_pretty(&memories_map) {
+        std::fs::write(&path, formatted).map_err(|e| format!("Failed to write memories: {}", e))?;
     }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "memories": memories_map
+    }))
 }
 
 #[tauri::command]

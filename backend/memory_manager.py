@@ -10,8 +10,6 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-from auth_manager import get_api_key
-from openai import OpenAI
 from configuration import USER_DATA_DIR
 
 # ⚡ ROUTED TO SECURE OS PERSISTENT STORAGE
@@ -147,7 +145,9 @@ def _consolidate_task(chat_history):
         keys_string = ", ".join(
             existing_keys) if existing_keys else "general, personal, preferences"
 
-        # ⚡ Authentic API Key fetch
+        # ⚡ Authentic API Key fetch (Lazy import to eliminate startup lag)
+        from auth_manager import get_api_key
+        from openai import OpenAI
         openai_client = OpenAI(api_key=get_api_key())
 
         chat_transcript = ""
