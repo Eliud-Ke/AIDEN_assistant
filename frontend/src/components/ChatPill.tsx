@@ -355,6 +355,38 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [localVoiceActive, setLocalVoiceActive] = useState(false);
   const voiceActive = isVoiceActive !== undefined ? isVoiceActive : localVoiceActive;
 
+  const [isExitingVoice, setIsExitingVoice] = useState(false);
+  const exitingVoiceTimerRef = useRef<number | null>(null);
+  const prevVoiceActiveRef = useRef(voiceActive);
+
+  useEffect(() => {
+    if (prevVoiceActiveRef.current && !voiceActive) {
+      setIsExitingVoice(true);
+      if (exitingVoiceTimerRef.current !== null) {
+        window.clearTimeout(exitingVoiceTimerRef.current);
+      }
+      exitingVoiceTimerRef.current = window.setTimeout(() => {
+        setIsExitingVoice(false);
+        exitingVoiceTimerRef.current = null;
+      }, 480);
+    } else if (voiceActive) {
+      setIsExitingVoice(false);
+      if (exitingVoiceTimerRef.current !== null) {
+        window.clearTimeout(exitingVoiceTimerRef.current);
+        exitingVoiceTimerRef.current = null;
+      }
+    }
+    prevVoiceActiveRef.current = voiceActive;
+  }, [voiceActive]);
+
+  useEffect(() => {
+    return () => {
+      if (exitingVoiceTimerRef.current !== null) {
+        window.clearTimeout(exitingVoiceTimerRef.current);
+      }
+    };
+  }, []);
+
   const toggleVoiceMode = (active: boolean) => {
     setLocalVoiceActive(active);
     if (onToggleVoice) onToggleVoice(active);
@@ -652,6 +684,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
         <div
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
+            isExitingVoice && pillMode === "idle" ? "exiting-voice" : ""
+          } ${
             isMaxHeight ? "max-height" : ""
           } ${
             isControlsVisible ? "controls-visible" : ""

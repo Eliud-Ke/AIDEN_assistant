@@ -1392,6 +1392,71 @@
   cursor: pointer;
 }
 
+/* MODE 1.5 -> 1: REVERSE EXPAND MORPH (Voice Exit back to Idle Search Capsule) */
+.siri-unified-pill.mode-idle.exiting-voice {
+  transition: none !important;
+  animation: siriVoicePillExpand 0.48s cubic-bezier(0.18, 1.25, 0.35, 1) both;
+}
+
+@keyframes siriVoicePillExpand {
+  0% {
+    max-width: 280px;
+    min-height: 80px;
+    height: 80px;
+    border-radius: 40px;
+    transform: scale(1);
+  }
+  /* 1. Anticipation squash: gathers kinetic energy before popping open */
+  18% {
+    max-width: 265px;
+    min-height: 84px;
+    height: 84px;
+    border-radius: 40px;
+    transform: scaleX(0.96) scaleY(1.04);
+  }
+  /* 2. Explosive spring expansion: blooms outward past 560px */
+  64% {
+    max-width: 585px;
+    min-height: 56px;
+    height: 56px;
+    border-radius: 28px;
+    transform: scaleX(1.045) scaleY(0.95);
+  }
+  /* 3. Elastic rebound cushion */
+  84% {
+    max-width: 554px;
+    min-height: 61px;
+    height: 61px;
+    border-radius: 30px;
+    transform: scaleX(0.99) scaleY(1.01);
+  }
+  /* 4. Settles cleanly at standard idle search pill */
+  100% {
+    max-width: 560px;
+    min-height: 60px;
+    height: 60px;
+    border-radius: 30px;
+    transform: scale(1);
+  }
+}
+
+/* Staggered Content Reveal on Voice Exit: Keeps search placeholder & mic hidden until pill blooms */
+.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap,
+.siri-unified-pill.mode-idle.exiting-voice .siri-idle-bare-mic-btn {
+  animation: siriVoiceContentExpandIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both;
+}
+
+@keyframes siriVoiceContentExpandIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.93);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* MODE 2: THINKING (Full width capsule pill with left-aligned string orb and thinking shimmer) */
 .siri-unified-pill.mode-thinking {
   width: 100%;
