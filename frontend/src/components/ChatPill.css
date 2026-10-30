@@ -2272,7 +2272,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 54px;
+  height: 72px;
   border-radius: 0 0 28px 28px;
   overflow: hidden;
   pointer-events: auto;
@@ -2338,31 +2338,34 @@
   pointer-events: none;
 }
 
-/* --- Idle Grey/White Glowing Clouds (Slow, relaxed, undulating) --- */
+/* --- Idle Grey/White Glowing Clouds (Gentle Hill Silhouette, Slow & Relaxed) --- */
+/* Left shoulder of the hill */
 .siri-aurora-cloud.idle-cloud-1 {
-  width: 72%;
-  height: 52px;
-  left: 4%;
-  bottom: -6px;
-  background: radial-gradient(ellipse 65% 55% at 40% 100%, rgba(255, 255, 255, 0.50) 0%, rgba(220, 225, 235, 0.28) 42%, rgba(180, 185, 195, 0.08) 68%, transparent 85%);
+  width: 68%;
+  height: 48px;
+  left: 0%;
+  bottom: -4px;
+  background: radial-gradient(ellipse 70% 60% at 30% 100%, rgba(255, 255, 255, 0.42) 0%, rgba(220, 225, 235, 0.22) 45%, rgba(180, 185, 195, 0.06) 70%, transparent 88%);
   animation: siriIdleSmokeDrift1 9.5s ease-in-out infinite alternate;
 }
 
+/* Right shoulder of the hill */
 .siri-aurora-cloud.idle-cloud-2 {
-  width: 76%;
-  height: 48px;
-  right: 4%;
+  width: 70%;
+  height: 46px;
+  right: 0%;
   bottom: -4px;
-  background: radial-gradient(ellipse 70% 60% at 65% 100%, rgba(245, 248, 255, 0.45) 0%, rgba(205, 212, 222, 0.22) 45%, rgba(160, 168, 180, 0.06) 72%, transparent 88%);
+  background: radial-gradient(ellipse 70% 60% at 70% 100%, rgba(245, 248, 255, 0.38) 0%, rgba(205, 212, 222, 0.18) 45%, rgba(160, 168, 180, 0.05) 70%, transparent 88%);
   animation: siriIdleSmokeDrift2 11.5s ease-in-out infinite alternate;
 }
 
+/* Center Peak: Rises higher like a gentle hill without being overly dramatic */
 .siri-aurora-cloud.idle-cloud-3 {
-  width: 60%;
-  height: 44px;
-  left: 20%;
+  width: 58%;
+  height: 64px;
+  left: 21%;
   bottom: -4px;
-  background: radial-gradient(ellipse 80% 50% at 50% 100%, rgba(255, 255, 255, 0.60) 0%, rgba(230, 235, 245, 0.25) 50%, transparent 80%);
+  background: radial-gradient(ellipse 52% 82% at 50% 100%, rgba(255, 255, 255, 0.65) 0%, rgba(235, 240, 250, 0.38) 35%, rgba(210, 218, 230, 0.16) 65%, transparent 88%);
   animation: siriIdleSmokeBreathe 7.5s ease-in-out infinite alternate;
 }
 
@@ -2392,16 +2395,16 @@
 
 @keyframes siriIdleSmokeBreathe {
   0% {
-    opacity: 0.65;
-    transform: scaleX(0.92) scaleY(0.90);
+    opacity: 0.70;
+    transform: scaleX(0.94) scaleY(0.92);
   }
   50% {
     opacity: 1;
-    transform: scaleX(1.08) scaleY(1.15);
+    transform: scaleX(1.04) scaleY(1.08);
   }
   100% {
-    opacity: 0.72;
-    transform: scaleX(0.96) scaleY(0.96);
+    opacity: 0.75;
+    transform: scaleX(0.97) scaleY(0.96);
   }
 }
 
