@@ -12,6 +12,7 @@ except Exception:
 
 SERVICE_NAME = "AidenAssistant_Auth"
 KEY_NAME = "openai_api_key"
+GROQ_KEY_NAME = "groq_api_key"
 
 GMAIL_SERVICE_NAME = "AidenAssistant_Gmail"
 GMAIL_EMAIL_KEY = "email_address"
@@ -38,6 +39,22 @@ def delete_api_key():
         print("🗑️ [AUTH] API Key securely wiped from system.")
     except keyring.errors.PasswordDeleteError:
         pass
+
+
+def save_groq_api_key(api_key: str):
+    """Securely encrypts and saves the Groq API key to the Windows Credential Manager."""
+    if not api_key:
+        return
+    keyring.set_password(SERVICE_NAME, GROQ_KEY_NAME, api_key.strip())
+    print("✅ [AUTH] Groq API Key encrypted and saved to Windows Credential Manager.")
+
+
+def get_groq_api_key() -> str:
+    """Retrieves the Groq API key from OS vault or GROQ_API_KEY env var."""
+    val = keyring.get_password(SERVICE_NAME, GROQ_KEY_NAME)
+    if val:
+        return val.strip()
+    return os.environ.get("GROQ_API_KEY", "").strip()
 
 
 def save_gmail_credentials(email: str, app_password: str):

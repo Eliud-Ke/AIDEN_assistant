@@ -1,9 +1,22 @@
 import asyncio
 import json
 import queue
+import sys
 import threading
 from typing import Any, Dict, Optional, Set
 import websockets
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+try:
+    from tts_engine import synthesize_speech_base64
+except ImportError:
+    from backend.tts_engine import synthesize_speech_base64
 
 # Connected WebSocket clients (Launcher Window + Chat Pill Window)
 _connected_clients: Set[Any] = set()
@@ -223,6 +236,27 @@ async def handle_connection(websocket: Any):
                     "isAwake": _current_state["isAwake"],
                     "backendOnline": True,
                 }))
+
+            elif msg_type == "tts_request":
+                text_to_speak = str(data.get("text", "")).strip()
+                turn_id = str(data.get("turnId", ""))
+                voice = str(data.get("voice", "nova"))
+                if text_to_speak:
+                    try:
+                        b64_audio = await synthesize_speech_base64(text_to_speak, voice=voice)
+                        await websocket.send(json.dumps({
+                            "type": "tts_response",
+                            "turnId": turn_id,
+                            "audioBase64": b64_audio,
+                            "format": "mp3",
+                        }))
+                    except Exception as e:
+                        print(f"⚠️ [TTS] Synthesis error: {e}")
+                        await websocket.send(json.dumps({
+                            "type": "tts_error",
+                            "turnId": turn_id,
+                            "error": str(e),
+                        }))
 
     except websockets.exceptions.ConnectionClosed:
         pass
