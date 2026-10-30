@@ -28,6 +28,8 @@ interface ChatPillProps {
   activeAudioTurnId?: string | null;
   isAudioPlaying?: boolean;
   onToggleTts?: (turnId: string, text: string) => void;
+  isVoiceActive?: boolean;
+  onToggleVoice?: (active: boolean) => void;
 }
 
 interface MediaGalleryItem {
@@ -345,9 +347,18 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   activeAudioTurnId = null,
   isAudioPlaying = false,
   onToggleTts,
+  isVoiceActive,
+  onToggleVoice,
 }) => {
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
+  const [localVoiceActive, setLocalVoiceActive] = useState(false);
+  const voiceActive = isVoiceActive !== undefined ? isVoiceActive : localVoiceActive;
+
+  const toggleVoiceMode = (active: boolean) => {
+    setLocalVoiceActive(active);
+    if (onToggleVoice) onToggleVoice(active);
+  };
 
   // Dynamic Shining Cursor tracking
   const [selectionIndex, setSelectionIndex] = useState(0);
@@ -374,10 +385,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || isStreaming);
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
 
-  const pillMode: "idle" | "thinking" | "responding" = hasReplyText
+  const pillMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
     : isThinking
     ? "thinking"
+    : voiceActive
+    ? "listening"
     : "idle";
 
   const showReplyWindow = pillMode === "responding";
@@ -426,6 +439,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       if (e.key === "Escape") {
         if (selectedLightboxImage) {
           setSelectedLightboxImage(null);
+        } else if (voiceActive) {
+          toggleVoiceMode(false);
         } else if (pillMode === "responding" && onClearResponse) {
           onClearResponse();
         }
@@ -433,7 +448,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [selectedLightboxImage, pillMode, onClearResponse]);
+  }, [selectedLightboxImage, voiceActive, pillMode, onClearResponse]);
 
   // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
@@ -696,11 +711,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               <button
                 type="button"
                 className="siri-idle-bare-mic-btn"
-                title="Voice Input (Hold Shift)"
+                title="Voice Input (Click or Hold Shift)"
                 aria-label="Voice input"
                 onClick={(e) => {
                   e.stopPropagation();
-                  pillInputRef.current?.focus();
+                  toggleVoiceMode(true);
                 }}
               >
                 <svg
@@ -720,6 +735,18 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 </svg>
               </button>
             </>
+          )}
+
+          {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule) */}
+          {pillMode === "listening" && (
+            <div
+              className="siri-listening-content"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleVoiceMode(false);
+              }}
+              title="Click or press Esc to return to Search"
+            />
           )}
 
           {/* 2. THINKING STATE (Pill shrinks by 1/3, glowing pulse, shows status tag) */}
@@ -1058,6 +1085,7 @@ export const ChatPillWindow: React.FC = () => {
   const [activeUiTag, setActiveUiTag] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMaxHeight, setIsMaxHeight] = useState(false);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
 
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
@@ -1073,6 +1101,7 @@ export const ChatPillWindow: React.FC = () => {
 
   const contentRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef<number>(0);
+  const lastModeRef = useRef<string>("idle");
   const rafResizeRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
 
@@ -1213,6 +1242,7 @@ export const ChatPillWindow: React.FC = () => {
   const resetReplyState = () => {
     stopStreamRaf();
     stopAudio();
+    setIsVoiceActive(false);
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
@@ -1231,10 +1261,12 @@ export const ChatPillWindow: React.FC = () => {
   const hasReplyText = turns.length > 0 || Boolean(followupThinkingPrompt) || isStreaming;
   const isExpanded = Boolean(hasReplyText);
   const isThinking = Boolean(!hasReplyText && activeUiTag);
-  const currentMode: "idle" | "thinking" | "responding" = hasReplyText
+  const currentMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
     : isThinking
     ? "thinking"
+    : isVoiceActive
+    ? "listening"
     : "idle";
 
   // Manage sleep exit animation & native window hide timing
@@ -1267,6 +1299,13 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, [isAwake]);
 
+  // Immediate mode synchronization for native Windows DWM backdrop clipping
+  useEffect(() => {
+    if (!isAwake) return;
+    const initialH = currentMode === "listening" ? 150 : (isExpanded ? (isMaxHeight ? 690 : 290) : 130);
+    invoke("set_chat_pill_size", { width: 640, height: initialH, pillMode: currentMode, pill_mode: currentMode }).catch(() => {});
+  }, [currentMode, isAwake, isExpanded, isMaxHeight]);
+
   // True dynamic window resizing: measures exact DOM height + allocates shadow breathing room
   useEffect(() => {
     if (!isAwake) {
@@ -1280,9 +1319,11 @@ export const ChatPillWindow: React.FC = () => {
       // 18px top padding + 52px bottom shadow breathing room = 70px total vertical clearance
       const measured = isMaxHeight ? 620 : (rawHeight > 0 ? rawHeight : (isExpanded ? 220 : 60));
       const targetHeight = Math.max(130, Math.ceil(measured + 70));
-      if (Math.abs(targetHeight - lastHeightRef.current) >= 2 || currentMode === "thinking" || isMaxHeight) {
+      const modeChanged = lastModeRef.current !== currentMode;
+      lastModeRef.current = currentMode;
+      if (Math.abs(targetHeight - lastHeightRef.current) >= 2 || modeChanged || currentMode === "thinking" || currentMode === "listening" || isMaxHeight) {
         lastHeightRef.current = targetHeight;
-        invoke("set_chat_pill_size", { width: 640, height: targetHeight, pillMode: currentMode }).catch(() => {});
+        invoke("set_chat_pill_size", { width: 640, height: targetHeight, pillMode: currentMode, pill_mode: currentMode }).catch(() => {});
       }
     };
 
@@ -1513,6 +1554,7 @@ export const ChatPillWindow: React.FC = () => {
   const handleSendMessage = (msg: string, isFollowup?: boolean) => {
     stopStreamRaf();
     stopAudio();
+    setIsVoiceActive(false);
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -1581,6 +1623,8 @@ export const ChatPillWindow: React.FC = () => {
         activeAudioTurnId={activeAudioTurnId}
         isAudioPlaying={isAudioPlaying}
         onToggleTts={handleToggleTts}
+        isVoiceActive={isVoiceActive}
+        onToggleVoice={setIsVoiceActive}
       />
     </div>
   );

@@ -637,7 +637,7 @@ fn set_chat_pill_size(
     app: AppHandle,
     width: Option<f64>,
     height: f64,
-    _pill_mode: Option<String>,
+    pill_mode: Option<String>,
 ) -> Result<(), String> {
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let w = width.unwrap_or(640.0);
@@ -650,9 +650,24 @@ fn set_chat_pill_size(
             if let Ok(guard) = comp_state.0.lock() {
                 if let Some(host) = guard.as_ref() {
                     let _ = host.set_visible(true);
-                    let card_h = (h - 70.0).max(60.0) as f32;
-                    let radius = if card_h > 80.0 { 28.0 } else { 30.0 };
-                    let _ = host.update_shape(40.0, 18.0, 560.0, card_h, radius);
+                    let mode = pill_mode.as_deref().unwrap_or("idle");
+                    let (offset_x, offset_y, shape_w, shape_h, radius) = match mode {
+                        "listening" => {
+                            // Half width (280px), centered in 640px window -> offset_x = 180px
+                            // Height = 80px (reduced by 1/3 from 120px), radius = 40px
+                            (180.0f32, 18.0f32, 280.0f32, 80.0f32, 40.0f32)
+                        }
+                        "responding" => {
+                            let card_h = (h - 70.0).max(60.0) as f32;
+                            let r = if card_h > 80.0 { 28.0 } else { 30.0 };
+                            (40.0f32, 18.0f32, 560.0f32, card_h, r)
+                        }
+                        _ => {
+                            // idle or thinking (560x60 centered)
+                            (40.0f32, 18.0f32, 560.0f32, 60.0f32, 30.0f32)
+                        }
+                    };
+                    let _ = host.update_shape(offset_x, offset_y, shape_w, shape_h, radius);
                 }
             }
         }

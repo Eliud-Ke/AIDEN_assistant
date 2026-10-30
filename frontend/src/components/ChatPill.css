@@ -1325,6 +1325,73 @@
   color: #007AFF;
 }
 
+/* MODE 1.5: LISTENING / VOICE MODE (Half width, 80px Height Compact Organic Capsule) */
+.siri-unified-pill.mode-listening {
+  width: 100%;
+  max-width: 280px;
+  min-height: 80px;
+  height: 80px;
+  border-radius: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  animation: siriVoicePillMorph 0.52s cubic-bezier(0.18, 1.25, 0.35, 1) both;
+}
+
+@keyframes siriVoicePillMorph {
+  0% {
+    max-width: 560px;
+    min-height: 60px;
+    height: 60px;
+    border-radius: 30px;
+    transform: scale(1);
+  }
+  /* 1. Anticipation stretch: edges stretch out just a tiny bit */
+  22% {
+    max-width: 585px;
+    min-height: 56px;
+    height: 56px;
+    border-radius: 28px;
+    transform: scaleX(1.045) scaleY(0.95);
+  }
+  /* 2. Move inwards as if the pill is shrinking: half size width (280px), gaining height (80px) */
+  68% {
+    max-width: 265px;
+    min-height: 84px;
+    height: 84px;
+    border-radius: 40px;
+    transform: scaleX(0.96) scaleY(1.04);
+  }
+  /* 3. Gentle rebound settle */
+  85% {
+    max-width: 284px;
+    min-height: 78px;
+    height: 78px;
+    border-radius: 40px;
+    transform: scaleX(1.01) scaleY(0.99);
+  }
+  /* 4. Settles cleanly at half width (280px) and 80px height */
+  100% {
+    max-width: 280px;
+    min-height: 80px;
+    height: 80px;
+    border-radius: 40px;
+    transform: scale(1);
+  }
+}
+
+.siri-listening-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+}
+
 /* MODE 2: THINKING (Full width capsule pill with left-aligned string orb and thinking shimmer) */
 .siri-unified-pill.mode-thinking {
   width: 100%;
