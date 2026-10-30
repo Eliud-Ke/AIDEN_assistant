@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -114,7 +114,7 @@ const LINE_LENGTH_THRESHOLD = 75;
 function splitIntoSpringLines(text: string): string[] {
   if (!text) return [];
 
-  const rawParagraphs = text.split("\n");
+  const rawParagraphs = text.split("\r\n");
   const result: string[] = [];
 
   for (const para of rawParagraphs) {
@@ -167,7 +167,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 
   // Skip leading newlines right at fromIndex
   let start = fromIndex;
-  while (start < text.length && (text[start] === "\n" || text[start] === "\r")) {
+  while (start < text.length && (text[start] === "\r\n" || text[start] === "\r")) {
     start++;
   }
 
@@ -190,12 +190,12 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
     return fromIndex;
   }
 
-  // 1. Check for explicit newline (\n)
-  const newlineIdx = unrevealed.indexOf("\n");
+  // 1. Check for explicit newline (\r\n)
+  const newlineIdx = unrevealed.indexOf("\r\n");
   if (newlineIdx !== -1) {
     let end = start + newlineIdx + 1;
-    // Consume consecutive newlines (\n\n or \r\n) so the next line starts with content
-    while (end < text.length && (text[end] === "\n" || text[end] === "\r")) {
+    // Consume consecutive newlines (\r\n\r\n or \r\n) so the next line starts with content
+    while (end < text.length && (text[end] === "\r\n" || text[end] === "\r")) {
       end++;
     }
     return end;
@@ -614,7 +614,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     // Exactly 3 lines maximum height before internal scrolling activates
     const maxH = showReplyWindow ? 64 : 70;
     const scrollH = el.scrollHeight;
-    const isMulti = scrollH > (minH + 6) || val.includes("\n");
+    const isMulti = scrollH > (minH + 6) || val.includes("\r\n");
     setIsMultiline(isMulti);
 
     const targetH = Math.min(Math.max(scrollH, minH), maxH);
@@ -1134,9 +1134,6 @@ export const ChatPillWindow: React.FC = () => {
   const lastLineEmittedTimeRef = useRef<number>(0);
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const lastHeightRef = useRef<number>(0);
-  const lastModeRef = useRef<string>("idle");
-  const rafResizeRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
 
   // In-RAM TTS Audio State & Playback Engine
@@ -1285,7 +1282,6 @@ export const ChatPillWindow: React.FC = () => {
     setActiveUiTag(null);
     setIsStreaming(false);
     setIsMaxHeight(false);
-    lastHeightRef.current = 130;
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -1293,7 +1289,6 @@ export const ChatPillWindow: React.FC = () => {
   };
 
   const hasReplyText = turns.length > 0 || Boolean(followupThinkingPrompt) || isStreaming;
-  const isExpanded = Boolean(hasReplyText);
   const isThinking = Boolean(!hasReplyText && activeUiTag);
   const currentMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
@@ -1333,58 +1328,91 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, [isAwake]);
 
-  // Immediate mode synchronization for native Windows DWM backdrop clipping
-  useEffect(() => {
+  // Dynamic Real-Time Shape Measurement & Synchronization (Option A)
+  const morphRafRef = useRef<number | null>(null);
+
+  const measureAndSyncShape = useCallback((targetWinHeight?: number) => {
     if (!isAwake) return;
-    const initialH = currentMode === "listening" ? 150 : (isExpanded ? (isMaxHeight ? 690 : 290) : 130);
-    invoke("set_chat_pill_size", { width: 640, height: initialH, pillMode: currentMode, pill_mode: currentMode }).catch(() => {});
-  }, [currentMode, isAwake, isExpanded, isMaxHeight]);
+    const wrapper = contentRef.current;
+    if (!wrapper) return;
+    const pillEl = (wrapper.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
+    const rect = pillEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
 
-  // True dynamic window resizing: measures exact DOM height + allocates shadow breathing room
-  useEffect(() => {
-    if (!isAwake) {
-      return;
+    const shapeX = Math.round(rect.left);
+    const shapeY = Math.round(rect.top);
+    const shapeW = Math.round(rect.width);
+    const shapeH = Math.round(rect.height);
+    const shapeR = currentMode === "responding" ? (shapeH > 80 ? 28 : 30) : Math.round(shapeH / 2);
+
+    const winH = targetWinHeight ?? (
+      currentMode === "responding"
+        ? Math.max(130, Math.ceil(shapeH + 70))
+        : 150
+    );
+
+    invoke("set_chat_pill_size", {
+      width: 640,
+      height: winH,
+      pillMode: currentMode,
+      shapeX,
+      shapeY,
+      shapeW,
+      shapeH,
+      shapeR,
+    }).catch(() => {});
+  }, [isAwake, currentMode]);
+
+  // Launch smooth frame-by-frame rAF tracker during morph transitions (550ms)
+  const startMorphTracking = useCallback((durationMs = 550) => {
+    if (morphRafRef.current !== null) {
+      cancelAnimationFrame(morphRafRef.current);
     }
+    const startTime = performance.now();
 
-    const el = contentRef.current;
-    if (!el) return;
-
-    const applyTargetHeight = (rawHeight: number) => {
-      // 18px top padding + 52px bottom shadow breathing room = 70px total vertical clearance
-      const measured = isMaxHeight ? 620 : (rawHeight > 0 ? rawHeight : (isExpanded ? 220 : 60));
-      const targetHeight = Math.max(130, Math.ceil(measured + 70));
-      const modeChanged = lastModeRef.current !== currentMode;
-      lastModeRef.current = currentMode;
-      if (Math.abs(targetHeight - lastHeightRef.current) >= 2 || modeChanged || currentMode === "thinking" || currentMode === "listening" || isMaxHeight) {
-        lastHeightRef.current = targetHeight;
-        invoke("set_chat_pill_size", { width: 640, height: targetHeight, pillMode: currentMode, pill_mode: currentMode }).catch(() => {});
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      measureAndSyncShape();
+      if (elapsed < durationMs) {
+        morphRafRef.current = requestAnimationFrame(tick);
+      } else {
+        morphRafRef.current = null;
+        measureAndSyncShape();
       }
     };
 
-    // Initial measurement
-    applyTargetHeight(el.offsetHeight);
+    morphRafRef.current = requestAnimationFrame(tick);
+  }, [measureAndSyncShape]);
 
-    const observer = new ResizeObserver((entries) => {
-      if (rafResizeRef.current !== null) {
-        cancelAnimationFrame(rafResizeRef.current);
+  // Whenever mode changes, start continuous morph tracking
+  useEffect(() => {
+    if (!isAwake) return;
+    startMorphTracking(550);
+    return () => {
+      if (morphRafRef.current !== null) {
+        cancelAnimationFrame(morphRafRef.current);
       }
-      rafResizeRef.current = requestAnimationFrame(() => {
-        for (const entry of entries) {
-          const h = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
-          applyTargetHeight(h);
-        }
-      });
+    };
+  }, [currentMode, isAwake, startMorphTracking]);
+
+  // Manage window resizing and ongoing height changes (e.g. streaming or hover in responding mode)
+  useEffect(() => {
+    if (!isAwake) return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    measureAndSyncShape();
+
+    const observer = new ResizeObserver(() => {
+      measureAndSyncShape();
     });
 
     observer.observe(el);
 
     return () => {
       observer.disconnect();
-      if (rafResizeRef.current !== null) {
-        cancelAnimationFrame(rafResizeRef.current);
-      }
     };
-  }, [isAwake, isExpanded, currentMode, isMaxHeight]);
+  }, [isAwake, measureAndSyncShape]);
 
   // Sync state events from Tauri main process
   useEffect(() => {

@@ -638,11 +638,29 @@ fn set_chat_pill_size(
     width: Option<f64>,
     height: f64,
     pill_mode: Option<String>,
+    shape_x: Option<f32>,
+    shape_y: Option<f32>,
+    shape_w: Option<f32>,
+    shape_h: Option<f32>,
+    shape_r: Option<f32>,
 ) -> Result<(), String> {
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let w = width.unwrap_or(640.0);
         let h = height.max(80.0).min(960.0);
-        let _ = pill_win.set_size(LogicalSize::new(w, h));
+        
+        // Avoid redundant Win32 window resizing if height difference is negligible
+        if let Ok(curr_size) = pill_win.inner_size() {
+            if let Ok(scale) = pill_win.scale_factor() {
+                let curr_h = curr_size.height as f64 / scale;
+                if (curr_h - h).abs() >= 2.0 {
+                    let _ = pill_win.set_size(LogicalSize::new(w, h));
+                }
+            } else {
+                let _ = pill_win.set_size(LogicalSize::new(w, h));
+            }
+        } else {
+            let _ = pill_win.set_size(LogicalSize::new(w, h));
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -650,24 +668,24 @@ fn set_chat_pill_size(
             if let Ok(guard) = comp_state.0.lock() {
                 if let Some(host) = guard.as_ref() {
                     let _ = host.set_visible(true);
-                    let mode = pill_mode.as_deref().unwrap_or("idle");
-                    let (offset_x, offset_y, shape_w, shape_h, radius) = match mode {
-                        "listening" => {
-                            // Half width (280px), centered in 640px window -> offset_x = 180px
-                            // Height = 80px (reduced by 1/3 from 120px), radius = 40px
-                            (180.0f32, 18.0f32, 280.0f32, 80.0f32, 40.0f32)
-                        }
-                        "responding" => {
-                            let card_h = (h - 70.0).max(60.0) as f32;
-                            let r = if card_h > 80.0 { 28.0 } else { 30.0 };
-                            (40.0f32, 18.0f32, 560.0f32, card_h, r)
-                        }
-                        _ => {
-                            // idle or thinking (560x60 centered)
-                            (40.0f32, 18.0f32, 560.0f32, 60.0f32, 30.0f32)
-                        }
-                    };
-                    let _ = host.update_shape(offset_x, offset_y, shape_w, shape_h, radius);
+                    if let (Some(sx), Some(sy), Some(sw), Some(sh), Some(sr)) =
+                        (shape_x, shape_y, shape_w, shape_h, shape_r)
+                    {
+                        // Real-time dynamic bounding box streamed from DOM
+                        let _ = host.update_shape(sx, sy, sw, sh, sr);
+                    } else {
+                        let mode = pill_mode.as_deref().unwrap_or("idle");
+                        let (offset_x, offset_y, shape_w, shape_h, radius) = match mode {
+                            "listening" => (180.0f32, 18.0f32, 280.0f32, 80.0f32, 40.0f32),
+                            "responding" => {
+                                let card_h = (h - 70.0).max(60.0) as f32;
+                                let r = if card_h > 80.0 { 28.0 } else { 30.0 };
+                                (40.0f32, 18.0f32, 560.0f32, card_h, r)
+                            }
+                            _ => (40.0f32, 18.0f32, 560.0f32, 60.0f32, 30.0f32),
+                        };
+                        let _ = host.update_shape(offset_x, offset_y, shape_w, shape_h, radius);
+                    }
                 }
             }
         }

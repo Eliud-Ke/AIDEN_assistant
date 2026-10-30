@@ -1256,14 +1256,51 @@
     0 16px 36px -4px rgba(0, 0, 0, 0.65),
     0 6px 14px rgba(0, 0, 0, 0.45) !important;
 
-  /* Continuous Apple Spring Morphing between modes */
+  /* Continuous Apple Spring Morphing between modes & smooth theme transitions */
   transition: 
     width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
     max-width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
     min-height 0.35s cubic-bezier(0.18, 1.15, 0.3, 1),
     border-radius 0.32s ease,
     padding 0.32s ease,
-    box-shadow 0.25s ease;
+    box-shadow 0.30s ease,
+    background 0.35s ease,
+    border-color 0.35s ease;
+}
+
+/* Light Mode Frosted Glass Aesthetic */
+.siri-unified-pill.light-mode {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(248, 248, 250, 0.84) 28%,
+    rgba(240, 240, 245, 0.72) 62%,
+    rgba(235, 235, 240, 0.60) 74%,
+    rgba(230, 230, 236, 0.44) 80%,
+    rgba(225, 225, 232, 0.24) 86%,
+    rgba(225, 225, 232, 0.10) 92%,
+    rgba(225, 225, 232, 0.0) 100%
+  ) !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.90),
+    0 16px 36px -4px rgba(0, 0, 0, 0.14),
+    0 6px 14px rgba(0, 0, 0, 0.08) !important;
+}
+
+.siri-unified-pill.light-mode textarea,
+.siri-unified-pill.light-mode input {
+  color: #111215 !important;
+}
+
+.siri-unified-pill.light-mode textarea::placeholder,
+.siri-unified-pill.light-mode input::placeholder {
+  color: rgba(0, 0, 0, 0.42) !important;
+}
+
+.siri-unified-pill.light-mode .siri-shining-cursor {
+  background-color: #007AFF !important;
+  box-shadow: 0 0 6px rgba(0, 122, 255, 0.65) !important;
 }
 
 /* MODE 1: IDLE / INPUT */
