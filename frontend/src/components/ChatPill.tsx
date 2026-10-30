@@ -1370,6 +1370,7 @@ export const ChatPillWindow: React.FC = () => {
       wsRef.current.send(JSON.stringify({ type: "recording_start" }));
     }
     setIsRecording(true);
+    setActiveUiTag(null);
   }, []);
 
   const handleStopRecording = useCallback(() => {
@@ -1377,6 +1378,8 @@ export const ChatPillWindow: React.FC = () => {
       wsRef.current.send(JSON.stringify({ type: "recording_stop" }));
     }
     setIsRecording(false);
+    // Instant 0ms visual feedback: transition immediately into Thinking mode!
+    setActiveUiTag("Thinking");
   }, []);
 
   // Global Push-to-Talk Shift key listener when in Voice Mode
@@ -1771,7 +1774,23 @@ export const ChatPillWindow: React.FC = () => {
                 high: Number(data.high || 0),
               });
             } else if (msgType === "voice_recording") {
-              setIsRecording(Boolean(data.isRecording));
+              const rec = Boolean(data.isRecording);
+              setIsRecording(rec);
+              if (rec) {
+                setActiveUiTag(null);
+              } else {
+                setActiveUiTag("Thinking");
+              }
+            } else if (msgType === "voice_status") {
+              const status = String(data.status || "");
+              if (status === "transcribing") {
+                setActiveUiTag("Thinking");
+              } else if (status === "armed" || status === "idle") {
+                // If transcription returned empty or tap was too short, clear temporary thinking
+                if (!turnsRef.current.length && !followupThinkingPromptRef.current && !isStreaming) {
+                  setActiveUiTag(null);
+                }
+              }
             } else if (msgType === "voice_active") {
               const active = Boolean(data.active);
               handleToggleVoice(active, true);

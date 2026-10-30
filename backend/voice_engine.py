@@ -16,10 +16,25 @@ import scipy.io.wavfile as wavfile
 import sounddevice as sd
 import speech_recognition as sr
 
+import ctypes
+import sys
+
 try:
     import keyboard
 except ImportError:
     keyboard = None
+
+IS_WINDOWS = sys.platform == "win32"
+if IS_WINDOWS:
+    _user32 = ctypes.windll.user32
+    _VK_SHIFT = 0x10
+
+    def is_shift_down() -> bool:
+        """Instant Win32 keyboard register check (<0.001ms, zero hook delay)."""
+        return bool(_user32.GetAsyncKeyState(_VK_SHIFT) & 0x8000)
+else:
+    def is_shift_down() -> bool:
+        return keyboard.is_pressed("shift") if keyboard else False
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -51,19 +66,23 @@ def calculate_band_energies(audio_chunk: np.ndarray, sample_rate: int = SAMPLE_R
     return bass_norm, mid_norm, high_norm
 
 
-def transcribe_google_free(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE) -> tuple[str, float]:
-    """Transcribes captured audio buffer using Google's Keyless Chromium Endpoint."""
-    t0 = time.time()
-    buf = io.BytesIO()
-    wavfile.write(buf, sample_rate, audio_np)
-    buf.seek(0)
+_shared_recognizer = sr.Recognizer()
 
-    recognizer = sr.Recognizer()
-    with sr.AudioFile(buf) as source:
-        audio_data = recognizer.record(source)
+
+def transcribe_google_free(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE) -> tuple[str, float]:
+    """Transcribes captured audio buffer directly via Google Keyless STT with zero WAV encoding overhead."""
+    t0 = time.time()
+    if audio_np.dtype != np.int16:
+        audio_int16 = (audio_np * 32767).astype(np.int16)
+    else:
+        audio_int16 = audio_np
+
+    raw_bytes = audio_int16.tobytes()
+    # Direct 16-bit PCM AudioData construction (0ms RAM overhead)
+    audio_data = sr.AudioData(raw_bytes, sample_rate, 2)
 
     try:
-        text = recognizer.recognize_google(audio_data, language="en-US")
+        text = _shared_recognizer.recognize_google(audio_data, language="en-US")
         latency = time.time() - t0
         return text.strip(), latency
     except sr.UnknownValueError:
@@ -107,7 +126,7 @@ class VoiceEngine:
         self._stop_monitor = threading.Event()
 
         # Start background Shift key monitor thread
-        if keyboard is not None:
+        if IS_WINDOWS or keyboard is not None:
             self._start_shift_monitor()
 
     def _dispatch(self, fn: Optional[Callable], *args):
@@ -138,22 +157,22 @@ class VoiceEngine:
         """Loops waiting for Shift to be held down and released when voice mode is armed."""
         while not self._stop_monitor.is_set():
             try:
-                if self.is_armed and keyboard is not None:
-                    if keyboard.is_pressed("shift"):
+                if self.is_armed:
+                    if is_shift_down():
                         # Shift key pressed down while armed!
                         if not self.is_recording:
                             self.start_recording(origin="shift")
 
                         # Keep recording while Shift is held
-                        while keyboard.is_pressed("shift") and not self._stop_monitor.is_set():
-                            time.sleep(0.01)
+                        while is_shift_down() and not self._stop_monitor.is_set():
+                            time.sleep(0.008)
 
                         # Shift key released!
                         if self.is_recording:
                             self.stop_recording(and_transcribe=True)
-                time.sleep(0.015)
+                time.sleep(0.01)
             except Exception:
-                time.sleep(0.05)
+                time.sleep(0.03)
 
     def arm(self):
         """Arms Voice Mode without opening the microphone."""
