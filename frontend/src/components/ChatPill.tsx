@@ -1117,30 +1117,45 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       <div className="siri-aurora-cloud idle-cloud-1" />
                       <div className="siri-aurora-cloud idle-cloud-2" />
                       <div className="siri-aurora-cloud idle-cloud-3" />
+                      <div className="siri-aurora-cloud idle-cloud-crest" />
                     </div>
                     <div className="siri-aurora-specular-rim idle-rim" />
                   </div>
 
                   {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
-                  <div
-                    className="siri-aurora-layer active-layer"
-                    style={{
-                      transform: `scaleY(${1 + (audioMeter.level || 0) * 0.45})`,
-                    }}
-                  >
-                    <div className="siri-aurora-cloud-stage">
-                      <div className="siri-aurora-cloud active-cloud-cyan" />
-                      <div className="siri-aurora-cloud active-cloud-blue" />
-                      <div className="siri-aurora-cloud active-cloud-white" />
-                      <div className="siri-aurora-cloud active-cloud-amber" />
-                    </div>
-                    <div
-                      className="siri-aurora-specular-rim active-rim"
-                      style={{
-                        opacity: 0.85 + (audioMeter.level || 0) * 0.15,
-                      }}
-                    />
-                  </div>
+                  {(() => {
+                    const rawLevel = audioMeter.level || 0;
+                    const rawMid = audioMeter.mid || 0;
+                    const rawBass = audioMeter.bass || 0;
+                    const vocalEnergy = Math.max(rawLevel, rawMid * 0.95, rawBass * 0.75);
+                    const voiceIntensity = isRecording ? Math.min(1.0, Math.pow(vocalEnergy * 2.4, 0.75)) : 0;
+                    const activeScaleY = 1 + voiceIntensity * 0.95;
+                    const activeScaleX = 1 + voiceIntensity * 0.18;
+                    const rimGlow = 14 + voiceIntensity * 28;
+                    const rimBlue = 26 + voiceIntensity * 42;
+                    return (
+                      <div
+                        className="siri-aurora-layer active-layer"
+                        style={{
+                          transform: `scaleY(${activeScaleY.toFixed(3)}) scaleX(${activeScaleX.toFixed(3)})`,
+                        }}
+                      >
+                        <div className="siri-aurora-cloud-stage">
+                          <div className="siri-aurora-cloud active-cloud-cyan" />
+                          <div className="siri-aurora-cloud active-cloud-blue" />
+                          <div className="siri-aurora-cloud active-cloud-white" />
+                          <div className="siri-aurora-cloud active-cloud-amber" />
+                        </div>
+                        <div
+                          className="siri-aurora-specular-rim active-rim"
+                          style={{
+                            opacity: 0.85 + voiceIntensity * 0.15,
+                            boxShadow: `0 0 ${rimGlow}px rgba(56, 189, 248, ${0.90 + voiceIntensity * 0.10}), 0 0 ${rimBlue}px rgba(59, 130, 246, ${0.70 + voiceIntensity * 0.25}), 0 -2px 14px rgba(255, 255, 255, 0.95)`,
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

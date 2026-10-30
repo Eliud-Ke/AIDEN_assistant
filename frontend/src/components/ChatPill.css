@@ -2272,7 +2272,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 72px;
+  height: 96px;
   border-radius: 0 0 28px 28px;
   overflow: hidden;
   pointer-events: auto;
@@ -2315,7 +2315,7 @@
 .siri-aurora-layer.active-layer {
   opacity: 0;
   transform: scaleY(0.90);
-  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.08s ease-out;
 }
 
 .siri-aurora-edge-container.recording .siri-aurora-layer.active-layer {
@@ -2338,111 +2338,165 @@
   pointer-events: none;
 }
 
-/* --- Idle Grey/White Glowing Clouds (Gentle Hill Silhouette, Slow & Relaxed) --- */
-/* Left shoulder of the hill */
+/* --- Idle Grey/White Glowing Clouds (Living Organic Hill, Flowing & Undulating) --- */
+/* Left rolling shoulder */
 .siri-aurora-cloud.idle-cloud-1 {
-  width: 68%;
-  height: 48px;
-  left: 0%;
-  bottom: -4px;
-  background: radial-gradient(ellipse 70% 60% at 30% 100%, rgba(255, 255, 255, 0.42) 0%, rgba(220, 225, 235, 0.22) 45%, rgba(180, 185, 195, 0.06) 70%, transparent 88%);
-  animation: siriIdleSmokeDrift1 9.5s ease-in-out infinite alternate;
-}
-
-/* Right shoulder of the hill */
-.siri-aurora-cloud.idle-cloud-2 {
   width: 70%;
-  height: 46px;
-  right: 0%;
+  height: 52px;
+  left: -2%;
   bottom: -4px;
-  background: radial-gradient(ellipse 70% 60% at 70% 100%, rgba(245, 248, 255, 0.38) 0%, rgba(205, 212, 222, 0.18) 45%, rgba(160, 168, 180, 0.05) 70%, transparent 88%);
-  animation: siriIdleSmokeDrift2 11.5s ease-in-out infinite alternate;
+  background: radial-gradient(
+    ellipse 65% 60% at 35% 100%,
+    rgba(255, 255, 255, 0.48) 0%,
+    rgba(220, 226, 238, 0.26) 42%,
+    rgba(180, 188, 202, 0.08) 68%,
+    transparent 88%
+  );
+  animation: siriIdleRollLeft 4.6s ease-in-out infinite alternate;
 }
 
-/* Center Peak: Rises higher like a gentle hill without being overly dramatic */
+/* Right rolling shoulder */
+.siri-aurora-cloud.idle-cloud-2 {
+  width: 72%;
+  height: 50px;
+  right: -2%;
+  bottom: -4px;
+  background: radial-gradient(
+    ellipse 68% 60% at 65% 100%,
+    rgba(245, 248, 255, 0.44) 0%,
+    rgba(210, 218, 230, 0.22) 44%,
+    rgba(165, 172, 185, 0.06) 70%,
+    transparent 88%
+  );
+  animation: siriIdleRollRight 5.2s ease-in-out infinite alternate;
+}
+
+/* Center Hill Peak: Higher, living, billowing crest */
 .siri-aurora-cloud.idle-cloud-3 {
-  width: 58%;
-  height: 64px;
-  left: 21%;
+  width: 62%;
+  height: 70px;
+  left: 19%;
   bottom: -4px;
-  background: radial-gradient(ellipse 52% 82% at 50% 100%, rgba(255, 255, 255, 0.65) 0%, rgba(235, 240, 250, 0.38) 35%, rgba(210, 218, 230, 0.16) 65%, transparent 88%);
-  animation: siriIdleSmokeBreathe 7.5s ease-in-out infinite alternate;
+  background: radial-gradient(
+    ellipse 50% 84% at 50% 100%,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(235, 240, 250, 0.42) 36%,
+    rgba(210, 218, 232, 0.18) 64%,
+    transparent 88%
+  );
+  animation: siriIdleHillBillow 4.0s ease-in-out infinite alternate;
 }
 
-@keyframes siriIdleSmokeDrift1 {
+/* 4th cloud: Wandering Crest Shimmer that rolls across the hill top */
+.siri-aurora-cloud.idle-cloud-crest {
+  width: 44%;
+  height: 58px;
+  left: 28%;
+  bottom: -2px;
+  background: radial-gradient(
+    ellipse 45% 75% at 50% 100%,
+    rgba(255, 255, 255, 0.82) 0%,
+    rgba(240, 244, 255, 0.38) 40%,
+    transparent 80%
+  );
+  animation: siriIdleCrestWave 3.5s ease-in-out infinite alternate;
+}
+
+@keyframes siriIdleRollLeft {
   0% {
-    transform: translateX(-10%) scaleY(0.95);
+    transform: translateX(-16%) translateY(2px) scaleX(0.92) scaleY(0.90);
+    opacity: 0.65;
   }
   50% {
-    transform: translateX(8%) scaleY(1.08);
+    transform: translateX(12%) translateY(-5px) scaleX(1.08) scaleY(1.14);
+    opacity: 0.95;
   }
   100% {
-    transform: translateX(-4%) scaleY(0.98);
+    transform: translateX(-6%) translateY(0px) scaleX(0.98) scaleY(1.02);
+    opacity: 0.80;
   }
 }
 
-@keyframes siriIdleSmokeDrift2 {
+@keyframes siriIdleRollRight {
   0% {
-    transform: translateX(8%) scaleY(1.04);
+    transform: translateX(14%) translateY(0px) scaleX(1.06) scaleY(1.08);
+    opacity: 0.85;
   }
   50% {
-    transform: translateX(-10%) scaleY(0.92);
+    transform: translateX(-14%) translateY(-6px) scaleX(0.90) scaleY(0.92);
+    opacity: 0.60;
   }
   100% {
-    transform: translateX(4%) scaleY(1.02);
+    transform: translateX(8%) translateY(2px) scaleX(1.02) scaleY(1.02);
+    opacity: 0.90;
   }
 }
 
-@keyframes siriIdleSmokeBreathe {
+@keyframes siriIdleHillBillow {
   0% {
+    transform: translateX(-12%) translateY(3px) scaleX(0.90) scaleY(0.88);
     opacity: 0.70;
-    transform: scaleX(0.94) scaleY(0.92);
   }
   50% {
+    transform: translateX(10%) translateY(-8px) scaleX(1.10) scaleY(1.18);
     opacity: 1;
-    transform: scaleX(1.04) scaleY(1.08);
   }
   100% {
-    opacity: 0.75;
-    transform: scaleX(0.97) scaleY(0.96);
+    transform: translateX(-2%) translateY(-2px) scaleX(0.98) scaleY(1.02);
+    opacity: 0.82;
+  }
+}
+
+@keyframes siriIdleCrestWave {
+  0% {
+    transform: translateX(-22%) scaleX(0.85) scaleY(0.88);
+    opacity: 0.50;
+  }
+  50% {
+    transform: translateX(18%) scaleX(1.15) scaleY(1.15);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateX(-6%) scaleX(0.95) scaleY(1.02);
+    opacity: 0.70;
   }
 }
 
 /* --- Active Cyan/Blue/White Glowing Clouds (Vibrant, voice-reactive) --- */
 .siri-aurora-cloud.active-cloud-cyan {
-  width: 66%;
-  height: 56px;
-  left: 8%;
+  width: 68%;
+  height: 64px;
+  left: 6%;
   bottom: -6px;
-  background: radial-gradient(ellipse 65% 55% at 38% 100%, rgba(56, 189, 248, 0.92) 0%, rgba(34, 211, 238, 0.62) 42%, rgba(59, 130, 246, 0.18) 70%, transparent 88%);
-  animation: siriActiveDrift1 4.2s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse 65% 55% at 38% 100%, rgba(56, 189, 248, 0.94) 0%, rgba(34, 211, 238, 0.65) 42%, rgba(59, 130, 246, 0.20) 70%, transparent 88%);
+  animation: siriActiveDrift1 3.8s ease-in-out infinite alternate;
 }
 
 .siri-aurora-cloud.active-cloud-blue {
-  width: 72%;
-  height: 52px;
-  right: 6%;
+  width: 74%;
+  height: 60px;
+  right: 4%;
   bottom: -4px;
-  background: radial-gradient(ellipse 75% 60% at 66% 100%, rgba(59, 130, 246, 0.88) 0%, rgba(96, 165, 250, 0.58) 46%, rgba(56, 189, 248, 0.15) 74%, transparent 90%);
-  animation: siriActiveDrift2 4.8s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse 75% 60% at 66% 100%, rgba(59, 130, 246, 0.90) 0%, rgba(96, 165, 250, 0.60) 46%, rgba(56, 189, 248, 0.18) 74%, transparent 90%);
+  animation: siriActiveDrift2 4.4s ease-in-out infinite alternate;
 }
 
 .siri-aurora-cloud.active-cloud-white {
-  width: 56%;
-  height: 50px;
-  left: 22%;
+  width: 58%;
+  height: 58px;
+  left: 21%;
   bottom: -4px;
-  background: radial-gradient(ellipse 60% 45% at 50% 100%, rgba(255, 255, 255, 1.0) 0%, rgba(186, 230, 253, 0.80) 38%, rgba(56, 189, 248, 0.28) 68%, transparent 86%);
-  animation: siriActiveCorePulse 2.8s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse 60% 45% at 50% 100%, rgba(255, 255, 255, 1.0) 0%, rgba(186, 230, 253, 0.82) 38%, rgba(56, 189, 248, 0.30) 68%, transparent 86%);
+  animation: siriActiveCorePulse 2.4s ease-in-out infinite alternate;
 }
 
 .siri-aurora-cloud.active-cloud-amber {
-  width: 40%;
-  height: 40px;
-  left: 30%;
+  width: 42%;
+  height: 48px;
+  left: 29%;
   bottom: -2px;
-  background: radial-gradient(ellipse 45% 35% at 52% 100%, rgba(251, 191, 36, 0.45) 0%, rgba(245, 158, 11, 0.18) 42%, transparent 75%);
-  animation: siriActiveCorePulse 3.4s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse 45% 35% at 52% 100%, rgba(251, 191, 36, 0.50) 0%, rgba(245, 158, 11, 0.20) 42%, transparent 75%);
+  animation: siriActiveCorePulse 3.0s ease-in-out infinite alternate;
 }
 
 @keyframes siriActiveDrift1 {
@@ -2498,16 +2552,32 @@
 .siri-aurora-specular-rim.idle-rim {
   background: linear-gradient(
     90deg,
-    transparent 6%,
-    rgba(255, 255, 255, 0.25) 20%,
-    rgba(255, 255, 255, 0.92) 50%,
-    rgba(255, 255, 255, 0.25) 80%,
-    transparent 94%
+    transparent 4%,
+    rgba(255, 255, 255, 0.20) 18%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0.20) 82%,
+    transparent 96%
   );
+  background-size: 200% 100%;
   box-shadow: 
-    0 0 10px rgba(255, 255, 255, 0.60),
-    0 -1px 8px rgba(255, 255, 255, 0.35);
-  animation: siriRimBreathe 7s ease-in-out infinite alternate;
+    0 0 12px rgba(255, 255, 255, 0.65),
+    0 -1px 8px rgba(255, 255, 255, 0.40);
+  animation: siriRimShimmer 4.2s ease-in-out infinite alternate;
+}
+
+@keyframes siriRimShimmer {
+  0% {
+    opacity: 0.65;
+    background-position: 20% 0;
+  }
+  50% {
+    opacity: 1;
+    background-position: 80% 0;
+  }
+  100% {
+    opacity: 0.75;
+    background-position: 45% 0;
+  }
 }
 
 .siri-aurora-specular-rim.active-rim {
