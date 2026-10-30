@@ -1434,7 +1434,6 @@
 /* MODE 1.5 -> 1: REVERSE EXPAND MORPH (Voice Exit back to Idle Search Capsule) */
 .siri-unified-pill.mode-idle.exiting-voice {
   transition: none !important;
-  padding: 0 !important;
   animation: siriVoicePillExpand 0.48s cubic-bezier(0.18, 1.25, 0.35, 1) both;
 }
 
@@ -1485,25 +1484,31 @@
   }
 }
 
-/* Staggered Content Reveal on Voice Exit: Fade in near center separated, then spring outwards to ends */
+/* Staggered Content Reveal on Voice Exit: Fade in near center separated, then spring smoothly outwards to ends */
 .siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap {
-  animation: siriVoiceSearchSpringOut 0.28s cubic-bezier(0.18, 1.25, 0.35, 1) 0.20s both;
+  animation: siriVoiceSearchSpringOut 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both;
 }
 
 .siri-unified-pill.mode-idle.exiting-voice .siri-idle-bare-mic-btn {
-  animation: siriVoiceMicSpringOut 0.28s cubic-bezier(0.18, 1.25, 0.35, 1) 0.20s both;
+  animation: siriVoiceMicSpringOut 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both;
 }
 
 @keyframes siriVoiceSearchSpringOut {
   0% {
     opacity: 0;
-    transform: translateX(135px) scale(0.95);
+    transform: translateX(110px) scale(0.96);
   }
-  30% {
+  35% {
     opacity: 1;
+    transform: translateX(40px) scale(0.99);
   }
-  75% {
-    transform: translateX(-5px) scale(1.01);
+  70% {
+    opacity: 1;
+    transform: translateX(-4px) scale(1.005);
+  }
+  88% {
+    opacity: 1;
+    transform: translateX(1px) scale(1);
   }
   100% {
     opacity: 1;
@@ -1514,13 +1519,19 @@
 @keyframes siriVoiceMicSpringOut {
   0% {
     opacity: 0;
-    transform: translateX(-145px) scale(0.95);
+    transform: translateX(-110px) scale(0.96);
   }
-  30% {
+  35% {
     opacity: 1;
+    transform: translateX(-40px) scale(0.99);
   }
-  75% {
-    transform: translateX(5px) scale(1.01);
+  70% {
+    opacity: 1;
+    transform: translateX(4px) scale(1.005);
+  }
+  88% {
+    opacity: 1;
+    transform: translateX(-1px) scale(1);
   }
   100% {
     opacity: 1;
