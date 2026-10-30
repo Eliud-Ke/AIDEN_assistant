@@ -1347,6 +1347,10 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, [isAwake]);
 
+  // Maintain latest mode ref for stable measureAndSyncShape identity
+  const currentModeRef = useRef(currentMode);
+  currentModeRef.current = currentMode;
+
   // Dynamic Real-Time Shape Measurement & Synchronization (Option A)
   const morphRafRef = useRef<number | null>(null);
 
@@ -1358,22 +1362,16 @@ export const ChatPillWindow: React.FC = () => {
     const rect = pillEl.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    let shapeX = Math.round(rect.left);
-    let shapeY = Math.round(rect.top);
-    let shapeW = Math.round(rect.width);
-    let shapeH = Math.round(rect.height);
+    const shapeX = Math.round(rect.left);
+    const shapeY = Math.round(rect.top);
+    const shapeW = Math.round(rect.width);
+    const shapeH = Math.round(rect.height);
 
-    // Guard: Prevent un-rendered 560px layout from flashing during the instant of voice exit
-    if (isExitingVoice && shapeW > 400 && shapeH < 75) {
-      shapeW = 280;
-      shapeX = 180;
-      shapeH = 80;
-    }
-
-    const shapeR = currentMode === "responding" ? (shapeH > 80 ? 28 : 30) : Math.round(shapeH / 2);
+    const mode = currentModeRef.current;
+    const shapeR = mode === "responding" ? (shapeH > 80 ? 28 : 30) : Math.round(shapeH / 2);
 
     const winH = targetWinHeight ?? (
-      currentMode === "responding"
+      mode === "responding"
         ? Math.max(130, Math.ceil(shapeH + 70))
         : 150
     );
@@ -1381,14 +1379,14 @@ export const ChatPillWindow: React.FC = () => {
     invoke("set_chat_pill_size", {
       width: 640,
       height: winH,
-      pillMode: currentMode,
+      pillMode: mode,
       shapeX,
       shapeY,
       shapeW,
       shapeH,
       shapeR,
     }).catch(() => {});
-  }, [isAwake, currentMode, isExitingVoice]);
+  }, [isAwake]);
 
   // Launch smooth frame-by-frame rAF tracker during morph transitions (550ms)
   const startMorphTracking = useCallback((durationMs = 550) => {
