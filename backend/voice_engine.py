@@ -1,7 +1,7 @@
 """
 AIDEN Assistant - Voice Engine & Real-Time Audio Meter
 Provides Push-to-Talk (Hold Shift to speak, release to send) + Real-Time Audio Metering + Google Keyless STT.
-Zero VAD / silence complications: purely controlled by holding Shift or clicking the mic.
+Zero VAD / silence complications: purely controlled by holding Shift or frontend Push-to-Talk.
 """
 
 import asyncio
@@ -79,8 +79,8 @@ def transcribe_google_free(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE)
 class VoiceEngine:
     """
     Manages push-to-talk audio capture, live metering, and transcription.
-    Zero VAD: Records while Shift is held down (or mic mode is active),
-    and stops/transcribes when Shift is released (or mic mode is deactivated).
+    Zero VAD: Voice mode arms/disarms cleanly. Mic is only opened while Shift
+    is held down (or frontend triggers recording_start), and transcribed on release.
     """
 
     def __init__(self,
@@ -88,23 +88,25 @@ class VoiceEngine:
                  on_transcription: Optional[Callable[[str], None]] = None,
                  on_status: Optional[Callable[[str], None]] = None,
                  on_active: Optional[Callable[[bool], None]] = None,
+                 on_recording: Optional[Callable[[bool], None]] = None,
                  loop: Optional[asyncio.AbstractEventLoop] = None):
         self.on_meter = on_meter
         self.on_transcription = on_transcription
         self.on_status = on_status
         self.on_active = on_active
+        self.on_recording = on_recording
         self.loop = loop
 
-        self.is_listening = False
+        self.is_armed = False
+        self.is_recording = False
         self._stream: Optional[sd.InputStream] = None
         self._audio_chunks: list[np.ndarray] = []
         self._start_time = 0.0
         self._last_meter_emit = 0.0
         self._lock = threading.Lock()
-        self._shift_monitor_running = False
         self._stop_monitor = threading.Event()
 
-        # Start background Shift key push-to-talk listener thread
+        # Start background Shift key monitor thread
         if keyboard is not None:
             self._start_shift_monitor()
 
@@ -133,36 +135,57 @@ class VoiceEngine:
         t.start()
 
     def _shift_monitor_loop(self):
-        """Loops waiting for Shift to be held down and released."""
+        """Loops waiting for Shift to be held down and released when voice mode is armed."""
         while not self._stop_monitor.is_set():
             try:
-                if keyboard and keyboard.is_pressed("shift"):
-                    # Shift was pressed down!
-                    if not self.is_listening:
-                        self.start_listening(origin="shift")
-                        self._dispatch(self.on_active, True)
+                if self.is_armed and keyboard is not None:
+                    if keyboard.is_pressed("shift"):
+                        # Shift key pressed down while armed!
+                        if not self.is_recording:
+                            self.start_recording(origin="shift")
 
-                    # Keep recording while Shift is held
-                    while keyboard and keyboard.is_pressed("shift") and not self._stop_monitor.is_set():
-                        time.sleep(0.01)
+                        # Keep recording while Shift is held
+                        while keyboard.is_pressed("shift") and not self._stop_monitor.is_set():
+                            time.sleep(0.01)
 
-                    # Shift was released!
-                    if self.is_listening:
-                        self.stop_listening(and_transcribe=True)
+                        # Shift key released!
+                        if self.is_recording:
+                            self.stop_recording(and_transcribe=True)
                 time.sleep(0.015)
             except Exception:
                 time.sleep(0.05)
 
-    def start_listening(self, origin: str = "ui"):
-        """Starts real-time microphone capture and volume metering."""
+    def arm(self):
+        """Arms Voice Mode without opening the microphone."""
         with self._lock:
-            if self.is_listening:
+            self.is_armed = True
+        print("🎙️ [VOICE ENGINE] Voice Mode ARMED (mic is OFF). Hold Shift to speak...")
+        self._dispatch(self.on_active, True)
+        self._dispatch(self.on_status, "armed")
+        self._dispatch(self.on_recording, False)
+
+    def disarm(self):
+        """Disarms Voice Mode and ensures microphone is off."""
+        with self._lock:
+            self.is_armed = False
+        if self.is_recording:
+            self.stop_recording(and_transcribe=False)
+        print("⏹️ [VOICE ENGINE] Voice Mode DISARMED.")
+        self._dispatch(self.on_active, False)
+        self._dispatch(self.on_recording, False)
+        self._dispatch(self.on_status, "idle")
+
+    def start_recording(self, origin: str = "shift"):
+        """Starts real-time microphone capture and volume metering (Shift held down)."""
+        with self._lock:
+            if self.is_recording:
                 return
 
             self._audio_chunks = []
             self._start_time = time.time()
             self._last_meter_emit = 0.0
-            self.is_listening = True
+            self.is_armed = True
+            self.is_recording = True
 
             try:
                 self._stream = sd.InputStream(
@@ -173,17 +196,19 @@ class VoiceEngine:
                     blocksize=BLOCK_SIZE,
                 )
                 self._stream.start()
-                print(f"🎙️ [VOICE ENGINE] Microphone active ({origin.upper()}). Speak now...")
-                self._dispatch(self.on_status, "listening")
+                print(f"🔴 [VOICE ENGINE] Microphone RECORDING ACTIVE ({origin.upper()}). Speak now...")
+                self._dispatch(self.on_recording, True)
+                self._dispatch(self.on_status, "recording")
             except Exception as e:
                 print(f"❌ [VOICE ENGINE] Failed to open microphone stream: {e}")
-                self.is_listening = False
+                self.is_recording = False
                 self._stream = None
+                self._dispatch(self.on_recording, False)
                 self._dispatch(self.on_status, "error")
 
     def _audio_callback(self, indata, frames, time_info, status):
         """Real-time audio callback calculating volume & frequency bands."""
-        if not self.is_listening:
+        if not self.is_recording:
             return
 
         chunk = indata.copy()
@@ -201,12 +226,12 @@ class VoiceEngine:
             if self.on_meter:
                 self._dispatch(self.on_meter, level, bass, mid, high)
 
-    def stop_listening(self, and_transcribe: bool = True):
+    def stop_recording(self, and_transcribe: bool = True):
         """Stops the audio stream and triggers transcription if audio is long enough."""
         with self._lock:
-            if not self.is_listening:
+            if not self.is_recording:
                 return
-            self.is_listening = False
+            self.is_recording = False
 
             if self._stream:
                 try:
@@ -216,39 +241,32 @@ class VoiceEngine:
                     pass
                 self._stream = None
 
+        self._dispatch(self.on_recording, False)
+        # Reset meter bars to flat
+        self._dispatch(self.on_meter, 0.0, 0.0, 0.0, 0.0)
+
         if and_transcribe:
+            self._dispatch(self.on_status, "transcribing")
             threading.Thread(target=self._finalize_recording, daemon=True).start()
         else:
-            self._dispatch(self.on_status, "idle")
-            self._dispatch(self.on_active, False)
+            self._dispatch(self.on_status, "armed" if self.is_armed else "idle")
 
     def _finalize_recording(self):
         """Processes accumulated audio buffer and sends transcription."""
         with self._lock:
-            self.is_listening = False
-            if self._stream:
-                try:
-                    self._stream.stop()
-                    self._stream.close()
-                except Exception:
-                    pass
-                self._stream = None
-
             chunks = list(self._audio_chunks)
             self._audio_chunks = []
 
         if not chunks:
-            self._dispatch(self.on_status, "idle")
-            self._dispatch(self.on_active, False)
+            self._dispatch(self.on_status, "armed" if self.is_armed else "idle")
             return
 
         full_audio = np.concatenate(chunks, axis=0)
         duration = len(full_audio) / SAMPLE_RATE
 
         if duration < MIN_SPEECH_DURATION:
-            # Shift was tapped briefly (e.g. typing a capital letter), silently ignore
-            self._dispatch(self.on_status, "idle")
-            self._dispatch(self.on_active, False)
+            print(f"⚠️ [VOICE ENGINE] Key tap too short ({duration:.2f}s < {MIN_SPEECH_DURATION}s). Ignored.")
+            self._dispatch(self.on_status, "armed" if self.is_armed else "idle")
             return
 
         print(f"⏳ [VOICE ENGINE] Transcribing {duration:.2f}s audio buffer via Google Keyless STT...")
@@ -261,13 +279,13 @@ class VoiceEngine:
             self._dispatch(self.on_transcription, text)
         else:
             print("🎙️ [VOICE ENGINE] No recognizable speech detected.")
-            self._dispatch(self.on_status, "idle")
-            self._dispatch(self.on_active, False)
+            self._dispatch(self.on_status, "armed" if self.is_armed else "idle")
 
     def shutdown(self):
         """Gracefully shuts down voice engine and background threads."""
         self._stop_monitor.set()
-        self.stop_listening(and_transcribe=False)
+        self.stop_recording(and_transcribe=False)
+        self.disarm()
 
 
 # Global singleton instance
@@ -278,7 +296,12 @@ def get_voice_engine() -> Optional[VoiceEngine]:
     return voice_engine
 
 
-def init_voice_engine(on_meter=None, on_transcription=None, on_status=None, on_active=None, loop=None) -> VoiceEngine:
+def init_voice_engine(on_meter=None,
+                      on_transcription=None,
+                      on_status=None,
+                      on_active=None,
+                      on_recording=None,
+                      loop=None) -> VoiceEngine:
     global voice_engine
     if voice_engine is not None:
         voice_engine.shutdown()
@@ -287,6 +310,7 @@ def init_voice_engine(on_meter=None, on_transcription=None, on_status=None, on_a
         on_transcription=on_transcription,
         on_status=on_status,
         on_active=on_active,
+        on_recording=on_recording,
         loop=loop
     )
     return voice_engine

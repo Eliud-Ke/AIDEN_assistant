@@ -2285,3 +2285,127 @@
   letter-spacing: -0.2px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
+
+
+/* Voice Armed & Push-to-Talk Resting/Active states */
+.siri-voice-idle-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  user-select: none;
+  animation: fadeIn 0.20s ease-out both;
+}
+
+.siri-voice-idle-icon-ring {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #60a5fa;
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.25);
+  animation: siriVoiceIdleGlow 3s ease-in-out infinite alternate;
+  flex-shrink: 0;
+}
+
+@keyframes siriVoiceIdleGlow {
+  0% {
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.40);
+    border-color: rgba(96, 165, 250, 0.35);
+  }
+}
+
+.siri-voice-idle-text-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+}
+
+.siri-voice-idle-title {
+  font-size: 13.5px;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: -0.2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.siri-voice-idle-hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.50);
+  letter-spacing: -0.1px;
+}
+
+.siri-kbd-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.20);
+  border: 1px solid rgba(147, 197, 253, 0.35);
+  border-radius: 5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  line-height: 1.3;
+}
+
+.siri-kbd-pill.mini {
+  padding: 0 4px;
+  font-size: 9.5px;
+  border-radius: 4px;
+}
+
+.siri-voice-recording-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  animation: fadeIn 0.16s ease-out both;
+}
+
+.siri-voice-status-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: #93c5fd;
+  letter-spacing: -0.1px;
+  text-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+
+.siri-expanded-voice-indicator.idle {
+  gap: 8px;
+}
+
+.siri-expanded-voice-indicator.recording .siri-expanded-voice-label {
+  color: #93c5fd;
+}
+
+.siri-voice-mini-mic {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.siri-voice-space-hint {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+}

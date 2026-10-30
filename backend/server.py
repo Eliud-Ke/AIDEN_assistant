@@ -141,6 +141,13 @@ def _on_voice_active(active: bool):
     })
 
 
+def _on_voice_recording(recording: bool):
+    broadcast_event({
+        "type": "voice_recording",
+        "isRecording": recording,
+    })
+
+
 async def broadcast_state_async(
     is_awake: bool,
     wake_source: Optional[str] = None,
@@ -250,23 +257,35 @@ async def handle_connection(websocket: Any):
                     if not _current_state["isAwake"] and _wake_event is not None:
                         _wake_event.set()
 
-            elif msg_type == "voice_start":
-                print("🎙️ [WS BRIDGE] Voice input started.")
+            elif msg_type in ("voice_arm", "voice_start"):
+                print("🎙️ [WS BRIDGE] Voice mode armed.")
                 ve = get_voice_engine()
                 if ve:
-                    ve.start_listening()
+                    ve.arm()
 
-            elif msg_type == "voice_stop":
-                print("⏹️ [WS BRIDGE] Voice input stopped. Transcribing...")
+            elif msg_type in ("voice_disarm", "voice_stop", "voice_cancel"):
+                print("⏹️ [WS BRIDGE] Voice mode disarmed.")
                 ve = get_voice_engine()
                 if ve:
-                    ve.stop_listening(and_transcribe=True)
+                    ve.disarm()
 
-            elif msg_type == "voice_cancel":
-                print("❌ [WS BRIDGE] Voice input cancelled.")
+            elif msg_type == "recording_start":
+                print("🔴 [WS BRIDGE] Recording started (Push-to-Talk).")
                 ve = get_voice_engine()
                 if ve:
-                    ve.stop_listening(and_transcribe=False)
+                    ve.start_recording(origin="ui")
+
+            elif msg_type == "recording_stop":
+                print("⏹️ [WS BRIDGE] Recording stopped. Transcribing...")
+                ve = get_voice_engine()
+                if ve:
+                    ve.stop_recording(and_transcribe=True)
+
+            elif msg_type == "recording_cancel":
+                print("❌ [WS BRIDGE] Recording cancelled.")
+                ve = get_voice_engine()
+                if ve:
+                    ve.stop_recording(and_transcribe=False)
 
             elif msg_type == "wake":
                 if _wake_event is not None:
@@ -337,6 +356,7 @@ async def start_ws_server(host: str = "127.0.0.1", port: int = 8765):
         on_transcription=_on_voice_transcription,
         on_status=_on_voice_status,
         on_active=_on_voice_active,
+        on_recording=_on_voice_recording,
         loop=_server_loop,
     )
     _ws_server = await websockets.serve(handle_connection, host, port)
@@ -349,7 +369,7 @@ async def stop_ws_server():
     global _ws_server
     ve = get_voice_engine()
     if ve:
-        ve.stop_listening(and_transcribe=False)
+        ve.disarm()
     if _ws_server is not None:
         try:
             _ws_server.close()

@@ -33,6 +33,9 @@ interface ChatPillProps {
   isExitingVoice?: boolean;
   isEnteringVoice?: boolean;
   audioMeter?: { level: number; bass: number; mid: number; high: number };
+  isRecording?: boolean;
+  onStartRecording?: () => void;
+  onStopRecording?: () => void;
 }
 
 interface MediaGalleryItem {
@@ -355,6 +358,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   isExitingVoice,
   isEnteringVoice,
   audioMeter = { level: 0, bass: 0, mid: 0, high: 0 },
+  isRecording = false,
+  onStartRecording,
+  onStopRecording,
 }) => {
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
@@ -849,13 +855,49 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               }}
               title="Click or press Esc to return to Search"
             >
-              <div className="siri-audio-wave-meter">
-                <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-                <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
-                <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
-                <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
-                <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-              </div>
+              {isRecording ? (
+                <div
+                  className="siri-voice-recording-wrapper"
+                  onMouseUp={(e) => {
+                    e.stopPropagation();
+                    onStopRecording?.();
+                  }}
+                >
+                  <div className="siri-audio-wave-meter active-wave">
+                    <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                    <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
+                    <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
+                    <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
+                    <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                  </div>
+                  <span className="siri-voice-status-sub">Listening... Release Shift to send</span>
+                </div>
+              ) : (
+                <div className="siri-voice-idle-wrapper">
+                  <div
+                    className="siri-voice-idle-icon-ring"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      onStartRecording?.();
+                    }}
+                    onMouseUp={(e) => {
+                      e.stopPropagation();
+                      onStopRecording?.();
+                    }}
+                    title="Click and hold to speak"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="siri-voice-idle-mic-svg">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
+                    </svg>
+                  </div>
+                  <div className="siri-voice-idle-text-block">
+                    <span className="siri-voice-idle-title">Hold <kbd className="siri-kbd-pill">Shift</kbd> to speak</span>
+                    <span className="siri-voice-idle-hint">Release to send • Esc to exit</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1063,15 +1105,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
               >
                 {voiceActive && pillMode === "responding" && (
-                  <div className="siri-expanded-voice-indicator">
-                    <div className="siri-audio-wave-meter mini">
-                      <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-                      <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
-                      <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
-                      <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
-                      <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
-                    </div>
-                    <span className="siri-expanded-voice-label">Listening... (Press Space to cancel)</span>
+                  <div className={`siri-expanded-voice-indicator ${isRecording ? "recording" : "idle"}`}>
+                    {isRecording ? (
+                      <>
+                        <div className="siri-audio-wave-meter mini">
+                          <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                          <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
+                          <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
+                          <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
+                          <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                        </div>
+                        <span className="siri-expanded-voice-label recording">Listening... (Release Shift to send)</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="siri-voice-mini-mic">
+                          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                          <line x1="12" y1="19" x2="12" y2="22" />
+                        </svg>
+                        <span className="siri-expanded-voice-label">Hold <kbd className="siri-kbd-pill mini">Shift</kbd> to speak <span className="siri-voice-space-hint">• Space to exit</span></span>
+                      </>
+                    )}
                   </div>
                 )}
                 <div className="siri-apple-command-bar">
@@ -1211,6 +1266,7 @@ export const ChatPillWindow: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMaxHeight, setIsMaxHeight] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [isExitingVoice, setIsExitingVoice] = useState(false);
   const exitingVoiceTimerRef = useRef<number | null>(null);
   const [isEnteringVoice, setIsEnteringVoice] = useState(false);
@@ -1225,8 +1281,11 @@ export const ChatPillWindow: React.FC = () => {
       wasOriginVoiceRef.current = false;
     }
 
+    if (!active) {
+      setIsRecording(false);
+    }
     if (!skipSocket && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: active ? "voice_start" : "voice_stop" }));
+      wsRef.current.send(JSON.stringify({ type: active ? "voice_arm" : "voice_disarm" }));
     }
 
     setIsVoiceActive((prev) => {
@@ -1267,6 +1326,46 @@ export const ChatPillWindow: React.FC = () => {
       return active;
     });
   }, []);
+
+  const handleStartRecording = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "recording_start" }));
+    }
+    setIsRecording(true);
+  }, []);
+
+  const handleStopRecording = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "recording_stop" }));
+    }
+    setIsRecording(false);
+  }, []);
+
+  // Global Push-to-Talk Shift key listener when in Voice Mode
+  useEffect(() => {
+    const handleShiftDown = (e: KeyboardEvent) => {
+      if ((e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") && !e.repeat) {
+        if (isVoiceActive && !isRecording) {
+          handleStartRecording();
+        }
+      }
+    };
+
+    const handleShiftUp = (e: KeyboardEvent) => {
+      if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
+        if (isVoiceActive && isRecording) {
+          handleStopRecording();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleShiftDown);
+    window.addEventListener("keyup", handleShiftUp);
+    return () => {
+      window.removeEventListener("keydown", handleShiftDown);
+      window.removeEventListener("keyup", handleShiftUp);
+    };
+  }, [isVoiceActive, isRecording, handleStartRecording, handleStopRecording]);
 
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
@@ -1633,6 +1732,8 @@ export const ChatPillWindow: React.FC = () => {
                 mid: Number(data.mid || 0),
                 high: Number(data.high || 0),
               });
+            } else if (msgType === "voice_recording") {
+              setIsRecording(Boolean(data.isRecording));
             } else if (msgType === "voice_active") {
               const active = Boolean(data.active);
               handleToggleVoice(active, true);
@@ -1664,6 +1765,9 @@ export const ChatPillWindow: React.FC = () => {
               // Tracker: If originated from audio/mic mode, keep expanded UI in mic mode too
               if (wasOriginVoiceRef.current) {
                 setIsVoiceActive(true);
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: "voice_arm" }));
+                }
               }
 
               const newTurnId = "turn-" + Date.now();
@@ -1885,6 +1989,9 @@ export const ChatPillWindow: React.FC = () => {
         isExitingVoice={isExitingVoice}
         isEnteringVoice={isEnteringVoice}
         audioMeter={audioMeter}
+        isRecording={isRecording}
+        onStartRecording={handleStartRecording}
+        onStopRecording={handleStopRecording}
       />
     </div>
   );
