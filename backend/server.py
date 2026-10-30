@@ -18,6 +18,11 @@ try:
 except ImportError:
     from backend.tts_engine import synthesize_speech_base64
 
+try:
+    from voice_engine import init_voice_engine, get_voice_engine
+except ImportError:
+    from backend.voice_engine import init_voice_engine, get_voice_engine
+
 # Connected WebSocket clients (Launcher Window + Chat Pill Window)
 _connected_clients: Set[Any] = set()
 _server_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -96,6 +101,37 @@ def broadcast_event(payload: Dict[str, Any]):
         asyncio.run_coroutine_threadsafe(broadcast_event_async(payload), _server_loop)
     except Exception:
         pass
+
+
+def _on_audio_meter(level: float, bass: float, mid: float, high: float):
+    broadcast_event({
+        "type": "audio_meter",
+        "level": round(level, 3),
+        "bass": round(bass, 3),
+        "mid": round(mid, 3),
+        "high": round(high, 3),
+    })
+
+
+def _on_voice_transcription(text: str):
+    if not text:
+        return
+    print(f"💬 [VOICE COMMAND] Transcribed: \"{text}\"")
+    ui_command_queue.put(text)
+    if not _current_state["isAwake"] and _wake_event is not None:
+        _wake_event.set()
+    broadcast_event({
+        "type": "voice_transcription",
+        "text": text,
+        "from_voice": True,
+    })
+
+
+def _on_voice_status(status: str):
+    broadcast_event({
+        "type": "voice_status",
+        "status": status,
+    })
 
 
 async def broadcast_state_async(
@@ -207,6 +243,24 @@ async def handle_connection(websocket: Any):
                     if not _current_state["isAwake"] and _wake_event is not None:
                         _wake_event.set()
 
+            elif msg_type == "voice_start":
+                print("🎙️ [WS BRIDGE] Voice input started.")
+                ve = get_voice_engine()
+                if ve:
+                    ve.start_listening()
+
+            elif msg_type == "voice_stop":
+                print("⏹️ [WS BRIDGE] Voice input stopped. Transcribing...")
+                ve = get_voice_engine()
+                if ve:
+                    ve.stop_listening(and_transcribe=True)
+
+            elif msg_type == "voice_cancel":
+                print("❌ [WS BRIDGE] Voice input cancelled.")
+                ve = get_voice_engine()
+                if ve:
+                    ve.stop_listening(and_transcribe=False)
+
             elif msg_type == "wake":
                 if _wake_event is not None:
                     _wake_event.set()
@@ -271,6 +325,12 @@ async def start_ws_server(host: str = "127.0.0.1", port: int = 8765):
     """Starts the WebSocket server inside main.py's asyncio loop."""
     global _server_loop, _ws_server
     _server_loop = asyncio.get_running_loop()
+    init_voice_engine(
+        on_meter=_on_audio_meter,
+        on_transcription=_on_voice_transcription,
+        on_status=_on_voice_status,
+        loop=_server_loop,
+    )
     _ws_server = await websockets.serve(handle_connection, host, port)
     print(f"🌐 [WS BRIDGE] Listening for UI connections on ws://{host}:{port}")
     return _ws_server
@@ -279,6 +339,9 @@ async def start_ws_server(host: str = "127.0.0.1", port: int = 8765):
 async def stop_ws_server():
     """Gracefully closes the WebSocket server on shutdown."""
     global _ws_server
+    ve = get_voice_engine()
+    if ve:
+        ve.stop_listening(and_transcribe=False)
     if _ws_server is not None:
         try:
             _ws_server.close()

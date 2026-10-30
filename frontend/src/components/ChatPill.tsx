@@ -32,6 +32,7 @@ interface ChatPillProps {
   onToggleVoice?: (active: boolean) => void;
   isExitingVoice?: boolean;
   isEnteringVoice?: boolean;
+  audioMeter?: { level: number; bass: number; mid: number; high: number };
 }
 
 interface MediaGalleryItem {
@@ -353,6 +354,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onToggleVoice,
   isExitingVoice,
   isEnteringVoice,
+  audioMeter = { level: 0, bass: 0, mid: 0, high: 0 },
 }) => {
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
@@ -837,7 +839,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             </>
           )}
 
-          {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule) */}
+          {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule with Audio Wave Meter) */}
           {pillMode === "listening" && !effectiveEnteringVoice && (
             <div
               className="siri-listening-content"
@@ -846,7 +848,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 toggleVoiceMode(false);
               }}
               title="Click or press Esc to return to Search"
-            />
+            >
+              <div className="siri-audio-wave-meter">
+                <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
+                <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
+                <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
+                <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+              </div>
+            </div>
           )}
 
           {/* 2. THINKING STATE (Pill shrinks by 1/3, glowing pulse, shows status tag) */}
@@ -1052,6 +1062,18 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               <div
                 className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
               >
+                {voiceActive && pillMode === "responding" && (
+                  <div className="siri-expanded-voice-indicator">
+                    <div className="siri-audio-wave-meter mini">
+                      <span className="siri-meter-bar bar-1" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                      <span className="siri-meter-bar bar-2" style={{ transform: `scaleY(${0.28 + (audioMeter.mid || 0) * 0.72})` }} />
+                      <span className="siri-meter-bar bar-3" style={{ transform: `scaleY(${0.35 + (audioMeter.level || 0) * 0.65})` }} />
+                      <span className="siri-meter-bar bar-4" style={{ transform: `scaleY(${0.28 + (audioMeter.high || 0) * 0.72})` }} />
+                      <span className="siri-meter-bar bar-5" style={{ transform: `scaleY(${0.25 + (audioMeter.bass || 0) * 0.75})` }} />
+                    </div>
+                    <span className="siri-expanded-voice-label">Listening... (Press Space to cancel)</span>
+                  </div>
+                )}
                 <div className="siri-apple-command-bar">
                   {/* Left: Circular Frosted Glass Plus Button */}
                   <button
@@ -1193,8 +1215,20 @@ export const ChatPillWindow: React.FC = () => {
   const exitingVoiceTimerRef = useRef<number | null>(null);
   const [isEnteringVoice, setIsEnteringVoice] = useState(false);
   const enteringVoiceTimerRef = useRef<number | null>(null);
+  const [audioMeter, setAudioMeter] = useState({ level: 0, bass: 0, mid: 0, high: 0 });
+  const wasOriginVoiceRef = useRef<boolean>(false);
 
   const handleToggleVoice = useCallback((active: boolean) => {
+    if (active) {
+      wasOriginVoiceRef.current = true;
+    } else {
+      wasOriginVoiceRef.current = false;
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: active ? "voice_start" : "voice_stop" }));
+    }
+
     setIsVoiceActive((prev) => {
       const isResponding = turnsRef.current.length > 0 || Boolean(followupThinkingPromptRef.current);
       if (isResponding) {
@@ -1592,7 +1626,21 @@ export const ChatPillWindow: React.FC = () => {
             const data = JSON.parse(event.data);
             const msgType = data.type;
 
-            if (msgType === "state" || msgType === "state_change") {
+            if (msgType === "audio_meter") {
+              setAudioMeter({
+                level: Number(data.level || 0),
+                bass: Number(data.bass || 0),
+                mid: Number(data.mid || 0),
+                high: Number(data.high || 0),
+              });
+            } else if (msgType === "voice_transcription") {
+              const text = String(data.text || "").trim();
+              if (text) {
+                wasOriginVoiceRef.current = true;
+                setFollowupThinkingPrompt(text);
+                setActiveUiTag("Thinking");
+              }
+            } else if (msgType === "state" || msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
               setIsAwake(nextAwake);
             } else if (msgType === "ui_tag") {
@@ -1609,6 +1657,11 @@ export const ChatPillWindow: React.FC = () => {
               lastLineEmittedTimeRef.current = 0;
               setIsStreaming(true);
               setActiveUiTag(null);
+
+              // Tracker: If originated from audio/mic mode, keep expanded UI in mic mode too
+              if (wasOriginVoiceRef.current) {
+                setIsVoiceActive(true);
+              }
 
               const newTurnId = "turn-" + Date.now();
               currentTurnIdRef.current = newTurnId;
@@ -1828,6 +1881,7 @@ export const ChatPillWindow: React.FC = () => {
         onToggleVoice={handleToggleVoice}
         isExitingVoice={isExitingVoice}
         isEnteringVoice={isEnteringVoice}
+        audioMeter={audioMeter}
       />
     </div>
   );
