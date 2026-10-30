@@ -495,8 +495,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     : 0;
   const activeScaleY = 1 + voiceIntensity * 0.48;
   const activeScaleX = 1 + voiceIntensity * 0.09;
-  const rimGlow = 14 + voiceIntensity * 14;
-  const rimBlue = 26 + voiceIntensity * 20;
 
   // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in-stream thinking
   const isControlsVisible = Boolean(
@@ -888,7 +886,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     <div className="siri-aurora-cloud idle-cloud-3" />
                     <div className="siri-aurora-cloud idle-cloud-crest" />
                   </div>
-                  <div className="siri-aurora-specular-rim idle-rim compact" />
+
                 </div>
 
                 {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
@@ -904,13 +902,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     <div className="siri-aurora-cloud active-cloud-white" />
                     <div className="siri-aurora-cloud active-cloud-amber" />
                   </div>
-                  <div
-                    className="siri-aurora-specular-rim active-rim compact"
-                    style={{
-                      opacity: 0.85 + voiceIntensity * 0.15,
-                      boxShadow: `0 0 ${rimGlow}px rgba(56, 189, 248, ${(0.90 + voiceIntensity * 0.10).toFixed(2)}), 0 0 ${rimBlue}px rgba(59, 130, 246, ${(0.70 + voiceIntensity * 0.25).toFixed(2)}), 0 -2px 14px rgba(255, 255, 255, 0.95)`,
-                    }}
-                  />
+
                 </div>
               </div>
             </div>
@@ -1134,7 +1126,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       <div className="siri-aurora-cloud idle-cloud-3" />
                       <div className="siri-aurora-cloud idle-cloud-crest" />
                     </div>
-                    <div className="siri-aurora-specular-rim idle-rim" />
+
                   </div>
 
                   {/* 2. Active Cyan/Blue/White Siri Intelligence Aurora Layer (Vibrant, voice-reactive) */}
@@ -1150,13 +1142,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       <div className="siri-aurora-cloud active-cloud-white" />
                       <div className="siri-aurora-cloud active-cloud-amber" />
                     </div>
-                    <div
-                      className="siri-aurora-specular-rim active-rim"
-                      style={{
-                        opacity: 0.85 + voiceIntensity * 0.15,
-                        boxShadow: `0 0 ${rimGlow}px rgba(56, 189, 248, ${(0.90 + voiceIntensity * 0.10).toFixed(2)}), 0 0 ${rimBlue}px rgba(59, 130, 246, ${(0.70 + voiceIntensity * 0.25).toFixed(2)}), 0 -2px 14px rgba(255, 255, 255, 0.95)`,
-                      }}
-                    />
+
                   </div>
                 </div>
               )}

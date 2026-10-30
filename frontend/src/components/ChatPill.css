@@ -2290,9 +2290,6 @@
   border-radius: 40px;
 }
 
-.siri-aurora-specular-rim.compact {
-  border-radius: 0 0 40px 40px;
-}
 
 @keyframes siriAuroraFadeIn {
   from {
@@ -2551,74 +2548,7 @@
   }
 }
 
-/* Razor-sharp Specular Glass Bottom Lip Highlight */
-.siri-aurora-specular-rim {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2.2px;
-  pointer-events: none;
-  border-radius: 0 0 28px 28px;
-}
 
-.siri-aurora-specular-rim.idle-rim {
-  background: linear-gradient(
-    90deg,
-    transparent 4%,
-    rgba(255, 255, 255, 0.20) 18%,
-    rgba(255, 255, 255, 0.95) 50%,
-    rgba(255, 255, 255, 0.20) 82%,
-    transparent 96%
-  );
-  background-size: 200% 100%;
-  box-shadow: 
-    0 0 12px rgba(255, 255, 255, 0.65),
-    0 -1px 8px rgba(255, 255, 255, 0.40);
-  animation: siriRimShimmer 4.2s ease-in-out infinite alternate;
-}
-
-@keyframes siriRimShimmer {
-  0% {
-    opacity: 0.65;
-    background-position: 20% 0;
-  }
-  50% {
-    opacity: 1;
-    background-position: 80% 0;
-  }
-  100% {
-    opacity: 0.75;
-    background-position: 45% 0;
-  }
-}
-
-.siri-aurora-specular-rim.active-rim {
-  background: linear-gradient(
-    90deg,
-    transparent 4%,
-    rgba(56, 189, 248, 0.65) 18%,
-    rgba(255, 255, 255, 1.0) 50%,
-    rgba(56, 189, 248, 0.65) 82%,
-    transparent 96%
-  );
-  box-shadow: 
-    0 0 14px rgba(56, 189, 248, 0.95),
-    0 0 26px rgba(59, 130, 246, 0.65),
-    0 -2px 12px rgba(255, 255, 255, 0.95);
-}
-
-@keyframes siriRimBreathe {
-  0% {
-    opacity: 0.70;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.75;
-  }
-}
 
 
 
