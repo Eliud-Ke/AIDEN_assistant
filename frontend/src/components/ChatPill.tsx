@@ -1305,6 +1305,8 @@ export const ChatPillWindow: React.FC = () => {
   const [isMaxHeight, setIsMaxHeight] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef<boolean>(false);
+  isRecordingRef.current = isRecording;
   const [isExitingVoice, setIsExitingVoice] = useState(false);
   const exitingVoiceTimerRef = useRef<number | null>(null);
   const [isEnteringVoice, setIsEnteringVoice] = useState(false);
@@ -1315,11 +1317,14 @@ export const ChatPillWindow: React.FC = () => {
   const handleToggleVoice = useCallback((active: boolean, skipSocket?: boolean) => {
     if (active) {
       wasOriginVoiceRef.current = true;
+      setActiveUiTag(null);
     } else {
       wasOriginVoiceRef.current = false;
+      setActiveUiTag(null);
     }
 
     if (!active) {
+      isRecordingRef.current = false;
       setIsRecording(false);
     }
     if (!skipSocket && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -1369,14 +1374,17 @@ export const ChatPillWindow: React.FC = () => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "recording_start" }));
     }
+    isRecordingRef.current = true;
     setIsRecording(true);
     setActiveUiTag(null);
   }, []);
 
   const handleStopRecording = useCallback(() => {
+    if (!isRecordingRef.current) return;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "recording_stop" }));
     }
+    isRecordingRef.current = false;
     setIsRecording(false);
     // Instant 0ms visual feedback: transition immediately into Thinking mode!
     setActiveUiTag("Thinking");
@@ -1386,7 +1394,7 @@ export const ChatPillWindow: React.FC = () => {
   useEffect(() => {
     const handleShiftDown = (e: KeyboardEvent) => {
       if ((e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") && !e.repeat) {
-        if (isVoiceActive && !isRecording) {
+        if (isVoiceActive && !isRecordingRef.current) {
           handleStartRecording();
         }
       }
@@ -1394,7 +1402,7 @@ export const ChatPillWindow: React.FC = () => {
 
     const handleShiftUp = (e: KeyboardEvent) => {
       if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
-        if (isVoiceActive && isRecording) {
+        if (isVoiceActive && isRecordingRef.current) {
           handleStopRecording();
         }
       }
@@ -1406,7 +1414,7 @@ export const ChatPillWindow: React.FC = () => {
       window.removeEventListener("keydown", handleShiftDown);
       window.removeEventListener("keyup", handleShiftUp);
     };
-  }, [isVoiceActive, isRecording, handleStartRecording, handleStopRecording]);
+  }, [isVoiceActive, handleStartRecording, handleStopRecording]);
 
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
@@ -1775,19 +1783,25 @@ export const ChatPillWindow: React.FC = () => {
               });
             } else if (msgType === "voice_recording") {
               const rec = Boolean(data.isRecording);
+              const wasRecording = isRecordingRef.current;
+              isRecordingRef.current = rec;
               setIsRecording(rec);
               if (rec) {
                 setActiveUiTag(null);
-              } else {
+              } else if (wasRecording) {
+                // Only show Thinking if we were actively recording audio and just released Shift
                 setActiveUiTag("Thinking");
+              } else {
+                // Not recording and wasn't recording (e.g. idle arming) -> stay in listening mode
+                setActiveUiTag(null);
               }
             } else if (msgType === "voice_status") {
               const status = String(data.status || "");
               if (status === "transcribing") {
                 setActiveUiTag("Thinking");
               } else if (status === "armed" || status === "idle") {
-                // If transcription returned empty or tap was too short, clear temporary thinking
-                if (!turnsRef.current.length && !followupThinkingPromptRef.current && !isStreaming) {
+                // When armed/idle and not streaming a reply, clear thinking tag so we stay in listening mode
+                if (!isStreaming) {
                   setActiveUiTag(null);
                 }
               }
