@@ -79,8 +79,7 @@
     rgba(18, 18, 18, 0.65) 72%,
     rgba(24, 24, 24, 0.56) 100%
   );
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* No parent backdrop-filter so inner glass buttons can blur .siri-unified-stream text/entities */
   /* Soft, barely-there boundary - not a harsh white wireframe */
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
@@ -1248,8 +1247,7 @@
     rgba(26, 26, 26, 0.10) 92%,
     rgba(26, 26, 26, 0.0) 100%
   ) !important;
-  backdrop-filter: blur(28px) saturate(190%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+  /* No parent backdrop-filter so inner glass controls serve as the primary backdrop-filter layer */
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   box-shadow: 
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
@@ -1638,7 +1636,7 @@
   flex-direction: column;
   padding: 16px 18px 16px 18px;
   position: relative;
-  animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1) forwards;
+  animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1);
   transition: 
     width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
     max-width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
@@ -1676,7 +1674,7 @@
   }
 }
 
-/* Floating Circular Glass Minimize Button (Top-Right of Responding Window) */
+/* Floating Circular Colourless Clear Glass Minimize Button */
 .siri-floating-close-btn {
   position: absolute;
   top: 16px;
@@ -1688,67 +1686,79 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.11);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  /* Specular glass edge shine */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 8px rgba(0, 0, 0, 0.35);
+  /* Pure colourless clear glass — zero dark/black tint */
+  background: rgba(255, 255, 255, 0.04);
+  border: none !important;
   color: #ffffff;
+  /* 3D Glass Lens Separation: top specular rim + bottom inner refraction + soft drop shadow */
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.28),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.28),
+    0 6px 16px rgba(0, 0, 0, 0.28);
   cursor: pointer;
   z-index: 15;
   padding: 0;
   outline: none;
+  user-select: none;
   /* Unhovered initial state: hidden above top boundary */
   opacity: 0;
   pointer-events: none;
   transform: translateY(-26px) scale(0.85);
-  transition: opacity 0.22s ease-out,
-              transform 0.24s cubic-bezier(0.32, 0, 0.2, 1),
-              background 0.18s ease,
-              border-color 0.18s ease,
-              box-shadow 0.18s ease;
+  transition: opacity 0.16s ease-out,
+              transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              color 0.25s ease;
 }
 
-/* Hover state: Springs down from the top with bouncy settle */
+/* Hover state: Springs down from the top with bouncy transition */
 .siri-unified-pill.controls-visible .siri-floating-close-btn,
 .siri-unified-pill.hover-active .siri-floating-close-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  transition: none;
-  animation: minimizeBtnSpringDown 0.44s cubic-bezier(0.18, 1.25, 0.35, 1) both;
 }
 
-@keyframes minimizeBtnSpringDown {
-  0% {
-    opacity: 0;
-    transform: translateY(-26px) scale(0.85);
-  }
-  55% {
-    opacity: 1;
-    transform: translateY(3px) scale(1.04);
-  }
-  80% {
-    transform: translateY(-1px) scale(0.99);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
+/* Hover: Expanding effect only — stays colourless clear glass */
 .siri-unified-pill.controls-visible .siri-floating-close-btn:hover,
 .siri-unified-pill.hover-active .siri-floating-close-btn:hover {
-  background: rgba(255, 255, 255, 0.20);
-  border-color: rgba(255, 255, 255, 0.28);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 14px rgba(0, 0, 0, 0.45);
-  transform: translateY(0) scale(1.06) !important;
+  transform: translateY(0) scale(1.09) !important;
+  background: rgba(255, 255, 255, 0.06);
+  border: none !important;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.34),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    0 8px 20px rgba(0, 0, 0, 0.34);
+}
+
+/* Light Mode Floating Minimize Button */
+.siri-unified-pill.light-mode .siri-floating-close-btn {
+  background: rgba(255, 255, 255, 0.18);
+  border: none !important;
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.80),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+}
+
+.siri-unified-pill.light-mode.controls-visible .siri-floating-close-btn:hover,
+.siri-unified-pill.light-mode.hover-active .siri-floating-close-btn:hover {
+  transform: translateY(0) scale(1.09) !important;
+  background: rgba(255, 255, 255, 0.24);
+  border: none !important;
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.88),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.10),
+    0 8px 20px rgba(0, 0, 0, 0.14);
 }
 
 .siri-unified-pill.controls-visible .siri-floating-close-btn:active,
 .siri-unified-pill.hover-active .siri-floating-close-btn:active {
-  transform: translateY(0) scale(0.92) !important;
+  transform: translateY(0) scale(0.88) !important;
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .siri-responding-header {
@@ -1787,9 +1797,11 @@
   transition: padding 0.42s cubic-bezier(0.18, 1.25, 0.32, 1);
 }
 
-/* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar */
+/* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar;
+   applies colourless lens blur inside the exact 4 button shapes while keeping outside text razor-sharp */
 .siri-unified-pill.controls-visible .siri-unified-stream {
   padding: 52px 30px 76px 10px;
+  filter: url(#aiden-stream-lens-blur);
 }
 
 .siri-unified-stream::-webkit-scrollbar {
@@ -1977,29 +1989,9 @@
    With Staggered Wave-like Float-Up Animation
    ========================================================================== */
 
-/* Apple-style Bottom Frosted Dissolve Shroud */
+/* Apple-style Bottom Frosted Dissolve Shroud - Disabled for clean glass */
 .siri-bottom-dissolve-shroud {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 96px;
-  border-radius: 0 0 28px 28px;
-  background: linear-gradient(
-    180deg,
-    rgba(15, 15, 18, 0) 0%,
-    rgba(15, 15, 18, 0.40) 35%,
-    rgba(15, 15, 18, 0.76) 70%,
-    rgba(15, 15, 18, 0.90) 100%
-  );
-  pointer-events: none;
-  z-index: 5;
-  opacity: 0;
-  transition: opacity 0.35s cubic-bezier(0.18, 1.25, 0.32, 1);
-}
-
-.siri-unified-pill.controls-visible .siri-bottom-dissolve-shroud {
-  opacity: 1;
+  display: none !important;
 }
 
 .siri-hover-followup-bar {
@@ -2043,35 +2035,50 @@
   opacity: 0;
   pointer-events: none;
   transform: translateY(44px) scale(0.92);
-  transition: opacity 0.2s ease-out,
-              transform 0.22s cubic-bezier(0.32, 0, 0.2, 1);
+  transition: opacity 0.16s ease-out,
+              transform 0.22s cubic-bezier(0.32, 0, 0.2, 1),
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              border-color 0.25s ease,
+              color 0.25s ease;
 }
 
-/* 1. The + button comes and springs first (0ms delay) */
+/* 1. The + button comes and springs first (0ms delay — pure CSS transition preserves live backdrop-filter blur) */
 .siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-glass-btn.plus-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  transition: none;
-  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms both;
+  transition: opacity 0.16s ease-out 0ms,
+              transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0ms,
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              border-color 0.25s ease,
+              color 0.25s ease;
 }
 
-/* 2. Then the text box capsule comes (70ms delay) */
+/* 2. Then the text box capsule comes (60ms delay) */
 .siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-capsule {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  transition: none;
-  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 70ms both;
+  transition: opacity 0.16s ease-out 60ms,
+              transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 60ms,
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              border-color 0.25s ease;
 }
 
-/* 3. Then the mic button comes (140ms delay) and all settle */
+/* 3. Then the mic button comes (120ms delay) and all settle */
 .siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-glass-btn.mic-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
-  transition: none;
-  animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms both;
+  transition: opacity 0.16s ease-out 120ms,
+              transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 120ms,
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              border-color 0.25s ease,
+              color 0.25s ease;
 }
 
 /* ==========================================================================
@@ -2175,79 +2182,121 @@
   overflow: visible;
 }
 
-/* Circular Frosted Glass Action Buttons (+ and Mic) */
+/* Circular Colourless Clear Glass Action Buttons (+ and Mic) */
 .siri-command-glass-btn {
   width: 48px;
   height: 48px;
   min-width: 48px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.11);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  /* Specular glass edge highlight */
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    0 4px 14px rgba(0, 0, 0, 0.28);
-  color: rgba(255, 255, 255, 0.92);
+  /* Pure colourless clear glass — zero black tint */
+  background: rgba(255, 255, 255, 0.04);
+  border: none !important;
+  color: #ffffff;
+  /* 3D Glass Lens Separation: top specular rim + bottom inner shadow + soft elevation shadow */
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.28),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.28),
+    0 6px 16px rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
   outline: none;
+  user-select: none;
   flex-shrink: 0;
-  transition: background 0.18s ease,
-              border-color 0.18s ease,
-              box-shadow 0.18s ease,
-              color 0.18s ease,
-              transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* Hover: Expanding effect only — stays colourless clear glass */
 .siri-unified-pill.controls-visible .siri-command-glass-btn:hover {
-  background: rgba(255, 255, 255, 0.20);
-  border-color: rgba(255, 255, 255, 0.28);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 4px 16px rgba(0, 0, 0, 0.36);
-  transform: translateY(0) scale(1.06) !important;
+  transform: translateY(0) scale(1.09) !important;
+  background: rgba(255, 255, 255, 0.06);
+  border: none !important;
   color: #ffffff;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.34),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    0 8px 20px rgba(0, 0, 0, 0.34);
+  transition-delay: 0ms !important;
 }
 
 .siri-unified-pill.controls-visible .siri-command-glass-btn:active {
-  background: rgba(255, 255, 255, 0.15);
-  transform: translateY(0) scale(0.92) !important;
+  transform: translateY(0) scale(0.88) !important;
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1) !important;
 }
 
-/* Center Frosted Capsule Field ("Ask Aiden") */
+/* Light Mode Circular Command Buttons */
+.siri-unified-pill.light-mode .siri-command-glass-btn {
+  background: rgba(255, 255, 255, 0.18);
+  border: none !important;
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.80),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+}
+
+.siri-unified-pill.light-mode.controls-visible .siri-command-glass-btn:hover {
+  transform: translateY(0) scale(1.09) !important;
+  background: rgba(255, 255, 255, 0.24);
+  border: none !important;
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.88),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.10),
+    0 8px 20px rgba(0, 0, 0, 0.14);
+  transition-delay: 0ms !important;
+}
+
+/* Center Colourless Clear Glass Capsule Field ("Ask Aiden") */
 .siri-command-capsule {
   flex: 1;
   height: 48px;
   min-height: 48px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.09);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 4px 16px rgba(0, 0, 0, 0.26);
+  /* Pure colourless clear glass — zero black tint */
+  background: rgba(255, 255, 255, 0.04);
+  border: none !important;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.28),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.28),
+    0 6px 16px rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
   padding: 0 20px;
   box-sizing: border-box;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.siri-command-capsule:hover {
-  background: rgba(255, 255, 255, 0.13);
-  border-color: rgba(255, 255, 255, 0.22);
-}
-
+.siri-command-capsule:hover,
 .siri-command-capsule:focus-within {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.30);
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.40),
-    0 4px 18px rgba(0, 0, 0, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+  border: none !important;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.34),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    0 8px 20px rgba(0, 0, 0, 0.34);
+  transition-delay: 0ms !important;
+}
+
+/* Light Mode Center Capsule Field ("Ask Aiden") */
+.siri-unified-pill.light-mode .siri-command-capsule {
+  background: rgba(255, 255, 255, 0.18);
+  border: none !important;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.80),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+}
+
+.siri-unified-pill.light-mode .siri-command-capsule:hover,
+.siri-unified-pill.light-mode .siri-command-capsule:focus-within {
+  background: rgba(255, 255, 255, 0.24);
+  border: none !important;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.88),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.10),
+    0 8px 20px rgba(0, 0, 0, 0.14);
+  transition-delay: 0ms !important;
 }
 
 .siri-command-input {

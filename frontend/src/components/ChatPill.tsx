@@ -615,64 +615,40 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     });
   }, [followupThinkingPrompt]);
 
-  // Dynamic smooth edge fade mask for scrollable stream container (smooth edge transitions, zero clipping)
+  // Track exact pixel dimensions of .siri-unified-stream so the SVG button-lens filter
+  // blurs text ONLY inside the 4 clear-glass buttons while keeping text razor-sharp outside them
+  const [streamBox, setStreamBox] = useState<{ w: number; h: number; topOffset: number }>({
+    w: 524,
+    h: 360,
+    topOffset: 0,
+  });
+
   useLayoutEffect(() => {
     const el = streamContainerRef.current;
     if (!el) return;
 
-    const updateMask = () => {
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      const maxScroll = scrollHeight - clientHeight;
+    el.style.maskImage = "none";
+    el.style.webkitMaskImage = "none";
 
-      // Top fade: dissolves smoothly under the floating minimize button when scrolled
-      const topFade = Math.min(32, Math.max(0, scrollTop));
-      const topStop = topFade > 0 ? `transparent 0%, black ${topFade}px` : `black 0px`;
-
-      // Bottom fade:
-      // When controls are visible, dissolve text softly across the command bar zone (84px)
-      // When unhovered, dissolve at bottom edge only if content overflows
-      let bottomStop: string;
-      if (isControlsVisible) {
-        bottomStop = `black calc(100% - 84px), transparent calc(100% - 16px)`;
-      } else if (maxScroll > 2) {
-        const bottomFade = Math.min(24, Math.max(0, maxScroll - scrollTop));
-        bottomStop = bottomFade > 0 ? `black calc(100% - ${bottomFade}px), transparent 100%` : `black 100%`;
-      } else {
-        bottomStop = `black 100%`;
-      }
-
-      if (topStop === "black 0px" && bottomStop === "black 100%") {
-        if (el.dataset.currentMask !== "none") {
-          el.dataset.currentMask = "none";
-          el.style.maskImage = "none";
-          el.style.webkitMaskImage = "none";
-        }
-        return;
-      }
-
-      const mask = `linear-gradient(to bottom, ${topStop}, ${bottomStop})`;
-      if (el.dataset.currentMask !== mask) {
-        el.dataset.currentMask = mask;
-        el.style.maskImage = mask;
-        el.style.webkitMaskImage = mask;
-      }
+    const updateBox = () => {
+      const w = el.clientWidth || 524;
+      const h = el.clientHeight || 360;
+      const topOffset = 16 - el.offsetTop;
+      setStreamBox((prev) =>
+        prev.w === w && prev.h === h && prev.topOffset === topOffset
+          ? prev
+          : { w, h, topOffset }
+      );
     };
 
-    updateMask();
-
-    const onScroll = () => {
-      updateMask();
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
+    updateBox();
 
     const resizeObserver = new ResizeObserver(() => {
-      updateMask();
+      updateBox();
     });
     resizeObserver.observe(el);
 
     return () => {
-      el.removeEventListener("scroll", onScroll);
       resizeObserver.disconnect();
     };
   }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible]);
@@ -773,8 +749,91 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
+  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}"><circle cx="${streamBox.w - 24}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>${
+    !voiceActive
+      ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 120)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 24}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
+      : ""
+  }</svg>`;
+  const lensMaskDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(lensMaskSvg)}`;
+
   return (
     <div className="chat-pill-anchor">
+      {/* Colourless Clear Glass Button-Lens Filter:
+          Erases sharp text inside the 4 button shapes and replaces it with pure colourless blurred text */}
+      <svg
+        width="0"
+        height="0"
+        style={{ position: "absolute", width: 0, height: 0, pointerEvents: "none" }}
+        aria-hidden="true"
+      >
+        <defs>
+          <filter
+            id="aiden-stream-lens-blur"
+            filterUnits="userSpaceOnUse"
+            x="0"
+            y="0"
+            width={streamBox.w}
+            height={streamBox.h}
+            colorInterpolationFilters="sRGB"
+          >
+            {/* 1. Exact pixel mask of the 4 rounded buttons ([Minimize], [+], [Ask Aiden], [Mic]) */}
+            <feImage
+              href={lensMaskDataUri}
+              x="0"
+              y="0"
+              width={streamBox.w}
+              height={streamBox.h}
+              preserveAspectRatio="none"
+              result="buttonMask"
+            />
+
+            {/* 2. Refract + heavily blur the stream text/entities on its native 100% transparent background (zero black fill!) */}
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.05"
+              numOctaves="2"
+              seed="7"
+              result="glassWave"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="glassWave"
+              scale="18"
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="refracted"
+            />
+            <feGaussianBlur in="refracted" stdDeviation="8" result="blurredRaw" />
+
+            {/* Soften blurred text opacity slightly so "Ask Aiden" and button icons pop crisply */}
+            <feComponentTransfer in="blurredRaw" result="blurredSoft">
+              <feFuncA type="linear" slope="0.55" intercept="0" />
+            </feComponentTransfer>
+
+            {/* 3. Keep blurred text ONLY inside the 4 button shapes */}
+            <feComposite
+              in="blurredSoft"
+              in2="buttonMask"
+              operator="in"
+              result="blurredInButtons"
+            />
+
+            {/* 4. Keep sharp text ONLY outside the 4 button shapes (100% erases sharp text behind the buttons!) */}
+            <feComposite
+              in="SourceGraphic"
+              in2="buttonMask"
+              operator="out"
+              result="sharpOutsideButtons"
+            />
+
+            {/* 5. Merge sharp outside text + colourless blurred inside-button text */}
+            <feMerge>
+              <feMergeNode in="sharpOutsideButtons" />
+              <feMergeNode in="blurredInButtons" />
+            </feMerge>
+          </filter>
+        </defs>
+      </svg>
       <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
         <div
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
@@ -969,7 +1028,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     strokeLinejoin="round"
                   >
                     <path d="M4 14V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
-                    <rect x="8" y="8" width="13" height="12" rx="2.5" fill="rgba(255, 255, 255, 0.2)" />
+                    <rect x="8" y="8" width="13" height="12" rx="2.5" fill="currentColor" fillOpacity="0.2" />
                   </svg>
                 </button>
               )}
