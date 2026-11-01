@@ -100,27 +100,26 @@ def get_current_time_date():
 
 
 def get_live_location() -> str:
-    """Uses Windows Native Wi-Fi Triangulation (WinRT) for high-precision physical location."""
-    if not Geolocator:
-        return "Error: Windows SDK geolocation modules are not installed."
-
+    """Uses Windows Native Wi-Fi Triangulation (WinRT) with OpenStreetMap Nominatim reverse geocoding."""
     async def fetch_windows_location():
+        if not Geolocator:
+            return {"error": "WinRT geolocation module not available"}
         try:
-            print(
-                "\n📡 [SYSTEM] Querying Windows Native Geolocation (Wi-Fi Triangulation)...")
+            print(">> [LOCATION] Querying Windows Native Geolocation (Wi-Fi Triangulation)...")
             geolocator = Geolocator()
             access_status = await Geolocator.request_access_async()
             if access_status != GeolocationAccessStatus.ALLOWED:
                 return {"error": "Windows Location access denied. Check Settings > Privacy & Security > Location."}
 
-            pos = await asyncio.wait_for(geolocator.get_geoposition_async(), timeout=10.0)
+            pos = await asyncio.wait_for(geolocator.get_geoposition_async(), timeout=8.0)
             if not pos:
                 return {"error": "Windows Location Services returned no data."}
 
             return {
                 "lat": pos.coordinate.point.position.latitude,
                 "lon": pos.coordinate.point.position.longitude,
-                "accuracy": pos.coordinate.accuracy
+                "accuracy": pos.coordinate.accuracy,
+                "source": "Windows Native Wi-Fi Triangulation"
             }
         except asyncio.TimeoutError:
             return {"error": "Windows Geolocation request timed out."}
@@ -128,33 +127,78 @@ def get_live_location() -> str:
             return {"error": f"WinRT API Error: {str(e)}"}
 
     try:
-        try:
-            geo_data = asyncio.run(fetch_windows_location())
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
-            geo_data = loop.run_until_complete(fetch_windows_location())
+        geo_data = None
+        if Geolocator:
+            try:
+                try:
+                    geo_data = asyncio.run(fetch_windows_location())
+                except RuntimeError:
+                    loop = asyncio.get_event_loop()
+                    geo_data = loop.run_until_complete(fetch_windows_location())
+            except Exception as e:
+                geo_data = {"error": str(e)}
 
-        if "error" in geo_data:
-            return f"System Error retrieving location: {geo_data['error']}"
+        # Fallback to IP-based Geolocation if Windows Location is disabled or fails
+        if not geo_data or "error" in geo_data:
+            print(">> [LOCATION] Windows GPS unavailable; falling back to IP Geolocation...")
+            try:
+                ip_res = requests.get("http://ip-api.com/json/", timeout=4.0)
+                if ip_res.status_code == 200:
+                    ip_data = ip_res.json()
+                    if ip_data.get("status") == "success":
+                        geo_data = {
+                            "lat": ip_data.get("lat"),
+                            "lon": ip_data.get("lon"),
+                            "accuracy": 5000.0,
+                            "source": f"IP Geolocation ({ip_data.get('city')}, {ip_data.get('country')})"
+                        }
+            except Exception as ip_e:
+                print(f">> [LOCATION] IP fallback failed: {ip_e}")
+
+        if not geo_data or "error" in geo_data:
+            err_msg = geo_data.get("error", "Unknown error") if geo_data else "Failed to retrieve coordinates"
+            return f"System Error retrieving location: {err_msg}"
 
         lat = geo_data["lat"]
         lon = geo_data["lon"]
-        accuracy = geo_data["accuracy"]
+        accuracy = geo_data.get("accuracy", 0.0)
+        source = geo_data.get("source", "GPS")
 
-        api_key = os.getenv("GOOGLE_API_KEY")
-        readable_address = "Unknown Location"
+        # Reverse Geocoding via OpenStreetMap Nominatim (Free, no API key required)
+        readable_address = f"{lat:.4f}, {lon:.4f}"
+        try:
+            headers = {
+                "User-Agent": "AidenAssistant/1.0 (Desktop AI Companion; contact: support@aiden.ai)",
+                "Accept": "application/json"
+            }
+            nom_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2"
+            nom_res = requests.get(nom_url, headers=headers, timeout=5.0)
+            if nom_res.status_code == 200:
+                nom_data = nom_res.json()
+                disp_name = nom_data.get("display_name")
+                if disp_name:
+                    readable_address = disp_name
+        except Exception as geo_e:
+            print(f">> [LOCATION] Nominatim reverse geocoding error: {geo_e}")
 
-        if api_key:
-            try:
-                geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={api_key}"
-                address_response = requests.get(geocode_url, timeout=5)
-                address_data = address_response.json()
-                if address_data.get("results"):
-                    readable_address = address_data["results"][0]["formatted_address"]
-            except Exception as geo_e:
-                print(f"⚠️ [SYSTEM] Google Geocoding failed: {geo_e}")
+        # Derive clean display title for the UI card
+        clean_title = "My Location"
+        if readable_address and readable_address != f"{lat:.4f}, {lon:.4f}":
+            parts = [p.strip() for p in readable_address.split(",") if p.strip()]
+            if len(parts) >= 2:
+                clean_title = f"{parts[0]}, {parts[1]}"
+            elif len(parts) == 1:
+                clean_title = parts[0]
 
-        return f"Live Location: {readable_address} | Coordinates: {lat:.5f}, {lon:.5f} | Accuracy Radius: ~{accuracy:.1f} meters"
+        card_tag = f"::location-card[lat={lat:.5f} | lon={lon:.5f} | title={clean_title}]::"
+
+        return (
+            f"Live Location: {readable_address} | "
+            f"Coordinates: {lat:.5f}, {lon:.5f} | "
+            f"Accuracy Radius: ~{accuracy:.1f} meters (Source: {source})\n"
+            f"Embed this card tag directly in your reply below your answer:\n"
+            f"{card_tag}"
+        )
     except Exception as e:
         return f"System Error executing location flow: {str(e)}"
 
@@ -748,140 +792,7 @@ def get_bible_passage(reference: str, translation: str = "web") -> str:
 
 
 # ---------------------------------------------------------
-# 19. EXPLANATORY MEDIA TOOL (ZERO API KEY / HIGH FIDELITY)
-# ---------------------------------------------------------
-
-def fetch_explanatory_media(query: str, additional_queries: list = None, count: int = 4) -> str:
-    """
-    Searches and retrieves visual illustrations, diagrams, landmarks, historical photos,
-    or portraits to enhance an explanation from Wikipedia & Wikimedia Commons
-    with zero API keys, no registration, and zero rate limit issues.
-    Always returns exactly 4 high-resolution, verified images for a single row.
-    """
-    try:
-        queries = [query.strip()]
-        if additional_queries and isinstance(additional_queries, list):
-            for q in additional_queries:
-                if isinstance(q, str) and q.strip() and q.strip() not in queries:
-                    queries.append(q.strip())
-
-        headers = {
-            "User-Agent": "AidenAssistant/1.0 (Desktop AI Companion; contact: support@aiden.ai)",
-            "Accept": "application/json"
-        }
-
-        collected = []
-        seen = set()
-
-        def add_image(title, url, thumb, source="Wikipedia"):
-            if not url or not thumb:
-                return
-            if not thumb.startswith("https://") or not url.startswith("https://"):
-                return
-            # Filter non-photo vector/audio/system files
-            lower = thumb.lower()
-            if any(ext in lower for ext in [".svg", ".tif", ".tiff", ".pdf", ".ogg", ".ogv", ".webm", ".ico"]):
-                return
-            if thumb in seen or url in seen:
-                return
-            seen.add(thumb)
-            seen.add(url)
-            collected.append({
-                "title": title[:65],
-                "url": url,
-                "thumbnail": thumb,
-                "source": source
-            })
-
-        for q in queries:
-            if len(collected) >= 4:
-                break
-
-            # Priority 1: Wikipedia Pageimages (Directly connected to encyclopedic topics)
-            try:
-                wiki_url = "https://en.wikipedia.org/w/api.php"
-                params = {
-                    "action": "query",
-                    "format": "json",
-                    "generator": "search",
-                    "gsrsearch": q,
-                    "gsrlimit": 8,
-                    "prop": "pageimages",
-                    "piprop": "thumbnail|original",
-                    "pithumbsize": 960
-                }
-                res = requests.get(wiki_url, params=params, headers=headers, timeout=5)
-                if res.status_code == 200:
-                    pages = res.json().get("query", {}).get("pages", {})
-                    for page in pages.values():
-                        thumb = page.get("thumbnail", {}).get("source")
-                        orig = page.get("original", {}).get("source")
-                        title = page.get("title", "")
-                        if thumb:
-                            add_image(title, orig or thumb, thumb, source="Wikipedia")
-                        if len(collected) >= 4:
-                            break
-            except Exception:
-                pass
-
-            if len(collected) >= 4:
-                break
-
-            # Priority 2: Wikimedia Commons (High-res media repository)
-            try:
-                commons_url = "https://commons.wikimedia.org/w/api.php"
-                params = {
-                    "action": "query",
-                    "format": "json",
-                    "generator": "search",
-                    "gsrsearch": q,
-                    "gsrnamespace": "6",
-                    "gsrlimit": 10,
-                    "prop": "imageinfo",
-                    "iiprop": "url|mime",
-                    "iiurlwidth": 960
-                }
-                res = requests.get(commons_url, params=params, headers=headers, timeout=5)
-                if res.status_code == 200:
-                    pages = res.json().get("query", {}).get("pages", {})
-                    for page in pages.values():
-                        info = page.get("imageinfo", [{}])[0]
-                        mime = info.get("mime", "")
-                        if "image" not in mime or "svg" in mime or "tiff" in mime:
-                            continue
-                        thumb = info.get("thumburl") or info.get("url")
-                        orig = info.get("url")
-                        raw_title = page.get("title", "").replace("File:", "")
-                        clean_title = raw_title.rsplit(".", 1)[0].replace("_", " ")
-                        if len(clean_title) > 3 and not clean_title.lower().startswith("dsc_"):
-                            add_image(clean_title, orig or thumb, thumb, source="Wikimedia Commons")
-                        if len(collected) >= 4:
-                            break
-            except Exception:
-                pass
-
-        final_images = collected[:4]
-        if not final_images:
-            return json.dumps({
-                "status": "not_found",
-                "message": f"No relevant visual media found for '{query}'. Proceed explaining textually."
-            })
-
-        sample_items = [f"{img['thumbnail']} | {img['title']}" for img in final_images]
-        sample_tag = "::media-gallery[" + ", ".join(sample_items) + "]::"
-
-        return (
-            f"Explanatory media ready ({len(final_images)} images). "
-            f"Embed this exact tag at the most contextually relevant position in your explanation:\n"
-            f"{sample_tag}"
-        )
-
-    except Exception as e:
-        return f"Error fetching explanatory media: {str(e)}"
-
-
-# ---------------------------------------------------------
-# 20. GROUNDED WEB SEARCH TOOL (OPENAI REAL-TIME RESPONSES)
+# 19. GROUNDED WEB SEARCH TOOL (OPENAI REAL-TIME RESPONSES)
 # ---------------------------------------------------------
 
 def grounded_web_search(query: str, search_context: str = "low") -> str:
@@ -968,7 +879,6 @@ def grounded_web_search(query: str, search_context: str = "low") -> str:
 
 SYSTEM_TOOLS = {
     "grounded_web_search": grounded_web_search,
-    "fetch_explanatory_media": fetch_explanatory_media,
     "get_system_telemetry": get_system_telemetry,
     "get_current_time_date": get_current_time_date,
     "get_live_location": get_live_location,

@@ -157,7 +157,7 @@ fn stop_all_aiden_processes(state: &BackendState) {
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                "Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }",
+                "Get-NetTCPConnection -LocalPort 8765 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())

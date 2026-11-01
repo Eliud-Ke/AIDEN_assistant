@@ -115,9 +115,6 @@ TOOL_STATUS_MAP = {
     "control_media_playback": "CONTROLLING MEDIA",
     "set_system_volume": "ADJUSTING VOLUME",
 
-    # Visuals & Explanations
-    "fetch_explanatory_media": "ORGANIZING THOUGHTS",
-
     # Web & Grounding
     "grounded_web_search": "SEARCHING THE WEB",
 

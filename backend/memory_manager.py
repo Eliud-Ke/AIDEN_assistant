@@ -69,7 +69,8 @@ def _clean_text_for_context(text: str, max_chars: int = 0) -> str:
     """Strips bulky media-gallery tags and raw URLs while preserving readable content and source titles."""
     if not text:
         return ""
-    cleaned = re.sub(r"::media-gallery\[.*?\]::", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r"::location-card\[.*?\]::", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r"::media-gallery\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"\[([^\]]+)\]\(https?://[^\)]+\)", r"[\1]", cleaned)
     cleaned = re.sub(r"https?://\S+", "", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()

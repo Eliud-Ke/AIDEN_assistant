@@ -32,7 +32,7 @@ CORE_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "get_live_location",
-            "description": "Reads OS GPS coordinates and reverse-geocodes them into a readable address (City, County, Country).",
+            "description": "Reads OS GPS/Wi-Fi location and returns the human address, coordinates, and accuracy. When answering the user, state ONLY the clean human place name (e.g. 'Kisii, Kenya') by default. Never recite raw latitude, longitude, or accuracy meters unless the user explicitly asks for technical GPS coordinates.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -310,33 +310,6 @@ CORE_TOOLS_SCHEMA = [
                         "type": "string",
                         "enum": ["low", "medium", "high"],
                         "description": "Search depth: 'low' (default, fast snippet extraction), 'medium', or 'high' (deep research).",
-                    },
-                },
-                "required": ["query"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_explanatory_media",
-            "description": "Fetches 4 high-resolution visual images to illustrate explanations of concepts, history, science, places, people, or technology. Returns a ready-to-embed ::media-gallery[...]:: tag.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Specific visual subject to search for (e.g. 'Palace of Versailles', 'James Webb Space Telescope').",
-                    },
-                    "additional_queries": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional related sub-queries for diverse images in the row.",
-                    },
-                    "count": {
-                        "type": "integer",
-                        "description": "Number of images to fetch (always defaults to 4).",
                     },
                 },
                 "required": ["query"],
