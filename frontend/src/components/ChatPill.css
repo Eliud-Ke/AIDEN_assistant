@@ -1934,6 +1934,15 @@
   flex-shrink: 0;
   color: #ffffff;
   filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.65));
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, filter 0.3s ease;
+  transform-origin: center center;
+}
+
+.siri-apple-constellation.is-imploded {
+  transform: scale(0) rotate(180deg);
+  opacity: 0;
+  filter: blur(4px);
+  pointer-events: none;
 }
 
 .constellation-svg {
@@ -2789,6 +2798,142 @@
   color: #93c5fd;
   letter-spacing: -0.1px;
   text-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+
+/* =========================================================
+   SYMBIOTE CONNECTOR BADGES & THINKING INDICATORS
+   ========================================================= */
+
+/* Morphing Anchor for Status Icons */
+.siri-icon-morph-anchor {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.siri-icon-morph-anchor.small {
+  width: 16px;
+  height: 16px;
+}
+
+/* String orb implosion when transitioning into connection point */
+.siri-string-orb {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, filter 0.3s ease;
+  transform-origin: center center;
+}
+
+.siri-string-orb.is-imploded {
+  transform: scale(0) rotate(180deg);
+  opacity: 0;
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+/* Connector Sine Wave Breathing (Harmonic Dwell) */
+.siri-connector-sine-wrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: scale(0) rotate(-30deg);
+  opacity: 0;
+  filter: blur(4px);
+  transition: transform 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.28s ease, filter 0.28s ease;
+  pointer-events: none;
+}
+
+.siri-connector-sine-wrapper.is-active {
+  transform: scale(1) rotate(0deg);
+  opacity: 1;
+  filter: blur(0);
+}
+
+.siri-connector-sine-img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  animation: gmailSineBreathing 1.5s infinite ease-in-out;
+}
+
+.siri-connector-sine-wrapper.small .siri-connector-sine-img {
+  width: 14px;
+  height: 14px;
+}
+
+/* True Sine Wave Harmonic Breathing: smooth expansion and ambient specular bloom (NO red glow!) */
+@keyframes gmailSineBreathing {
+  0% {
+    transform: scale(0.96);
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+  }
+  50% {
+    transform: scale(1.18);
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.55));
+  }
+  100% {
+    transform: scale(0.96);
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+  }
+}
+
+/* Response Finished: Symbiote Connector Footer Badge */
+.siri-turn-symbiote-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  animation: symbioteFooterFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes symbioteFooterFade {
+  0% { opacity: 0; transform: translateY(5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.siri-symbiote-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.siri-symbiote-badge:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.siri-symbiote-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+.siri-symbiote-label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.82);
 }
 
 

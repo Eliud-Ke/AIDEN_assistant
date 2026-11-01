@@ -189,7 +189,13 @@ function App() {
 
     invoke<{ running?: boolean }>("get_aiden_status")
       .then((res) => {
-        setIsBackendRunning(Boolean(res?.running));
+        const running = Boolean(res?.running);
+        setIsBackendRunning(running);
+        if (!running) {
+          invoke("boot_aiden")
+            .then(() => setIsBackendRunning(true))
+            .catch(() => {});
+        }
       })
       .catch(() => {});
 

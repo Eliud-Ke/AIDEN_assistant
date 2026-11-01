@@ -870,15 +870,11 @@ def fetch_explanatory_media(query: str, additional_queries: list = None, count: 
         sample_items = [f"{img['thumbnail']} | {img['title']}" for img in final_images]
         sample_tag = "::media-gallery[" + ", ".join(sample_items) + "]::"
 
-        return json.dumps({
-            "status": "success",
-            "count": len(final_images),
-            "images": final_images,
-            "instruction": (
-                "Embed these 4 images into your explanation text at the exact position (start, middle between paragraphs, or end) "
-                f"where this visual row is most contextually relevant using this exact tag format: {sample_tag}"
-            )
-        }, indent=2)
+        return (
+            f"Explanatory media ready ({len(final_images)} images). "
+            f"Embed this exact tag at the most contextually relevant position in your explanation:\n"
+            f"{sample_tag}"
+        )
 
     except Exception as e:
         return f"Error fetching explanatory media: {str(e)}"
@@ -888,7 +884,7 @@ def fetch_explanatory_media(query: str, additional_queries: list = None, count: 
 # 20. GROUNDED WEB SEARCH TOOL (OPENAI REAL-TIME RESPONSES)
 # ---------------------------------------------------------
 
-def grounded_web_search(query: str, search_context: str = "medium") -> str:
+def grounded_web_search(query: str, search_context: str = "low") -> str:
     """
     Performs real-time, grounded web search using OpenAI's native Responses engine.
     Fetches verified facts, recent events, breaking news, live statistics, and source links.
@@ -903,16 +899,16 @@ def grounded_web_search(query: str, search_context: str = "medium") -> str:
 
         client = OpenAI(api_key=api_key)
 
-        depth = search_context.lower() if search_context in ["low", "medium", "high"] else "medium"
+        depth = search_context.lower() if search_context in ["low", "medium", "high"] else "low"
 
         print(f"   [WEB SEARCH]: Querying live web via gpt-6-luna (Depth: {depth}): '{query}'")
 
         resp = client.responses.create(
             model="gpt-6-luna",
             input=(
-                f"Search the live web thoroughly and provide verified, up-to-date facts, dates, context, and sources for:\n"
+                f"Search the live web for:\n"
                 f"\"{query}\"\n\n"
-                f"Focus on accuracy, real-time developments, and concrete source attribution."
+                f"Perform a fast, targeted search. Extract verified facts, dates, context, and sources directly from search snippets without crawling extraneous full web pages. Focus on accuracy and concrete source attribution."
             ),
             tools=[{"type": "web_search", "search_context_size": depth}]
         )

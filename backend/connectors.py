@@ -1,69 +1,110 @@
 """
-Dynamic Connector Stacks loaded directly into RAM.
-Acts as a lightweight switchboard. Tool schemas will be injected here as they are rebuilt.
+MCP-Style Dynamic Connector Registry loaded directly into RAM.
+AIDEN discovers and mounts connector tool stacks on-demand via `connect_service`
+without fragile keyword regex matching.
 """
 
 import tools_gmail
 
 CONNECTORS_SCHEMA = {
-    "spotify_stack": {
-        "keywords": [
-            "spotify", "music", "play", "song", "playlist", "track", "album",
-            "artist", "listen", "dj", "skip", "pause", "volume", "tunes", "beats"
-        ],
-        "tools": []  # <-- Schemas go here once rebuilt
+    "gmail": {
+        "display_name": "Gmail",
+        "description": "Read, search, draft, send, reply, mark as read, and archive emails in the user's Gmail inbox.",
+        "tools": tools_gmail.GMAIL_TOOLS_SCHEMA,
     },
-    "gmail_stack": {
-        "keywords": [
-            "email", "emails", "gmail", "mail", "mails", "inbox", "mailbox", "outbox",
-            "unread", "draft", "drafts", "send", "compose", "reply", "forward",
-            "recipient", "sender", "subject line", "newsletter", "receipt", "receipts",
-            "spam", "junk", "thread", "threads", "attachment", "attachments",
-            "check email", "check emails", "check mail", "check inbox",
-            "read email", "read mail", "open mail", "open email",
-            "send email", "send mail", "write an email", "shoot an email",
-            "draft email", "draft mail", "reply to email", "email reply",
-            "mark as read", "mark all as read", "mark read", "inbox zero", "clear unread", "read all",
-            "archive", "archive email", "archive emails", "archive mail", "clean inbox", "archive all"
-        ],
-        "tools": tools_gmail.GMAIL_TOOLS_SCHEMA
+    "spotify": {
+        "display_name": "Spotify",
+        "description": "Search tracks, playlists, and control Spotify music playback.",
+        "tools": [],
     },
-    "google_calendar_stack": {
-        "keywords": [
-            "calendar", "schedule", "meeting", "appointment", "class", "event",
-            "book", "cancel", "tomorrow", "reschedule", "agenda", "remind", "reminder", "date", "plan"
-        ],
-        "tools": []
+    "google_calendar": {
+        "display_name": "Google Calendar",
+        "description": "View, schedule, update, and manage calendar events and agenda reminders.",
+        "tools": [],
     },
-    "notes_vault_stack": {
-        "keywords": [
-            "obsidian", "vault", "notes", "markdown", "graph", "notion",
-            "workspace", "database", "write", "document", "page", "edit note", "create note", "journal", "diary"
-        ],
-        "tools": []
+    "notes_vault": {
+        "display_name": "Notes Vault",
+        "description": "Read, search, create, and edit markdown notes in the user's vault.",
+        "tools": [],
     },
-    "youtube_visual_stack": {
-        "keywords": [
-            "youtube", "video", "image", "picture", "show me", "photo",
-            "watch", "clip", "visual", "gallery", "thumbnail", "look up", "stream", "visualize", "find picture"
-        ],
-        "tools": []
+    "youtube_visual": {
+        "display_name": "YouTube",
+        "description": "Search and retrieve YouTube videos and channels.",
+        "tools": [],
     },
-    "file_stack": {
-        "keywords": [
-            "file", "files", "find file", "folder", "directory", "disk",
-            "drive", "document search", "storage", "locate", "path", "hard drive", "explorer", "index", "pdf"
-        ],
-        "tools": []
-    }
+    "file_system": {
+        "display_name": "Local Files",
+        "description": "Search and locate local files, folders, and documents on disk.",
+        "tools": [],
+    },
 }
+
+_ALIASES = {
+    "gmail_stack": "gmail",
+    "mail": "gmail",
+    "email": "gmail",
+    "spotify_stack": "spotify",
+    "google_calendar_stack": "google_calendar",
+    "calendar": "google_calendar",
+    "notes_vault_stack": "notes_vault",
+    "notes": "notes_vault",
+    "youtube_visual_stack": "youtube_visual",
+    "youtube": "youtube_visual",
+    "file_stack": "file_system",
+    "files": "file_system",
+}
+
+
+def resolve_connector_key(service_name: str) -> str:
+    """Normalizes a service name or alias into its canonical CONNECTORS_SCHEMA key."""
+    if not service_name:
+        return ""
+    clean = service_name.strip().lower()
+    return _ALIASES.get(clean, clean)
+
+
+def connect_service(service_name: str) -> str:
+    """
+    MCP-style handshake tool: Mounts the requested connector stack and returns
+    its available tool schemas/names so the Brain can invoke them immediately.
+    """
+    key = resolve_connector_key(service_name)
+    stack = CONNECTORS_SCHEMA.get(key)
+
+    if not stack:
+        available = ", ".join(CONNECTORS_SCHEMA.keys())
+        return f"Error: Unknown connector '{service_name}'. Available connectors: {available}."
+
+    display_name = stack.get("display_name", key)
+    tools = stack.get("tools", [])
+    if not tools:
+        return (
+            f"Connector '{display_name}' ({key}) is registered, but its tool module is not yet active."
+        )
+
+    tool_summaries = []
+    for t in tools:
+        fn = t.get("function", t)
+        t_name = fn.get("name", "")
+        t_desc = fn.get("description", "")
+        if t_name:
+            tool_summaries.append(f"- {t_name}: {t_desc}")
+
+    joined_tools = "\n".join(tool_summaries)
+    return (
+        f"[CONNECTOR MOUNTED: {display_name.upper()}]\n"
+        f"Successfully connected to {display_name}. The following specialized tools are now unlocked and mounted in your toolset:\n"
+        f"{joined_tools}\n\n"
+        f"Call the appropriate {display_name} tool now to complete the user's request."
+    )
 
 
 def get_connector_tool_names() -> list:
     """Extracts all valid tool names dynamically from the RAM connectors schema."""
     names = []
-    for stack_name, stack_data in CONNECTORS_SCHEMA.items():
+    for stack_data in CONNECTORS_SCHEMA.values():
         for tool in stack_data.get("tools", []):
-            if "function" in tool and "name" in tool["function"]:
-                names.append(tool["function"]["name"])
+            fn = tool.get("function", tool)
+            if "name" in fn:
+                names.append(fn["name"])
     return names

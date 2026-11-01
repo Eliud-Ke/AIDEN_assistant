@@ -9,7 +9,68 @@ export interface ChatTurn {
   userPrompt?: string | null;
   assistantReply: string;
   isStreaming?: boolean;
+  connectors?: string[];
 }
+
+export interface ConnectorMeta {
+  key: string;
+  name: string;
+  icon: string;
+}
+
+export const CONNECTOR_METAS: Record<string, { name: string; icon: string }> = {
+  gmail: { name: "Gmail", icon: "/icons/mail.png" },
+  mail: { name: "Gmail", icon: "/icons/mail.png" },
+  email: { name: "Gmail", icon: "/icons/mail.png" },
+  spotify: { name: "Spotify", icon: "/icons/spotify.png" },
+  google_calendar: { name: "Google Calendar", icon: "/icons/calendar.png" },
+  calendar: { name: "Google Calendar", icon: "/icons/calendar.png" },
+  notes_vault: { name: "Notes Vault", icon: "/icons/obsidian.png" },
+  notes: { name: "Notes Vault", icon: "/icons/obsidian.png" },
+  youtube_visual: { name: "YouTube", icon: "/icons/youtube.png" },
+  youtube: { name: "YouTube", icon: "/icons/youtube.png" },
+  file_system: { name: "Files", icon: "/icons/explorer.png" },
+  files: { name: "Files", icon: "/icons/explorer.png" },
+};
+
+export const resolveConnectorMeta = (
+  tagOrKey?: string | null,
+  explicitConnector?: string | null
+): ConnectorMeta | null => {
+  if (explicitConnector) {
+    const cleanExp = explicitConnector.toLowerCase().trim();
+    if (CONNECTOR_METAS[cleanExp]) {
+      return { key: cleanExp, ...CONNECTOR_METAS[cleanExp] };
+    }
+  }
+  if (!tagOrKey) return null;
+  const lower = tagOrKey.toLowerCase();
+  if (
+    lower.includes("gmail") ||
+    lower.includes("email") ||
+    lower.includes("unread") ||
+    lower.includes("inbox") ||
+    lower.includes("draft")
+  ) {
+    return { key: "gmail", ...CONNECTOR_METAS.gmail };
+  }
+  if (lower.includes("spotify") || lower.includes("music")) {
+    return { key: "spotify", ...CONNECTOR_METAS.spotify };
+  }
+  if (lower.includes("calendar")) {
+    return { key: "google_calendar", ...CONNECTOR_METAS.google_calendar };
+  }
+  if (lower.includes("notes") || lower.includes("obsidian")) {
+    return { key: "notes_vault", ...CONNECTOR_METAS.notes_vault };
+  }
+  if (lower.includes("youtube")) {
+    return { key: "youtube_visual", ...CONNECTOR_METAS.youtube_visual };
+  }
+  if (lower.includes("file") || lower.includes("explorer")) {
+    return { key: "file_system", ...CONNECTOR_METAS.file_system };
+  }
+  return null;
+};
 
 interface ChatPillProps {
   isAwake: boolean;
@@ -22,6 +83,7 @@ interface ChatPillProps {
   onToggleSleep?: () => void;
   responseMessage?: string | null;
   activeUiTag?: string | null;
+  activeConnector?: string | null;
   isStreaming?: boolean;
   onClearResponse?: () => void;
   contentRef?: React.Ref<HTMLDivElement>;
@@ -347,6 +409,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onToggleSleep,
   responseMessage = null,
   activeUiTag = null,
+  activeConnector = null,
   isStreaming = false,
   onClearResponse,
   contentRef,
@@ -364,6 +427,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 }) => {
   void _onStartRecording;
   void _onStopRecording;
+  const isConnecting = Boolean(
+    activeUiTag && activeUiTag.toLowerCase().includes("connecting")
+  );
+  const activeConnectorMeta = isConnecting ? resolveConnectorMeta(activeUiTag, activeConnector) : null;
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
   const [localVoiceActive, setLocalVoiceActive] = useState(false);
@@ -744,8 +811,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const lower = trimmed.toLowerCase();
     const formatted = lower.charAt(0).toUpperCase() + lower.slice(1);
     return formatted
+      .replace(/\bgmail\b/gi, "Gmail")
       .replace(/\byoutube\b/gi, "YouTube")
       .replace(/\bspotify\b/gi, "Spotify")
+      .replace(/\bgoogle calendar\b/gi, "Google Calendar")
       .replace(/\bgps\b/gi, "GPS")
       .replace(/\bobsidian\b/gi, "Obsidian")
       .replace(/\bnotion\b/gi, "Notion");
@@ -984,14 +1053,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           {/* 2. THINKING STATE (Pill shrinks by 1/3, glowing pulse, shows status tag) */}
           {pillMode === "thinking" && (
             <div className="siri-thinking-content">
-              <span className="siri-string-orb thinking-orb" aria-hidden="true">
-                <svg className="string-orb-svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                  <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                  <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                  <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
-                </svg>
-              </span>
+              <div className="siri-icon-morph-anchor">
+                <span
+                  className={`siri-string-orb thinking-orb ${isConnecting ? "is-imploded" : ""}`}
+                  aria-hidden="true"
+                >
+                  <svg className="string-orb-svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                    <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                    <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                    <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
+                  </svg>
+                </span>
+                {activeConnectorMeta && (
+                  <div className={`siri-connector-sine-wrapper ${isConnecting ? "is-active" : ""}`}>
+                    <img
+                      src={activeConnectorMeta.icon}
+                      alt={activeConnectorMeta.name}
+                      className="siri-connector-sine-img"
+                    />
+                  </div>
+                )}
+              </div>
               <span className="siri-thinking-text">{formatStatusTag(activeUiTag || "Thinking")}</span>
             </div>
           )}
@@ -1033,14 +1116,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 <div className="siri-responding-header">
                   <div className="siri-responding-header-left">
                     <div className="siri-card-status-tag" key={activeUiTag}>
-                      <span className="siri-string-orb" aria-hidden="true">
-                        <svg className="string-orb-svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                          <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                          <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                          <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                          <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
-                        </svg>
-                      </span>
+                      <div className="siri-icon-morph-anchor small">
+                        <span
+                          className={`siri-string-orb ${isConnecting ? "is-imploded" : ""}`}
+                          aria-hidden="true"
+                        >
+                          <svg className="string-orb-svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                            <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                            <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
+                            <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
+                          </svg>
+                        </span>
+                        {activeConnectorMeta && (
+                          <div className={`siri-connector-sine-wrapper small ${isConnecting ? "is-active" : ""}`}>
+                            <img
+                              src={activeConnectorMeta.icon}
+                              alt={activeConnectorMeta.name}
+                              className="siri-connector-sine-img"
+                            />
+                          </div>
+                        )}
+                      </div>
                       <span className="siri-status-text">{formatStatusTag(activeUiTag)}</span>
                     </div>
                   </div>
@@ -1153,6 +1250,22 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                             </div>
                           );
                         })}
+
+                        {/* Symbiote Connector Footer: Shows active connectors utilized in this turn */}
+                        {!turn.isStreaming && turn.connectors && turn.connectors.length > 0 && (
+                          <div className="siri-turn-symbiote-footer">
+                            {turn.connectors.map((connKey) => {
+                              const meta = resolveConnectorMeta(connKey, connKey);
+                              if (!meta) return null;
+                              return (
+                                <div key={connKey} className="siri-symbiote-badge" title={`Connected via ${meta.name} connector`}>
+                                  <img src={meta.icon} alt={meta.name} className="siri-symbiote-icon" />
+                                  <span className="siri-symbiote-label">Connected to {meta.name}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1167,7 +1280,23 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       </div>
                     </div>
                     <div className="siri-instream-thinking">
-                      <AppleConstellationSpinner />
+                      <div className="siri-icon-morph-anchor">
+                        <span
+                          className={`siri-apple-constellation ${isConnecting ? "is-imploded" : ""}`}
+                          aria-hidden="true"
+                        >
+                          <AppleConstellationSpinner />
+                        </span>
+                        {activeConnectorMeta && (
+                          <div className={`siri-connector-sine-wrapper ${isConnecting ? "is-active" : ""}`}>
+                            <img
+                              src={activeConnectorMeta.icon}
+                              alt={activeConnectorMeta.name}
+                              className="siri-connector-sine-img"
+                            />
+                          </div>
+                        )}
+                      </div>
                       <span className="siri-instream-thinking-text">{formatStatusTag(activeUiTag || "Thinking")}</span>
                     </div>
                   </div>
@@ -1356,6 +1485,8 @@ export const ChatPillWindow: React.FC = () => {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [followupThinkingPrompt, setFollowupThinkingPrompt] = useState<string | null>(null);
   const [activeUiTag, setActiveUiTag] = useState<string | null>(null);
+  const [activeConnector, setActiveConnector] = useState<string | null>(null);
+  const currentTurnConnectorsRef = useRef<Set<string>>(new Set());
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMaxHeight, setIsMaxHeight] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
@@ -1886,8 +2017,18 @@ export const ChatPillWindow: React.FC = () => {
               setIsAwake(nextAwake);
             } else if (msgType === "ui_tag") {
               const tag = String(data.tag || "").trim();
+              const connector = typeof data.connector === "string" ? data.connector : null;
               if (tag) {
                 setActiveUiTag(tag);
+                if (connector) {
+                  setActiveConnector(connector);
+                  currentTurnConnectorsRef.current.add(connector);
+                } else {
+                  const meta = resolveConnectorMeta(tag, null);
+                  if (meta) {
+                    currentTurnConnectorsRef.current.add(meta.key);
+                  }
+                }
               }
             } else if (msgType === "stream_start") {
               stopStreamRaf();
@@ -1951,9 +2092,23 @@ export const ChatPillWindow: React.FC = () => {
               }
             } else if (msgType === "stream_end") {
               setActiveUiTag(null);
+              setActiveConnector(null);
               if (typeof data.fullContent === "string") {
                 targetTextRef.current = data.fullContent;
               }
+              const serverConnectors: string[] = Array.isArray(data.connectors) ? data.connectors : [];
+              serverConnectors.forEach((c) => currentTurnConnectorsRef.current.add(c));
+              const turnConnectorsList = Array.from(currentTurnConnectorsRef.current);
+              if (currentTurnIdRef.current && turnConnectorsList.length > 0) {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === currentTurnIdRef.current
+                      ? { ...t, connectors: Array.from(new Set([...(t.connectors || []), ...turnConnectorsList])) }
+                      : t
+                  )
+                );
+              }
+              currentTurnConnectorsRef.current.clear();
               streamEndedRef.current = true;
               if (currentTurnIdRef.current) {
                 startSmoothStreamLoop(currentTurnIdRef.current);
@@ -2043,6 +2198,8 @@ export const ChatPillWindow: React.FC = () => {
     stopStreamRaf();
     stopAudio();
     setIsVoiceActive(false);
+    currentTurnConnectorsRef.current.clear();
+    setActiveConnector(null);
     setIsExitingVoice(false);
     if (exitingVoiceTimerRef.current !== null) {
       window.clearTimeout(exitingVoiceTimerRef.current);
@@ -2108,6 +2265,7 @@ export const ChatPillWindow: React.FC = () => {
         turns={turns}
         followupThinkingPrompt={followupThinkingPrompt}
         activeUiTag={activeUiTag}
+        activeConnector={activeConnector}
         isStreaming={isStreaming}
         onClearResponse={resetReplyState}
         onToggleSleep={() => {

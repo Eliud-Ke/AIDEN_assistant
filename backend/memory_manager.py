@@ -1,6 +1,7 @@
 import sys
 import json
 import os
+import re
 import threading
 import datetime
 
@@ -63,6 +64,20 @@ def init_memory():
                     json.dump([], f, indent=4)
 
 
+
+def _clean_text_for_context(text: str, max_chars: int = 0) -> str:
+    """Strips bulky media-gallery tags and raw URLs while preserving readable content and source titles."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"::media-gallery\[.*?\]::", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r"\[([^\]]+)\]\(https?://[^\)]+\)", r"[\1]", cleaned)
+    cleaned = re.sub(r"https?://\S+", "", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    if max_chars and len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars].rstrip() + "..."
+    return cleaned
+
+
 def get_memory_context():
     """Reads the long-term semantic memory and formats it for the Brain's prompt."""
     init_memory()
@@ -111,8 +126,9 @@ def get_recent_episodes(limit=10):
             if last_5_messages:
                 context_str += "--- L1 CACHE: EXACT TRANSCRIPT (LAST 5 MESSAGES) ---\n"
                 for turn in last_5_messages:
+                    clean_aiden = _clean_text_for_context(turn.get('aiden', ''), max_chars=650)
                     context_str += f"USER: {turn.get('user', '')}\n"
-                    context_str += f"AIDEN: {turn.get('aiden', '')}\n\n"
+                    context_str += f"AIDEN: {clean_aiden}\n\n"
 
         if recent_l2:
             context_str += "--- L2 CACHE: SUMMARIES ONLY (PREVIOUS SESSIONS) ---\n"
@@ -153,7 +169,8 @@ def _consolidate_task(chat_history):
         chat_transcript = ""
         for entry in chat_history:
             if not entry['user'].startswith("[SYSTEM EVENT"):
-                chat_transcript += f"User: {entry['user']}\nAIDEN: {entry['aiden']}\n\n"
+                clean_aiden = _clean_text_for_context(entry.get('aiden', ''), max_chars=800)
+                chat_transcript += f"User: {entry['user']}\nAIDEN: {clean_aiden}\n\n"
 
         if not chat_transcript.strip():
             print("📚 [LIBRARIAN] No meaningful dialogue to extract.")

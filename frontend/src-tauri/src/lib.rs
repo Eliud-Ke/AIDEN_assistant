@@ -804,6 +804,15 @@ pub fn run() {
         .manage(CompositionState(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Auto-boot Aiden backend automatically on app launch
+            let state = app.state::<BackendState>();
+            if !is_port_8765_active() {
+                match spawn_aiden_backend(&state) {
+                    Ok(pid) => println!("[BOOT] Auto-booted Aiden backend (PID: {}) on app launch", pid),
+                    Err(e) => eprintln!("[BOOT] Failed to auto-boot Aiden backend on launch: {}", e),
+                }
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
             }

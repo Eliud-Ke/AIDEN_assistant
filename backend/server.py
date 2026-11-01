@@ -186,20 +186,26 @@ def broadcast_state(
     _current_state["isAwake"] = is_awake
 
 
-async def broadcast_ui_tag_async(tag: str):
+async def broadcast_ui_tag_async(tag: str, connector: Optional[str] = None):
     """Directly pushes an active execution status tag to the Reply Window."""
-    await broadcast_event_async({
+    payload: Dict[str, Any] = {
         "type": "ui_tag",
         "tag": tag,
-    })
+    }
+    if connector:
+        payload["connector"] = connector
+    await broadcast_event_async(payload)
 
 
-def broadcast_ui_tag(tag: str):
+def broadcast_ui_tag(tag: str, connector: Optional[str] = None):
     """Sync wrapper for broadcast_ui_tag."""
-    broadcast_event({
+    payload: Dict[str, Any] = {
         "type": "ui_tag",
         "tag": tag,
-    })
+    }
+    if connector:
+        payload["connector"] = connector
+    broadcast_event(payload)
 
 
 async def broadcast_stream_start():
@@ -218,12 +224,15 @@ async def broadcast_stream_chunk(token: str, full_content: str):
     })
 
 
-async def broadcast_stream_end(full_content: str):
+async def broadcast_stream_end(full_content: str, connectors: Optional[list] = None):
     """Marks completion of the streamed assistant reply."""
-    await broadcast_event_async({
+    payload: Dict[str, Any] = {
         "type": "stream_end",
         "fullContent": full_content,
-    })
+    }
+    if connectors:
+        payload["connectors"] = connectors
+    await broadcast_event_async(payload)
 
 
 async def handle_connection(websocket: Any):
