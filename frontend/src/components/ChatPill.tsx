@@ -359,9 +359,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   isEnteringVoice,
   audioMeter = { level: 0, bass: 0, mid: 0, high: 0 },
   isRecording = false,
-  onStartRecording,
-  onStopRecording,
+  onStartRecording: _onStartRecording,
+  onStopRecording: _onStopRecording,
 }) => {
+  void _onStartRecording;
+  void _onStopRecording;
   const [inputText, setInputText] = useState("");
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<MediaGalleryItem | null>(null);
   const [localVoiceActive, setLocalVoiceActive] = useState(false);
@@ -943,12 +945,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 toggleVoiceMode(false);
-              }}
-              onMouseDown={(e) => {
-                if (e.button === 0) onStartRecording?.();
-              }}
-              onMouseUp={(e) => {
-                if (e.button === 0) onStopRecording?.();
               }}
               title="Hold Shift to speak • Click or press Esc to return to Search"
             >
@@ -1871,8 +1867,19 @@ export const ChatPillWindow: React.FC = () => {
               const text = String(data.text || "").trim();
               if (text) {
                 wasOriginVoiceRef.current = true;
-                setFollowupThinkingPrompt(text);
-                setActiveUiTag("Thinking");
+                if (turnsRef.current.length > 0) {
+                  // Turn 2+ in Voice Mode: append follow-up bubble & keep scrollable history just like Keyboard Mode
+                  setIsMaxHeight(true);
+                  followupThinkingPromptRef.current = text;
+                  setFollowupThinkingPrompt(text);
+                  setActiveUiTag("Thinking");
+                } else {
+                  // Turn 1 in Voice Mode: clean initial turn
+                  followupThinkingPromptRef.current = null;
+                  setFollowupThinkingPrompt(null);
+                  setActiveUiTag("Thinking");
+                  setIsMaxHeight(false);
+                }
               }
             } else if (msgType === "state" || msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
