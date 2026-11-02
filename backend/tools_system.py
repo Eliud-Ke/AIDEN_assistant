@@ -240,7 +240,7 @@ def set_system_brightness(level: str) -> str:
         return "Error: 'screen-brightness-control' is not installed. Run 'pip install screen-brightness-control'."
     try:
         current_brightness = sbc.get_brightness(display=0)[0]
-        level_str = str(level).strip()
+        level_str = str(level).strip().rstrip("%")
         if level_str.startswith('+') or level_str.startswith('-'):
             delta = int(level_str)
             target_pct = current_brightness + delta
@@ -250,28 +250,53 @@ def set_system_brightness(level: str) -> str:
         target_pct = max(0, min(100, target_pct))
         sbc.set_brightness(target_pct, display=0)
 
-        return f"System brightness successfully changed from {current_brightness}% to {target_pct}%."
+        slider_tag = f"::system-slider[type=brightness | level={target_pct}]::"
+        return (
+            f"System brightness successfully changed from {current_brightness}% to {target_pct}%.\n"
+            f"{slider_tag}"
+        )
     except Exception as e:
         return f"System Error setting brightness: {str(e)}"
 
 
 def set_system_volume(level: str) -> str:
-    """Sets the Windows master volume to an absolute percentage or applies a relative change."""
+    """Sets the Windows master volume to an absolute percentage, applies a relative change, or mutes/unmutes."""
     if not AudioUtilities:
         return "Error: 'pycaw' is not installed. Run 'pip install pycaw'."
     try:
+        # Crucial for Windows COM multithreading: initialize COM on the caller thread
+        try:
+            import comtypes
+            comtypes.CoInitialize()
+        except Exception:
+            try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except Exception:
+                pass
+
         device = AudioUtilities.GetSpeakers()
         volume = device.EndpointVolume
 
         current_scalar = volume.GetMasterVolumeLevelScalar()
         current_pct = int(round(current_scalar * 100))
 
-        level_str = str(level).strip()
-        if level_str.startswith('+') or level_str.startswith('-'):
-            delta = int(level_str)
+        level_clean = str(level).strip().lower()
+        if level_clean == "mute":
+            volume.SetMute(1, None)
+            slider_tag = f"::system-slider[type=volume | level={current_pct} | muted=true]::"
+            return f"System volume muted.\n{slider_tag}"
+        elif level_clean == "unmute":
+            volume.SetMute(0, None)
+            slider_tag = f"::system-slider[type=volume | level={current_pct} | muted=false]::"
+            return f"System volume unmuted (current level: {current_pct}%).\n{slider_tag}"
+
+        level_clean = level_clean.rstrip("%")
+        if level_clean.startswith('+') or level_clean.startswith('-'):
+            delta = int(level_clean)
             target_pct = current_pct + delta
         else:
-            target_pct = int(level_str)
+            target_pct = int(level_clean)
 
         target_pct = max(0, min(100, target_pct))
         volume.SetMasterVolumeLevelScalar(target_pct / 100.0, None)
@@ -281,7 +306,12 @@ def set_system_volume(level: str) -> str:
         elif target_pct == 0:
             volume.SetMute(1, None)
 
-        return f"System volume successfully changed from {current_pct}% to {target_pct}%."
+        is_muted = bool(volume.GetMute())
+        slider_tag = f"::system-slider[type=volume | level={target_pct} | muted={str(is_muted).lower()}]::"
+        return (
+            f"System volume successfully changed from {current_pct}% to {target_pct}%.\n"
+            f"{slider_tag}"
+        )
     except Exception as e:
         return f"System Error setting volume: {str(e)}"
 

@@ -266,6 +266,37 @@ async def handle_connection(websocket: Any):
                     if not _current_state["isAwake"] and _wake_event is not None:
                         _wake_event.set()
 
+            elif msg_type == "hardware_control":
+                # Real-time zero-latency hardware control (Volume / Brightness)
+                control_action = data.get("action")
+                level = data.get("level")
+                muted = data.get("muted")
+                try:
+                    try:
+                        import comtypes
+                        comtypes.CoInitialize()
+                    except Exception:
+                        pass
+
+                    if control_action == "volume":
+                        from tools_system import set_system_volume
+                        if level is not None:
+                            set_system_volume(str(level))
+                        elif muted is not None:
+                            try:
+                                from pycaw.pycaw import AudioUtilities
+                                device = AudioUtilities.GetSpeakers()
+                                volume = device.EndpointVolume
+                                volume.SetMute(1 if muted else 0, None)
+                            except Exception as mute_err:
+                                print(f"⚠️ [HARDWARE CONTROL] Mute error: {mute_err}")
+                    elif control_action == "brightness":
+                        from tools_system import set_system_brightness
+                        if level is not None:
+                            set_system_brightness(str(level))
+                except Exception as e:
+                    print(f"⚠️ [HARDWARE CONTROL] Error: {e}")
+
             elif msg_type in ("voice_arm", "voice_start"):
                 print("🎙️ [WS BRIDGE] Voice mode armed.")
                 ve = get_voice_engine()

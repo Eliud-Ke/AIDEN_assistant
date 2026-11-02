@@ -6,15 +6,18 @@ Credentials fetched on-demand from Windows Credential Manager via auth_manager.
 All operations use permanent IMAP UIDs (Unique Identifiers) for rock-solid stability.
 """
 
+import datetime
 import email
 import html
 import imaplib
+import json
 import re
 import smtplib
 import time
 from email.header import decode_header
 from email.message import EmailMessage
 from email.policy import default
+from email.utils import parsedate_to_datetime, parseaddr
 
 from auth_manager import get_gmail_credentials
 
@@ -72,6 +75,57 @@ def _decode_mime_header(header_val: str | None) -> str:
         return "".join(decoded).strip()
     except Exception:
         return str(header_val).strip()
+
+
+def _format_email_timestamp(date_str: str) -> str:
+    """Formats RFC 2822 email Date into 'X min ago • HH:MM' or 'Yesterday • HH:MM' or 'MMM DD • HH:MM'."""
+    if not date_str:
+        return ""
+    try:
+        dt = parsedate_to_datetime(date_str)
+        # Compare in local or UTC aware terms
+        if dt.tzinfo is not None:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            diff = now - dt
+        else:
+            now = datetime.datetime.now()
+            diff = now - dt
+
+        clock_time = dt.strftime("%H:%M")
+        seconds = int(diff.total_seconds())
+
+        if seconds < 0:
+            relative = "Just now"
+        elif seconds < 120:
+            relative = "1 min ago"
+        elif seconds < 3600:
+            relative = f"{seconds // 60} min ago"
+        elif seconds < 86400:
+            hours = seconds // 3600
+            relative = f"{hours} hr ago" if hours == 1 else f"{hours} hrs ago"
+        elif seconds < 172800:
+            relative = "Yesterday"
+        else:
+            relative = dt.strftime("%b %d")
+
+        return f"{relative} • {clock_time}"
+    except Exception:
+        return date_str[:16] if len(date_str) > 16 else date_str
+
+
+def _clean_sender_display(from_header: str) -> tuple[str, str]:
+    """Returns (clean_display_name, email_address) from an RFC From header."""
+    if not from_header:
+        return "Unknown Sender", ""
+    try:
+        name, addr = parseaddr(from_header)
+        name = _decode_mime_header(name).strip()
+        addr = str(addr or "").strip()
+        if not name:
+            name = addr.split("@")[0] if "@" in addr else from_header
+        return name, addr
+    except Exception:
+        return from_header, ""
 
 
 def _clean_html_text(html_content: str) -> str:
@@ -198,6 +252,7 @@ def gmail_list_unread_emails(max_results: int = 5) -> str:
         recent_uids.reverse()
 
         summaries = []
+        card_emails = []
         for uid in recent_uids:
             uid_str = uid.decode("utf-8")
             status, fetch_data = mail.uid(
@@ -232,6 +287,19 @@ def gmail_list_unread_emails(max_results: int = 5) -> str:
             if len(clean_snippet) > 160:
                 clean_snippet = clean_snippet[:157] + "..."
 
+            sender_name, sender_email = _clean_sender_display(sender)
+            formatted_time = _format_email_timestamp(date)
+
+            card_emails.append({
+                "id": uid_str,
+                "sender": sender_name,
+                "email": sender_email,
+                "time": formatted_time,
+                "subject": subject,
+                "snippet": clean_snippet or "(No preview available)",
+                "unread": True
+            })
+
             summaries.append(
                 f"* [ID: {uid_str}] From: {sender}\n"
                 f"  Date: {date}\n"
@@ -241,10 +309,19 @@ def gmail_list_unread_emails(max_results: int = 5) -> str:
 
         mail.logout()
 
+        card_data = {
+            "mode": "unread",
+            "count": total_unread,
+            "emails": card_emails,
+            "subtitle": f"You have {total_unread} unread email{'s' if total_unread != 1 else ''}"
+        }
+        card_tag = f"::gmail-card[{json.dumps(card_data)}]::"
+
         return (
             f"=== GMAIL: {total_unread} UNREAD EMAILS (Showing latest {len(summaries)}) ===\n"
             + "\n\n".join(summaries)
-            + "\n\n[AIDEN: Summarize these to the user. Offer to read, reply, archive, or mark as read by ID.]"
+            + "\n\n[AIDEN: Summarize these to the user. Offer to read, reply, archive, or mark as read by ID.]\n"
+            + f"Embed this card tag directly in your reply below your answer:\n{card_tag}"
         )
 
     except Exception as e:
@@ -283,34 +360,80 @@ def gmail_search_emails(query: str, max_results: int = 5) -> str:
         recent_uids.reverse()
 
         summaries = []
+        card_emails = []
         for uid in recent_uids:
             uid_str = uid.decode("utf-8")
-            status, fetch_data = mail.uid("fetch", uid, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+            status, fetch_data = mail.uid(
+                "fetch",
+                uid,
+                "(FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[1]<0.350>)"
+            )
             if status != "OK":
                 continue
 
             headers_raw = b""
+            body_preview = ""
+            is_unread = True
             for item in fetch_data:
-                if isinstance(item, tuple) and b"HEADER.FIELDS" in item[0]:
-                    headers_raw = item[1]
+                if isinstance(item, tuple):
+                    header_str = item[0]
+                    if b"\\Seen" in header_str:
+                        is_unread = False
+                    if b"HEADER.FIELDS" in header_str:
+                        headers_raw = item[1]
+                    elif b"BODY" in header_str:
+                        body_preview = item[1].decode("utf-8", errors="replace")
 
             msg_header = email.message_from_bytes(headers_raw)
             subject = _decode_mime_header(msg_header.get("Subject", "(No Subject)"))
             sender = _decode_mime_header(msg_header.get("From", "Unknown Sender"))
             date = msg_header.get("Date", "")
 
+            clean_snippet = _clean_html_text(body_preview).replace("\n", " ")
+            clean_snippet = re.sub(r"Content-(Type|Transfer-Encoding|Disposition):[^\n;]+(;[^\n]+)?", " ", clean_snippet, flags=re.IGNORECASE)
+            clean_snippet = re.sub(r'boundary="?[^"\s]+"?', " ", clean_snippet, flags=re.IGNORECASE)
+            clean_snippet = re.sub(r"--[a-zA-Z0-9_-]+", " ", clean_snippet)
+            clean_snippet = re.sub(r"<meta[^>]*>", " ", clean_snippet, flags=re.IGNORECASE)
+            clean_snippet = re.sub(r"\s+", " ", clean_snippet).strip()
+            if len(clean_snippet) > 160:
+                clean_snippet = clean_snippet[:157] + "..."
+
+            sender_name, sender_email = _clean_sender_display(sender)
+            formatted_time = _format_email_timestamp(date)
+
+            card_emails.append({
+                "id": uid_str,
+                "sender": sender_name,
+                "email": sender_email,
+                "time": formatted_time,
+                "subject": subject,
+                "snippet": clean_snippet or "(No preview available)",
+                "unread": is_unread
+            })
+
             summaries.append(
                 f"* [ID: {uid_str}] From: {sender}\n"
                 f"  Date: {date}\n"
-                f"  Subject: {subject}"
+                f"  Subject: {subject}\n"
+                f"  Preview: {clean_snippet or '(No preview available)'}"
             )
 
         mail.logout()
 
+        card_data = {
+            "mode": "search",
+            "query": query,
+            "count": total_found,
+            "emails": card_emails,
+            "subtitle": f"{total_found} result{'s' if total_found != 1 else ''} matching \"{query}\""
+        }
+        card_tag = f"::gmail-card[{json.dumps(card_data)}]::"
+
         return (
             f"=== GMAIL SEARCH: \"{query}\" ({total_found} found, showing latest {len(summaries)}) ===\n"
             + "\n\n".join(summaries)
-            + "\n\n[AIDEN: Present these search results to the user and offer to read, archive, or reply to any specific ID.]"
+            + "\n\n[AIDEN: Present these search results to the user and offer to read, archive, or reply to any specific ID.]\n"
+            + f"Embed this card tag directly in your reply below your answer:\n{card_tag}"
         )
 
     except Exception as e:
@@ -366,17 +489,36 @@ def gmail_read_email(email_id: str, mark_as_read: bool = False) -> str:
 
         mail.logout()
 
+        sender_clean = _clean_sender_display(sender)
+        _, sender_addr = parseaddr(sender)
+        time_formatted = _format_email_timestamp(date)
+
+        card_template_payload = {
+            "mode": "read",
+            "id": clean_id,
+            "sender": sender_clean,
+            "email": sender_addr or sender_clean,
+            "date": time_formatted or date,
+            "subject": subject,
+            "summary": "<INSERT_YOUR_1_TO_2_SENTENCE_HUMAN_SUMMARY_HERE>"
+        }
+        card_template_json = json.dumps(card_template_payload, ensure_ascii=False)
+
         return (
             f"=== GMAIL MESSAGE [ID: {clean_id}] ===\n"
-            f"From: {sender}\n"
-            f"To: {to_addr}\n"
-            f"Date: {date}\n"
+            f"From: {sender_clean} <{sender_addr}>\n"
+            f"Date: {time_formatted or date}\n"
             f"Subject: {subject}\n"
             f"Attachments: {att_str}\n"
             f"Message-ID: {message_id}\n\n"
             f"--- CONTENT ---\n"
             f"{body}{truncated_note}\n\n"
-            f"[AIDEN: Summarize or deliver this email to the user with your signature charm. Offer to reply or archive it if appropriate.]"
+            f"[AIDEN READ CARD INSTRUCTION:\n"
+            f"1. Converse warmly and briefly with the user about this email in your signature charm.\n"
+            f"2. Synthesize an executive 1-2 sentence human language summary (conversational prose, no bullet points).\n"
+            f"3. Emit the card tag below in your final response, replacing <INSERT_YOUR_1_TO_2_SENTENCE_HUMAN_SUMMARY_HERE> with your natural language summary:\n"
+            f"::gmail-card[{card_template_json}]::\n"
+            f"4. Offer to reply or archive if appropriate.]"
         )
 
     except Exception as e:
@@ -733,7 +875,7 @@ GMAIL_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "gmail_list_unread_emails",
-            "description": "Lists recent unread emails from the user's Gmail inbox with subject, sender, date, preview snippet, and permanent UID. Use this when the user asks about new, recent, or unread emails.",
+            "description": "Lists recent unread emails from the user's Gmail inbox with subject, sender, date, preview snippet, and permanent UID, returning a ::gmail-card[...]:: tag. Summarize conversationally and always embed the card tag.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -772,7 +914,7 @@ GMAIL_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "gmail_read_email",
-            "description": "Fetches and reads the full body text and attachment details of a specific email using its permanent UID (obtained from search or list_unread).",
+            "description": "Fetches and reads the full body text and metadata of a specific email using its permanent UID, returning a card template. Synthesize an executive 1-2 sentence human summary and always embed the ::gmail-card[...]:: tag.",
             "parameters": {
                 "type": "object",
                 "properties": {

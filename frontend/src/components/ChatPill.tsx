@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { LocationCard } from "./LocationCard";
+import { GmailCard, GmailEmailItem } from "./GmailCard";
+import { SystemSlider } from "./SystemSlider";
 import "./ChatPill.css";
 
 export interface ChatTurn {
@@ -99,6 +101,7 @@ interface ChatPillProps {
   isRecording?: boolean;
   onStartRecording?: () => void;
   onStopRecording?: () => void;
+  onHardwareChange?: (action: "volume" | "brightness", level?: number, muted?: boolean) => void;
 }
 
 interface MediaGalleryItem {
@@ -112,12 +115,35 @@ export interface LocationCardData {
   title?: string;
 }
 
+export interface GmailCardData {
+  count?: number;
+  emails?: GmailEmailItem[];
+  subtitle?: string;
+  mode?: "unread" | "search" | "read";
+  query?: string;
+  id?: string;
+  sender?: string;
+  email?: string;
+  date?: string;
+  subject?: string;
+  summary?: string;
+  avatar?: string;
+}
+
+export interface SystemSliderData {
+  type: "volume" | "brightness";
+  level: number;
+  muted?: boolean;
+}
+
 type MessagePart =
   | { type: "text"; text: string }
   | { type: "gallery"; items: MediaGalleryItem[] }
   | { type: "loading_gallery" }
   | { type: "location"; data: LocationCardData }
-  | { type: "loading_location" };
+  | { type: "loading_location" }
+  | { type: "gmail"; data: GmailCardData }
+  | { type: "system_slider"; data: SystemSliderData };
 
 function renderFormattedText(rawText: string): React.ReactNode {
   if (!rawText) return null;
@@ -254,8 +280,8 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 
   const unrevealed = text.slice(start);
 
-  // Media gallery or Location card boundary: don't split inside ::media-gallery[...]:: or ::location-card[...]::
-  const embedMatch = /::(?:media-|location-)/.exec(unrevealed);
+  // Media gallery, Location card, or Gmail card boundary: don't split inside ::...[...]::
+  const embedMatch = /::(?:media-|location-|gmail-)/.exec(unrevealed);
   if (embedMatch) {
     const embedIdx = embedMatch.index;
     if (embedIdx > 0) {
@@ -312,7 +338,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|system-slider)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -326,7 +352,50 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
     const tagType = match[1].toLowerCase();
     const rawPayload = match[2].trim();
 
-    if (tagType === "location-card") {
+    if (tagType === "gmail-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          // If JSON had line breaks or formatting issues
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const emailsList: GmailEmailItem[] = Array.isArray(parsed.emails)
+          ? parsed.emails
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
+        const count = typeof parsed.count === "number" ? parsed.count : emailsList.length;
+        const subtitle = typeof parsed.subtitle === "string" ? parsed.subtitle : undefined;
+        const mode =
+          parsed.mode === "read"
+            ? "read"
+            : parsed.mode === "search" || parsed.query
+            ? "search"
+            : "unread";
+        const query = typeof parsed.query === "string" ? parsed.query : undefined;
+        parts.push({
+          type: "gmail",
+          data: {
+            count,
+            emails: emailsList,
+            subtitle,
+            mode,
+            query,
+            id: typeof parsed.id === "string" || typeof parsed.id === "number" ? String(parsed.id) : undefined,
+            sender: typeof parsed.sender === "string" ? parsed.sender : undefined,
+            email: typeof parsed.email === "string" ? parsed.email : undefined,
+            date: typeof parsed.date === "string" ? parsed.date : undefined,
+            subject: typeof parsed.subject === "string" ? parsed.subject : undefined,
+            summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
+            avatar: typeof parsed.avatar === "string" ? parsed.avatar : undefined,
+          },
+        });
+      } catch (err) {
+        console.warn("Failed to parse gmail-card JSON:", err);
+      }
+    } else if (tagType === "location-card") {
       let lat = 0;
       let lon = 0;
       let title = "";
@@ -359,6 +428,38 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       if (lat !== 0 || lon !== 0) {
         parts.push({ type: "location", data: { lat, lon, title } });
       }
+    } else if (tagType === "system-slider") {
+      let sliderType: "volume" | "brightness" = "volume";
+      let level = 50;
+      let muted = false;
+      if (rawPayload.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(rawPayload);
+          sliderType = parsed.type === "brightness" ? "brightness" : "volume";
+          level = typeof parsed.level === "number" ? parsed.level : parseInt(parsed.level, 10) || 0;
+          muted = Boolean(parsed.muted);
+        } catch (err) {
+          console.warn("Failed to parse system-slider JSON:", err);
+        }
+      } else {
+        const tokens = rawPayload.split("|");
+        for (const token of tokens) {
+          const [k, ...vParts] = token.split("=");
+          const key = k?.trim().toLowerCase();
+          const val = vParts.join("=").trim();
+          if (key === "type") {
+            sliderType = val.toLowerCase() === "brightness" ? "brightness" : "volume";
+          } else if (key === "level") {
+            level = parseInt(val, 10) || 0;
+          } else if (key === "muted") {
+            muted = val.toLowerCase() === "true" || val === "1";
+          }
+        }
+      }
+      parts.push({
+        type: "system_slider",
+        data: { type: sliderType, level, muted },
+      });
     } else {
       const items: MediaGalleryItem[] = [];
 
@@ -415,7 +516,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|system-slider)\[[\s\S]*$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -423,7 +524,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       }
       if (partialMatch[1].toLowerCase().startsWith("media")) {
         parts.push({ type: "loading_gallery" });
-      } else {
+      } else if (partialMatch[1].toLowerCase().startsWith("location")) {
         parts.push({ type: "loading_location" });
       }
     } else {
@@ -475,6 +576,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   isRecording = false,
   onStartRecording: _onStartRecording,
   onStopRecording: _onStopRecording,
+  onHardwareChange,
 }) => {
   void _onStartRecording;
   void _onStopRecording;
@@ -1295,6 +1397,53 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                               <div key={idx} className="siri-location-card loading">
                                 <div className="siri-location-skeleton" />
                               </div>
+                            );
+                          }
+
+                          if (part.type === "gmail") {
+                            return (
+                              <GmailCard
+                                key={idx}
+                                count={part.data.count}
+                                emails={part.data.emails}
+                                subtitle={part.data.subtitle}
+                                mode={part.data.mode}
+                                query={part.data.query}
+                                id={part.data.id}
+                                sender={part.data.sender}
+                                email={part.data.email}
+                                date={part.data.date}
+                                subject={part.data.subject}
+                                summary={part.data.summary}
+                                avatar={part.data.avatar}
+                                onSelectEmail={(item) => {
+                                  if (onSendMessage && item.id) {
+                                    onSendMessage(`Read email ${item.id}`, false);
+                                  }
+                                }}
+                                onAction={(action, emailId, senderName) => {
+                                  if (!onSendMessage) return;
+                                  if (action === "reply") {
+                                    onSendMessage(`Reply to email from ${senderName || "sender"}: `, true);
+                                  } else if (action === "archive") {
+                                    onSendMessage(`Archive email ${emailId || ""}`, false);
+                                  } else if (action === "mark_unread") {
+                                    onSendMessage(`Mark email ${emailId || ""} as unread`, false);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "system_slider") {
+                            return (
+                              <SystemSlider
+                                key={idx}
+                                type={part.data.type}
+                                level={part.data.level}
+                                muted={part.data.muted}
+                                onHardwareChange={onHardwareChange}
+                              />
                             );
                           }
                           return (
@@ -2295,6 +2444,19 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
+  const handleHardwareChange = useCallback((action: "volume" | "brightness", level?: number, muted?: boolean) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "hardware_control",
+          action,
+          level,
+          muted,
+        })
+      );
+    }
+  }, []);
+
   return (
     <div className="chat-pill-desktop-window">
       <ChatPill
@@ -2316,6 +2478,7 @@ export const ChatPillWindow: React.FC = () => {
           }
         }}
         onSendMessage={handleSendMessage}
+        onHardwareChange={handleHardwareChange}
         activeAudioTurnId={activeAudioTurnId}
         isAudioPlaying={isAudioPlaying}
         onToggleTts={handleToggleTts}
