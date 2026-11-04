@@ -164,7 +164,7 @@ export const WeatherCard: React.FC<WeatherCardData> = ({
     const cond = normalizedKey;
     let mode: "rain" | "snow" | "sandstorm" | "stars" | "none" = "none";
 
-    const w = (canvas.width = canvas.parentElement?.offsetWidth || 480);
+    const w = (canvas.width = canvas.parentElement?.offsetWidth || 415);
     const h = (canvas.height = canvas.parentElement?.offsetHeight || 130);
 
     const particles: any[] = [];

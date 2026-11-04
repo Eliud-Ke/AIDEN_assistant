@@ -627,7 +627,7 @@
 .siri-assistant-reply {
   position: relative;
   align-self: flex-start;
-  padding-left: 2px;
+  padding-left: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.55;
@@ -1202,8 +1202,8 @@
 .siri-location-card {
   position: relative;
   width: 100%;
-  max-width: 480px;
-  margin: 10px 0 14px 2px;
+  max-width: 415px;
+  margin: 10px 0 12px 0;
   height: 250px;
   border-radius: 20px;
   overflow: hidden;
@@ -1391,8 +1391,8 @@
    ========================================================================== */
 .siri-gmail-card {
   width: 100%;
-  max-width: 480px;
-  margin: 10px 0 14px 2px;
+  max-width: 415px;
+  margin: 10px 0 12px 0;
   border-radius: 24px;
   padding: 18px 18px 14px;
   background: linear-gradient(180deg, #fdfbf7 0%, #f7f3eb 100%);
@@ -1856,8 +1856,8 @@
    ========================================================================== */
 .siri-calendar-card {
   width: 100%;
-  max-width: 480px;
-  margin: 10px 0 14px 2px;
+  max-width: 415px;
+  margin: 10px 0 12px 0;
   border-radius: 24px;
   padding: 18px 18px 14px;
   background: linear-gradient(180deg, #fdfbf7 0%, #f7f3eb 100%);
@@ -2644,8 +2644,8 @@
    ========================================================================== */
 .siri-win-slider-pill {
   width: 100%;
-  max-width: 480px;
-  margin: 10px 0 14px 2px;
+  max-width: 415px;
+  margin: 10px 0 12px 0;
   height: 48px;
   border-radius: 14px;
   padding: 0 16px;
@@ -3374,7 +3374,7 @@
   flex-direction: column;
   gap: 12px;
   /* Unhovered state: natural, compact padding */
-  padding: 8px 20px 10px 20px;
+  padding: 8px 16px 10px 14px;
   scrollbar-width: none;
   -ms-overflow-style: none;
   /* Springy padding transition: pushes text down on hover, pulls back up on unhover */
@@ -3384,7 +3384,7 @@
 /* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar;
    applies colourless lens blur inside the exact 4 button shapes while keeping outside text razor-sharp */
 .siri-unified-pill.controls-visible .siri-unified-stream {
-  padding: 52px 24px 76px 20px;
+  padding: 52px 18px 76px 14px;
   filter: url(#aiden-stream-lens-blur);
 }
 
@@ -4531,16 +4531,16 @@
 .apple-weather-card {
   position: relative;
   width: 100%;
-  max-width: 480px;
+  max-width: 415px;
   height: 130px;
-  border-radius: 32px;
-  padding: 20px 28px;
+  border-radius: 26px;
+  padding: 18px 22px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   overflow: hidden;
   cursor: default;
-  margin: 12px 0 14px 2px;
+  margin: 10px 0 12px 0;
   user-select: none;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
   box-shadow: 0 12px 36px -10px rgba(0, 0, 0, 0.6);
