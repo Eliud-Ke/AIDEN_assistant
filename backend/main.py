@@ -214,9 +214,9 @@ def execute_and_intercept(tc_id, func_name, arguments_str):
             if resolved_key not in active_connectors:
                 print(f"   🔌 [MCP HANDSHAKE] Mounting connector stack: {resolved_key}")
                 active_connectors.add(resolved_key)
-            display_name = CONNECTORS_SCHEMA[resolved_key].get("display_name", resolved_key.upper())
-            server.broadcast_ui_tag(f"CONNECTING TO {display_name.upper()}", connector=resolved_key)
-            time.sleep(1.5)  # Deliberate 1500ms dwell time for natural connection perception
+                display_name = CONNECTORS_SCHEMA[resolved_key].get("display_name", resolved_key.upper())
+                server.broadcast_ui_tag(f"CONNECTING TO {display_name.upper()}", connector=resolved_key)
+                time.sleep(1.5)  # Deliberate 1500ms dwell time for natural connection perception
 
     try:
         if tool_registry and func_name in tool_registry.AVAILABLE_TOOLS:
@@ -462,13 +462,17 @@ async def main_loop():
                 if working_memory:
                     messages.extend(working_memory)
 
-                # 3. THE TRIGGER (ANS Consciousness prepended directly before User Request)
+                # 3. THE TRIGGER (ANS Consciousness + Active Connectors prepended before User Request)
                 ans_block = dynamic_consciousness.strip()
-                user_payload = (
-                    f"{ans_block}\n\n[USER REQUEST]\n{command}"
-                    if ans_block
-                    else command
-                )
+                active_conn_list = sorted(list(active_connectors))
+                conn_status = f"[ACTIVE CONNECTORS]: {', '.join(active_conn_list) if active_conn_list else 'None'}"
+
+                parts = []
+                if ans_block:
+                    parts.append(ans_block)
+                parts.append(conn_status)
+                parts.append(f"[USER REQUEST]\n{command}")
+                user_payload = "\n\n".join(parts)
                 new_user_msg = {"role": "user", "content": user_payload}
                 messages.append(new_user_msg)
 
@@ -641,10 +645,11 @@ async def main_loop():
                                         svc = resolve_connector_key(raw_s)
                                         if svc:
                                             active_turn_connectors.add(svc)
-                                            disp = CONNECTORS_SCHEMA.get(svc, {}).get("display_name", svc.upper())
-                                            status_payload = f"CONNECTING TO {disp.upper()}"
-                                            print(f"\n⚡ [STATUS]: {status_payload}")
-                                            await server.broadcast_ui_tag_async(status_payload, connector=svc)
+                                            if svc not in active_connectors:
+                                                disp = CONNECTORS_SCHEMA.get(svc, {}).get("display_name", svc.upper())
+                                                status_payload = f"CONNECTING TO {disp.upper()}"
+                                                print(f"\n⚡ [STATUS]: {status_payload}")
+                                                await server.broadcast_ui_tag_async(status_payload, connector=svc)
 
                         elif event_type == "response.output_text.delta":
                             token = getattr(event, "delta", "")

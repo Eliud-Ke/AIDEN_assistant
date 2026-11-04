@@ -96,7 +96,7 @@ def connect_service(service_name: str) -> str:
         f"[CONNECTOR MOUNTED: {display_name.upper()}]\n"
         f"Successfully connected to {display_name}. The following specialized tools are now unlocked and mounted in your toolset:\n"
         f"{joined_tools}\n\n"
-        f"Call the appropriate {display_name} tool now to complete the user's request."
+        f"Call the appropriate {display_name} tool now to complete the user's request. Do NOT call connect_service('{key}') again because its tools are already active in your toolset."
     )
 
 

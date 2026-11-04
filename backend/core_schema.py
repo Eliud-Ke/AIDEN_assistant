@@ -321,7 +321,7 @@ CORE_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "connect_service",
-            "description": "Connects to an external service integration (e.g. 'gmail', 'spotify', 'google_calendar', 'notes_vault') and mounts its specialized tools. Call this FIRST whenever the user's request involves emails/inbox/Gmail, Spotify, Calendar, or Notes.",
+            "description": "Connects to an external service integration (e.g. 'gmail', 'spotify', 'google_calendar', 'notes_vault') and mounts its specialized tools into your toolset. Call this ONLY IF the service's tools are not already mounted in your toolset or listed under [ACTIVE CONNECTORS].",
             "parameters": {
                 "type": "object",
                 "properties": {
