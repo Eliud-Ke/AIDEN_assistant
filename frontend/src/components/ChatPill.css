@@ -4518,3 +4518,360 @@
 
 
 
+
+
+/* ═════════════════════════════════════════════════════════════
+   1:1 APPLE SIRI DYNAMIC WEATHER CARD (130PX HEIGHT)
+   ═════════════════════════════════════════════════════════════ */
+.apple-weather-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  height: 130px;
+  border-radius: 32px;
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  overflow: hidden;
+  cursor: default;
+  margin: 10px 0;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  box-shadow: 0 12px 36px -10px rgba(0, 0, 0, 0.6);
+  transition: background 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.2s ease,
+              box-shadow 0.2s ease;
+}
+
+.apple-weather-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 44px -10px rgba(0, 0, 0, 0.75);
+}
+
+/* Atmospheric Smokey Clouds */
+.apple-weather-card .clouds-backdrop {
+  position: absolute;
+  inset: -30px;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+  opacity: 0.85;
+  transition: opacity 0.8s ease;
+}
+
+.apple-weather-card .cloud-puff {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+  transition: background 0.8s ease, filter 0.8s ease, opacity 0.8s ease;
+}
+
+.apple-weather-card .cloud-1 {
+  width: 300px;
+  height: 110px;
+  top: -20px;
+  left: -40px;
+  border-radius: 130px;
+  filter: blur(24px);
+  animation: siriCloudDriftSlow 36s ease-in-out infinite alternate;
+}
+
+.apple-weather-card .cloud-2 {
+  width: 270px;
+  height: 105px;
+  bottom: -20px;
+  right: -30px;
+  border-radius: 120px;
+  filter: blur(22px);
+  animation: siriCloudDriftMedium 28s ease-in-out infinite alternate-reverse;
+}
+
+.apple-weather-card .cloud-3 {
+  width: 230px;
+  height: 95px;
+  top: 25px;
+  left: 15%;
+  border-radius: 110px;
+  filter: blur(26px);
+  animation: siriCloudDriftFast 32s ease-in-out infinite alternate;
+}
+
+@keyframes siriCloudDriftSlow {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(45px, 8px, 0) scale(1.06); }
+  100% { transform: translate3d(90px, -4px, 0) scale(1); }
+}
+
+@keyframes siriCloudDriftMedium {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-40px, -6px, 0) scale(1.05); }
+  100% { transform: translate3d(-80px, 5px, 0) scale(0.96); }
+}
+
+@keyframes siriCloudDriftFast {
+  0% { transform: translate3d(0, 0, 0) scale(0.95); }
+  50% { transform: translate3d(35px, -8px, 0) scale(1.08); }
+  100% { transform: translate3d(65px, 6px, 0) scale(0.98); }
+}
+
+/* Lightning Flash */
+.apple-weather-card .lightning-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0);
+  pointer-events: none;
+  z-index: 2;
+  transition: background 0.06s ease;
+}
+
+/* Weather Canvas (Rain, Snow, Stars) */
+.apple-weather-card .weather-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.85;
+}
+
+/* Left: Location & Large Temp */
+.apple-weather-card .card-left {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.apple-weather-card .card-location {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.apple-weather-card .card-temp {
+  font-size: 54px;
+  font-weight: 400;
+  color: #ffffff;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  margin-top: 4px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Right: Icon & Condition Meta */
+.apple-weather-card .card-right {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.apple-weather-card .card-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 34px;
+  height: 28px;
+}
+
+.apple-weather-card .card-icon {
+  width: 26px;
+  height: 26px;
+  fill: #ffffff;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
+}
+
+.apple-weather-card .card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.apple-weather-card .card-meta-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.apple-weather-card .card-condition {
+  font-size: 15px;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.apple-weather-card .card-highlow {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ═════════════════════════════════════════════════════════════
+   DAY THEMES
+   ═════════════════════════════════════════════════════════════ */
+.apple-weather-card.theme-sunny {
+  background: linear-gradient(180deg, #1f77cf 0%, #3ca2ea 100%);
+}
+.apple-weather-card.theme-sunny .clouds-backdrop { opacity: 0; }
+
+.apple-weather-card.theme-cloudy {
+  background: linear-gradient(180deg, #154877 0%, #1e5c9c 100%);
+}
+.apple-weather-card.theme-cloudy .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.22) 0%, rgba(200, 225, 255, 0.12) 55%, transparent 75%);
+  mix-blend-mode: screen;
+}
+
+.apple-weather-card.theme-overcast {
+  background: linear-gradient(180deg, #445464 0%, #5c6e80 100%);
+}
+.apple-weather-card.theme-overcast .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(190, 202, 215, 0.32) 0%, rgba(135, 150, 165, 0.18) 60%, transparent 80%);
+  mix-blend-mode: normal;
+}
+
+.apple-weather-card.theme-rain {
+  background: linear-gradient(180deg, #273748 0%, #36495c 100%);
+}
+.apple-weather-card.theme-rain .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(14, 20, 30, 0.72) 0%, rgba(26, 36, 50, 0.52) 60%, transparent 80%);
+  mix-blend-mode: multiply;
+  filter: blur(20px);
+}
+
+.apple-weather-card.theme-thunderstorm {
+  background: linear-gradient(180deg, #141724 0%, #202434 100%);
+}
+.apple-weather-card.theme-thunderstorm .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(5, 7, 12, 0.94) 0%, rgba(16, 14, 24, 0.85) 60%, transparent 80%);
+  mix-blend-mode: multiply;
+  filter: blur(18px);
+}
+
+.apple-weather-card.theme-snow {
+  background: linear-gradient(180deg, #4b6277 0%, #688198 100%);
+}
+.apple-weather-card.theme-snow .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.28) 0%, rgba(220, 235, 250, 0.15) 60%, transparent 80%);
+  mix-blend-mode: screen;
+}
+
+.apple-weather-card.theme-sandstorm {
+  background: linear-gradient(180deg, #8a521c 0%, #b3732c 100%);
+}
+.apple-weather-card.theme-sandstorm .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(250, 200, 130, 0.35) 0%, rgba(180, 110, 40, 0.25) 60%, transparent 80%);
+  mix-blend-mode: screen;
+}
+
+.apple-weather-card.theme-fog {
+  background: linear-gradient(180deg, #4e5a66 0%, #657482 100%);
+}
+.apple-weather-card.theme-fog .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.25) 0%, rgba(200, 215, 230, 0.15) 60%, transparent 80%);
+  mix-blend-mode: screen;
+  filter: blur(32px);
+}
+
+.apple-weather-card.theme-windy {
+  background: linear-gradient(180deg, #285a82 0%, #3e78a2 100%);
+}
+.apple-weather-card.theme-windy .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.18) 0%, transparent 70%);
+  mix-blend-mode: screen;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   NIGHT THEMES
+   ═════════════════════════════════════════════════════════════ */
+.apple-weather-card.theme-clear-night {
+  background: linear-gradient(180deg, #09101d 0%, #111c30 100%);
+}
+.apple-weather-card.theme-clear-night .clouds-backdrop { opacity: 0; }
+
+.apple-weather-card.theme-cloudy-night {
+  background: linear-gradient(180deg, #0c1527 0%, #15223a 100%);
+}
+.apple-weather-card.theme-cloudy-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(100, 135, 180, 0.25) 0%, rgba(45, 65, 95, 0.15) 60%, transparent 80%);
+  mix-blend-mode: screen;
+}
+
+.apple-weather-card.theme-overcast-night {
+  background: linear-gradient(180deg, #161c28 0%, #222938 100%);
+}
+.apple-weather-card.theme-overcast-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(12, 16, 24, 0.8) 0%, rgba(24, 30, 42, 0.55) 60%, transparent 80%);
+  mix-blend-mode: multiply;
+  filter: blur(24px);
+}
+
+.apple-weather-card.theme-rain-night {
+  background: linear-gradient(180deg, #080d17 0%, #101826 100%);
+}
+.apple-weather-card.theme-rain-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(4, 7, 14, 0.92) 0%, rgba(14, 20, 32, 0.75) 60%, transparent 80%);
+  mix-blend-mode: multiply;
+  filter: blur(20px);
+}
+
+.apple-weather-card.theme-thunderstorm-night {
+  background: linear-gradient(180deg, #04050b 0%, #0a0b14 100%);
+}
+.apple-weather-card.theme-thunderstorm-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(2, 3, 6, 0.98) 0%, rgba(10, 8, 16, 0.88) 60%, transparent 80%);
+  mix-blend-mode: multiply;
+  filter: blur(18px);
+}
+
+.apple-weather-card.theme-snow-night {
+  background: linear-gradient(180deg, #0a1324 0%, #142137 100%);
+}
+.apple-weather-card.theme-snow-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(120, 150, 190, 0.22) 0%, rgba(40, 60, 90, 0.12) 60%, transparent 80%);
+  mix-blend-mode: screen;
+}
+
+.apple-weather-card.theme-sandstorm-night {
+  background: linear-gradient(180deg, #3d230b 0%, #5c3713 100%);
+}
+.apple-weather-card.theme-sandstorm-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(120, 75, 30, 0.4) 0%, rgba(60, 35, 12, 0.3) 60%, transparent 80%);
+  mix-blend-mode: screen;
+}
+
+.apple-weather-card.theme-fog-night {
+  background: linear-gradient(180deg, #121721 0%, #1b2330 100%);
+}
+.apple-weather-card.theme-fog-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(90, 115, 145, 0.22) 0%, transparent 75%);
+  mix-blend-mode: screen;
+  filter: blur(34px);
+}
+
+.apple-weather-card.theme-windy-night {
+  background: linear-gradient(180deg, #0e1c2a 0%, #182e44 100%);
+}
+.apple-weather-card.theme-windy-night .cloud-puff {
+  background: radial-gradient(ellipse at 50% 50%, rgba(100, 140, 180, 0.18) 0%, transparent 70%);
+  mix-blend-mode: screen;
+}

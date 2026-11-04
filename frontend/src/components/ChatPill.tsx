@@ -6,6 +6,7 @@ import { LocationCard } from "./LocationCard";
 import { GmailCard, GmailEmailItem } from "./GmailCard";
 import { CalendarCard, CalendarEventItem } from "./CalendarCard";
 import { SystemSlider } from "./SystemSlider";
+import { WeatherCard, WeatherCardData } from "./WeatherCard";
 import "./ChatPill.css";
 
 export interface ChatTurn {
@@ -160,7 +161,8 @@ type MessagePart =
   | { type: "loading_location" }
   | { type: "gmail"; data: GmailCardData }
   | { type: "calendar"; data: CalendarCardData }
-  | { type: "system_slider"; data: SystemSliderData };
+  | { type: "system_slider"; data: SystemSliderData }
+  | { type: "weather"; data: WeatherCardData };
 
 function renderFormattedText(rawText: string): React.ReactNode {
   if (!rawText) return null;
@@ -355,7 +357,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -501,6 +503,31 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       if (lat !== 0 || lon !== 0) {
         parts.push({ type: "location", data: { lat, lon, title } });
       }
+    } else if (tagType === "weather-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        parts.push({
+          type: "weather",
+          data: {
+            location: String(parsed.location || "Unknown"),
+            temp: Number(parsed.temp ?? 0),
+            tempHigh: typeof parsed.tempHigh === "number" ? parsed.tempHigh : undefined,
+            tempLow: typeof parsed.tempLow === "number" ? parsed.tempLow : undefined,
+            unit: parsed.unit ? String(parsed.unit) : "C",
+            condition: String(parsed.condition || "Cloudy"),
+            conditionKey: String(parsed.conditionKey || "cloudy"),
+            weatherCode: typeof parsed.weatherCode === "number" ? parsed.weatherCode : undefined,
+            isDay: typeof parsed.isDay === "boolean" ? parsed.isDay : undefined,
+          },
+        });
+      } catch (err) {
+        console.warn("Failed to parse weather-card JSON:", err);
+      }
     } else if (tagType === "system-slider") {
       let sliderType: "volume" | "brightness" = "volume";
       let level = 50;
@@ -589,7 +616,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card)\[[\s\S]*$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -1535,6 +1562,23 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                                     onSendMessage(`Book event during ${payload}`, true);
                                   }
                                 }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "weather") {
+                            return (
+                              <WeatherCard
+                                key={idx}
+                                location={part.data.location}
+                                temp={part.data.temp}
+                                tempHigh={part.data.tempHigh}
+                                tempLow={part.data.tempLow}
+                                unit={part.data.unit}
+                                condition={part.data.condition}
+                                conditionKey={part.data.conditionKey}
+                                weatherCode={part.data.weatherCode}
+                                isDay={part.data.isDay}
                               />
                             );
                           }

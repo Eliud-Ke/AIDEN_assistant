@@ -692,13 +692,19 @@ def get_weather_forecast(location: str) -> str:
 
         loc = geo_data["results"][0]
         lat, lon = loc["latitude"], loc["longitude"]
-        city_display = f"{loc.get('name', location)}, {loc.get('country_code', '')}".strip(
-            ", ")
+        country_code = loc.get("country_code", "")
+        admin1 = loc.get("admin1", "")
+        if country_code == "US" and admin1:
+            city_display = f"{loc.get('name', location)}, {admin1}"
+        elif country_code:
+            city_display = f"{loc.get('name', location)}, {country_code}"
+        else:
+            city_display = loc.get('name', location)
 
         forecast_url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={lat}&longitude={lon}"
-            "&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code"
+            "&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code,is_day"
             "&hourly=temperature_2m,precipitation_probability,weather_code"
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum"
             "&timezone=auto"
@@ -706,11 +712,30 @@ def get_weather_forecast(location: str) -> str:
         data = requests.get(forecast_url, timeout=8.0).json()
 
         curr = data.get("current", {})
-        cond_text, icon = WMO_MAP.get(
-            curr.get("weather_code", 0), ("Unknown", "☁️"))
+        weather_code = curr.get("weather_code", 0)
+        cond_text, icon = WMO_MAP.get(weather_code, ("Unknown", "☁️"))
         current_temp = int(round(curr.get("temperature_2m", 0)))
         feels_like = int(round(curr.get("apparent_temperature", 0)))
         wind_speed = curr.get("wind_speed_10m", 0)
+        is_day = bool(curr.get("is_day", 1))
+
+        # Dynamic Condition Key for Apple Siri Card
+        if weather_code == 0:
+            cond_key = "sunny" if is_day else "clear-night"
+        elif weather_code in (1, 2):
+            cond_key = "cloudy" if is_day else "cloudy-night"
+        elif weather_code == 3:
+            cond_key = "overcast" if is_day else "overcast-night"
+        elif weather_code in (45, 48):
+            cond_key = "fog" if is_day else "fog-night"
+        elif weather_code in (51, 53, 55, 61, 63, 65, 80, 81, 82):
+            cond_key = "rain" if is_day else "rain-night"
+        elif weather_code in (71, 73, 75, 77, 85, 86):
+            cond_key = "snow" if is_day else "snow-night"
+        elif weather_code in (95, 96, 99):
+            cond_key = "thunderstorm" if is_day else "thunderstorm-night"
+        else:
+            cond_key = "cloudy" if is_day else "cloudy-night"
 
         output = [
             f"--- LIVE WEATHER DATA FOR {city_display.upper()} ---",
@@ -749,7 +774,26 @@ def get_weather_forecast(location: str) -> str:
                 output.append(
                     f"• {d_name}: {d_cond} {d_icon} | High: {max_t}°C / Low: {min_t}°C")
 
-        return "\n".join(output)
+        daily = data.get("daily", {})
+        max_temps = daily.get("temperature_2m_max", [])
+        min_temps = daily.get("temperature_2m_min", [])
+        today_high = int(round(max_temps[0])) if max_temps else current_temp
+        today_low = int(round(min_temps[0])) if min_temps else current_temp
+
+        weather_card_data = {
+            "location": city_display,
+            "temp": current_temp,
+            "tempHigh": today_high,
+            "tempLow": today_low,
+            "unit": "C",
+            "condition": cond_text,
+            "conditionKey": cond_key,
+            "weatherCode": weather_code,
+            "isDay": is_day
+        }
+        card_tag = f"::weather-card[{json.dumps(weather_card_data)}]::"
+
+        return f"{card_tag}\n\n" + "\n".join(output)
     except Exception as e:
         return f"❌ Weather API Error: {str(e)}"
 
