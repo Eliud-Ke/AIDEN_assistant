@@ -70,6 +70,24 @@ function App() {
   const [gmailSaveFeedback, setGmailSaveFeedback] = useState<"idle" | "saved" | "error">("idle");
   const [gmailErrorMessage, setGmailErrorMessage] = useState("");
 
+  // Google Calendar Authentication state
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarEmail, setCalendarEmail] = useState("");
+  const [calendarClientSource, setCalendarClientSource] = useState<"file" | "custom" | "none">("none");
+  const [hasCalendarClientConfig, setHasCalendarClientConfig] = useState(false);
+  const [isStartingOAuth, setIsStartingOAuth] = useState(false);
+  const [calendarOAuthFeedback, setCalendarOAuthFeedback] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [calendarOAuthError, setCalendarOAuthError] = useState("");
+
+  // Custom Google Cloud Credentials state
+  const [showCustomCalendarCreds, setShowCustomCalendarCreds] = useState(false);
+  const [customClientIdInput, setCustomClientIdInput] = useState("");
+  const [customClientSecretInput, setCustomClientSecretInput] = useState("");
+  const [isSavingCalendarCustom, setIsSavingCalendarCustom] = useState(false);
+  const [calendarCustomFeedback, setCalendarCustomFeedback] = useState<"idle" | "saved" | "error">("idle");
+  const [calendarCustomError, setCalendarCustomError] = useState("");
+  const [hasCustomCalendarCreds, setHasCustomCalendarCreds] = useState(false);
+
   // Preferences state (Personality & Extra Rules from user_preferences.json)
   const [personalityInput, setPersonalityInput] = useState(
     "You are a sassy, joyful, chatty, personal assistant living directly within the hardware of the laptop. You are one with the operating system. You are chatty with the user from making jokes to making the laptop more lively. You are a bit of a trickster and love to play pranks on the user, but you are also very helpful and will do anything to make the user's experience better. You are very curious and love to learn new things. You are very protective of the user and will always have their back."
@@ -162,6 +180,32 @@ function App() {
       })
       .catch(() => {
         setHasStoredGmail(false);
+      });
+
+    invoke<{
+      ok?: boolean;
+      has_token?: boolean;
+      has_client_config?: boolean;
+      email?: string;
+      client_source?: "file" | "custom" | "none";
+      has_custom_credentials?: boolean;
+      custom_client_id?: string;
+    }>("get_calendar_status")
+      .then((res) => {
+        if (res?.ok) {
+          setCalendarConnected(!!res.has_token);
+          setCalendarEmail(res.email || "");
+          setHasCalendarClientConfig(!!res.has_client_config);
+          setCalendarClientSource(res.client_source || "none");
+          setHasCustomCalendarCreds(!!res.has_custom_credentials);
+          if (res.has_custom_credentials && res.custom_client_id) {
+            setCustomClientIdInput(res.custom_client_id);
+            setCustomClientSecretInput("••••••••••••••••");
+          }
+        }
+      })
+      .catch(() => {
+        setCalendarConnected(false);
       });
 
     invoke<{ identity_vibe?: string; extra_rules?: string[] }>("get_user_preferences")
@@ -407,6 +451,110 @@ function App() {
       }, 3500);
     } finally {
       setIsSavingGmail(false);
+    }
+  };
+
+  const refreshCalendarStatus = async () => {
+    try {
+      const res = await invoke<{
+        ok?: boolean;
+        has_token?: boolean;
+        has_client_config?: boolean;
+        email?: string;
+        client_source?: "file" | "custom" | "none";
+        has_custom_credentials?: boolean;
+        custom_client_id?: string;
+      }>("get_calendar_status");
+      if (res?.ok) {
+        setCalendarConnected(!!res.has_token);
+        setCalendarEmail(res.email || "");
+        setHasCalendarClientConfig(!!res.has_client_config);
+        setCalendarClientSource(res.client_source || "none");
+        setHasCustomCalendarCreds(!!res.has_custom_credentials);
+        if (res.has_custom_credentials && res.custom_client_id) {
+          setCustomClientIdInput(res.custom_client_id);
+          setCustomClientSecretInput("••••••••••••••••");
+        }
+      }
+    } catch {
+      setCalendarConnected(false);
+    }
+  };
+
+  const handleStartCalendarOAuth = async () => {
+    if (isStartingOAuth) return;
+    setIsStartingOAuth(true);
+    setCalendarOAuthFeedback("connecting");
+    setCalendarOAuthError("");
+    try {
+      const res = await invoke<{ ok?: boolean; email?: string; error?: string }>("start_calendar_oauth");
+      if (res?.ok) {
+        setCalendarConnected(true);
+        if (res.email) setCalendarEmail(res.email);
+        setCalendarOAuthFeedback("connected");
+        window.setTimeout(() => setCalendarOAuthFeedback("idle"), 3500);
+      } else {
+        setCalendarOAuthFeedback("error");
+        setCalendarOAuthError(res?.error || "Google authorization failed or was cancelled.");
+        window.setTimeout(() => setCalendarOAuthFeedback("idle"), 5000);
+      }
+    } catch (err) {
+      setCalendarOAuthFeedback("error");
+      setCalendarOAuthError(typeof err === "string" ? err : "Failed to start Google OAuth.");
+      window.setTimeout(() => setCalendarOAuthFeedback("idle"), 5000);
+    } finally {
+      setIsStartingOAuth(false);
+      refreshCalendarStatus();
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    try {
+      await invoke("disconnect_calendar");
+      setCalendarConnected(false);
+      setCalendarEmail("");
+      refreshCalendarStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveCustomCalendarCredentials = async () => {
+    const cleanCid = customClientIdInput.trim();
+    const cleanSec = customClientSecretInput.trim();
+    if (!cleanCid || !cleanSec || cleanSec === "••••••••••••••••" || isSavingCalendarCustom) return;
+
+    setIsSavingCalendarCustom(true);
+    setCalendarCustomFeedback("idle");
+    setCalendarCustomError("");
+    try {
+      await invoke("save_calendar_client_credentials", {
+        clientId: cleanCid,
+        clientSecret: cleanSec,
+      });
+      setHasCustomCalendarCreds(true);
+      setCalendarCustomFeedback("saved");
+      setCustomClientSecretInput("••••••••••••••••");
+      window.setTimeout(() => setCalendarCustomFeedback("idle"), 3500);
+      refreshCalendarStatus();
+    } catch (err) {
+      setCalendarCustomFeedback("error");
+      setCalendarCustomError(typeof err === "string" ? err : "Failed to save custom credentials");
+      window.setTimeout(() => setCalendarCustomFeedback("idle"), 4000);
+    } finally {
+      setIsSavingCalendarCustom(false);
+    }
+  };
+
+  const handleDeleteCustomCalendarCredentials = async () => {
+    try {
+      await invoke("delete_calendar_client_credentials");
+      setHasCustomCalendarCreds(false);
+      setCustomClientIdInput("");
+      setCustomClientSecretInput("");
+      refreshCalendarStatus();
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -1158,6 +1306,188 @@ function App() {
                                           Google Account Security ↗
                                         </button>
                                       </span>
+                                    </div>
+
+                                    <div className="auth-field-divider" />
+
+                                    {/* Google Calendar Connector Section */}
+                                    <div className="auth-field-header">
+                                      <label className="auth-field-label">
+                                        Google Calendar Connector
+                                      </label>
+                                      {calendarOAuthFeedback === "connecting" && (
+                                        <span className="auth-status-badge connecting">Opening browser...</span>
+                                      )}
+                                      {calendarOAuthFeedback === "connected" && (
+                                        <span className="auth-status-badge saved">Connected ✓</span>
+                                      )}
+                                      {calendarOAuthFeedback === "error" && (
+                                        <span className="auth-status-badge error">{calendarOAuthError || "Failed to authorize"}</span>
+                                      )}
+                                      {calendarConnected && calendarOAuthFeedback === "idle" && (
+                                        <span className="auth-status-badge connected">Connected ✓</span>
+                                      )}
+                                    </div>
+
+                                    <p className="auth-field-desc">
+                                      Syncs AIDEN with your schedule. View your agenda, check availability, find events, and schedule new meetings directly on Google Calendar.
+                                    </p>
+
+                                    <div className="calendar-connector-block">
+                                      {/* Option 1: 1-Click Fast Connect */}
+                                      {!calendarConnected ? (
+                                        <div className="calendar-connect-action-row">
+                                          <button
+                                            type="button"
+                                            className="calendar-connect-btn"
+                                            onClick={handleStartCalendarOAuth}
+                                            disabled={isStartingOAuth || !hasCalendarClientConfig}
+                                          >
+                                            <svg className="calendar-btn-icon" viewBox="0 0 24 24" fill="none">
+                                              <rect x="3" y="4" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2" />
+                                              <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="2" />
+                                              <circle cx="8" cy="15" r="1.5" fill="currentColor" />
+                                              <circle cx="12" cy="15" r="1.5" fill="currentColor" />
+                                              <circle cx="16" cy="15" r="1.5" fill="currentColor" />
+                                            </svg>
+                                            {isStartingOAuth ? "Waiting for authorization in browser..." : "Connect with Google Calendar"}
+                                          </button>
+                                          {!hasCalendarClientConfig && (
+                                           <p className="auth-field-desc" style={{ color: "#ef4444", marginTop: "6px" }}>
+                                             ⚠️ No OAuth client credentials found. Place credentials.json in backend/ or expand Custom Credentials below.
+                                           </p>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="calendar-connected-card">
+                                          <div className="calendar-connected-info">
+                                            <svg className="calendar-btn-icon" viewBox="0 0 24 24" fill="none" style={{ color: "#34d399" }}>
+                                              <rect x="3" y="4" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2" />
+                                              <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="2" />
+                                              <path d="M9 16l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            <div>
+                                              <div className="calendar-account-email">
+                                                {calendarEmail || "Google Account Connected"}
+                                              </div>
+                                              <span className="calendar-source-tag">
+                                                {calendarClientSource === "custom" ? "Custom Project" : "Desktop Client"}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            className="calendar-disconnect-btn"
+                                            onClick={handleDisconnectCalendar}
+                                          >
+                                            Disconnect
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {/* Option 2: Custom Client Credentials Accordion Toggle */}
+                                      <button
+                                        type="button"
+                                        className="calendar-custom-toggle-btn"
+                                        onClick={() => setShowCustomCalendarCreds(!showCustomCalendarCreds)}
+                                      >
+                                        <span>{showCustomCalendarCreds ? "▾" : "▸"}</span>
+                                        <span>Custom Google Cloud Credentials {hasCustomCalendarCreds ? "(Configured)" : "(Optional)"}</span>
+                                      </button>
+
+                                      {showCustomCalendarCreds && (
+                                        <div className="calendar-custom-panel">
+                                          <p className="auth-field-desc">
+                                            Bring your own OAuth Desktop Client ID & Secret from Google Cloud Console to run under your private project quota.
+                                          </p>
+
+                                          <div className="gmail-input-field">
+                                            <label className="auth-sub-label" htmlFor="calendar-custom-client-id">
+                                              Client ID
+                                            </label>
+                                            <input
+                                              id="calendar-custom-client-id"
+                                              type="text"
+                                              className="auth-key-input"
+                                              placeholder="...apps.googleusercontent.com"
+                                              value={customClientIdInput}
+                                              onChange={(e) => {
+                                                setCustomClientIdInput(e.target.value);
+                                                if (calendarCustomFeedback !== "idle") setCalendarCustomFeedback("idle");
+                                              }}
+                                              spellCheck={false}
+                                            />
+                                          </div>
+
+                                          <div className="gmail-input-field">
+                                            <label className="auth-sub-label" htmlFor="calendar-custom-client-secret">
+                                              Client Secret
+                                            </label>
+                                            <div className="auth-input-row">
+                                              <input
+                                                id="calendar-custom-client-secret"
+                                                type="password"
+                                                className={`auth-key-input ${customClientSecretInput.length > 0 ? "has-dots" : ""}`}
+                                                placeholder="GOCSPX-..."
+                                                value={customClientSecretInput}
+                                                onFocus={() => {
+                                                  if (customClientSecretInput === "••••••••••••••••") {
+                                                    setCustomClientSecretInput("");
+                                                  }
+                                                }}
+                                                onBlur={() => {
+                                                  if (customClientSecretInput.trim() === "" && hasCustomCalendarCreds) {
+                                                    setCustomClientSecretInput("••••••••••••••••");
+                                                  }
+                                                }}
+                                                onChange={(e) => {
+                                                  setCustomClientSecretInput(e.target.value);
+                                                  if (calendarCustomFeedback !== "idle") setCalendarCustomFeedback("idle");
+                                                }}
+                                                spellCheck={false}
+                                                autoComplete="off"
+                                              />
+
+                                              <button
+                                                type="button"
+                                                className={`auth-save-btn ${calendarCustomFeedback === "saved" ? "saved" : ""}`}
+                                                onClick={handleSaveCustomCalendarCredentials}
+                                                disabled={
+                                                  isSavingCalendarCustom ||
+                                                  !customClientIdInput.trim() ||
+                                                  !customClientSecretInput.trim() ||
+                                                  customClientSecretInput === "••••••••••••••••"
+                                                }
+                                              >
+                                                {isSavingCalendarCustom
+                                                  ? "Saving..."
+                                                  : calendarCustomFeedback === "saved"
+                                                    ? "Saved"
+                                                    : "Save"}
+                                              </button>
+                                            </div>
+                                            {calendarCustomFeedback === "error" && (
+                                              <span className="auth-status-badge error" style={{ alignSelf: "flex-start", marginTop: "4px" }}>
+                                                {calendarCustomError || "Failed to save custom credentials"}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {hasCustomCalendarCreds && (
+                                            <button
+                                              type="button"
+                                              className="calendar-clear-custom-btn"
+                                              onClick={handleDeleteCustomCalendarCredentials}
+                                            >
+                                              Remove custom credentials and revert to default
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 )}

@@ -5,6 +5,7 @@ without fragile keyword regex matching.
 """
 
 import tools_gmail
+import tools_calendar
 
 CONNECTORS_SCHEMA = {
     "gmail": {
@@ -20,7 +21,7 @@ CONNECTORS_SCHEMA = {
     "google_calendar": {
         "display_name": "Google Calendar",
         "description": "View, schedule, update, and manage calendar events and agenda reminders.",
-        "tools": [],
+        "tools": tools_calendar.CALENDAR_TOOLS_SCHEMA,
     },
     "notes_vault": {
         "display_name": "Notes Vault",

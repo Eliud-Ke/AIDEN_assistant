@@ -126,7 +126,15 @@ TOOL_STATUS_MAP = {
     "gmail_send_email": "SENDING EMAIL",
     "gmail_reply_email": "REPLYING TO EMAIL",
     "gmail_mark_emails_as_read": "MARKING AS READ",
-    "gmail_archive_email": "ARCHIVING EMAIL"
+    "gmail_archive_email": "ARCHIVING EMAIL",
+
+    # Google Calendar Connector Tools
+    "calendar_get_agenda": "CHECKING AGENDA",
+    "calendar_create_event": "SCHEDULING EVENT",
+    "calendar_search_events": "SEARCHING CALENDAR",
+    "calendar_update_event": "UPDATING EVENT",
+    "calendar_delete_event": "CANCELING EVENT",
+    "calendar_check_availability": "CHECKING SCHEDULE",
 }
 
 # ---------------------------------------------------------

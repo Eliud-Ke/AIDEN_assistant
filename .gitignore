@@ -41,6 +41,9 @@ frontend/src-tauri/gen/schemas/
 .env.*.local
 *.pem
 *.key
+credentials*.json
+token*.json
+*calendar_token*
 
 # Editor & OS Artifacts
 release_binaries/

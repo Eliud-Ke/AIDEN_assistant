@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { LocationCard } from "./LocationCard";
 import { GmailCard, GmailEmailItem } from "./GmailCard";
+import { CalendarCard, CalendarEventItem } from "./CalendarCard";
 import { SystemSlider } from "./SystemSlider";
 import "./ChatPill.css";
 
@@ -130,6 +131,21 @@ export interface GmailCardData {
   avatar?: string;
 }
 
+export interface CalendarCardData {
+  mode?: "agenda" | "created" | "search" | "updated" | "deleted" | "availability";
+  label?: string;
+  count?: number;
+  events?: CalendarEventItem[];
+  event?: CalendarEventItem;
+  query?: string;
+  oldTime?: string;
+  newTime?: string;
+  timeWindow?: string;
+  isFree?: boolean;
+  conflicts?: Array<{ summary: string; time: string; location?: string }>;
+  suggestedSlot?: string;
+}
+
 export interface SystemSliderData {
   type: "volume" | "brightness";
   level: number;
@@ -143,6 +159,7 @@ type MessagePart =
   | { type: "location"; data: LocationCardData }
   | { type: "loading_location" }
   | { type: "gmail"; data: GmailCardData }
+  | { type: "calendar"; data: CalendarCardData }
   | { type: "system_slider"; data: SystemSliderData };
 
 function renderFormattedText(rawText: string): React.ReactNode {
@@ -280,8 +297,8 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 
   const unrevealed = text.slice(start);
 
-  // Media gallery, Location card, or Gmail card boundary: don't split inside ::...[...]::
-  const embedMatch = /::(?:media-|location-|gmail-)/.exec(unrevealed);
+  // Media gallery, Location card, Gmail card, or Calendar card boundary: don't split inside ::...[...]::
+  const embedMatch = /::(?:media-|location-|gmail-|calendar-)/.exec(unrevealed);
   if (embedMatch) {
     const embedIdx = embedMatch.index;
     if (embedIdx > 0) {
@@ -338,7 +355,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|system-slider)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -352,7 +369,63 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
     const tagType = match[1].toLowerCase();
     const rawPayload = match[2].trim();
 
-    if (tagType === "gmail-card") {
+    if (tagType === "calendar-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const eventsList: CalendarEventItem[] = Array.isArray(parsed.events)
+          ? parsed.events
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
+        const count = typeof parsed.count === "number" ? parsed.count : eventsList.length;
+        const label = typeof parsed.label === "string" ? parsed.label : undefined;
+        const mode =
+          parsed.mode === "created"
+            ? "created"
+            : parsed.mode === "search"
+            ? "search"
+            : parsed.mode === "updated"
+            ? "updated"
+            : parsed.mode === "deleted"
+            ? "deleted"
+            : parsed.mode === "availability"
+            ? "availability"
+            : "agenda";
+        const query = typeof parsed.query === "string" ? parsed.query : undefined;
+        const oldTime = typeof parsed.oldTime === "string" ? parsed.oldTime : undefined;
+        const newTime = typeof parsed.newTime === "string" ? parsed.newTime : undefined;
+        const timeWindow = typeof parsed.timeWindow === "string" ? parsed.timeWindow : undefined;
+        const isFree = typeof parsed.isFree === "boolean" ? parsed.isFree : undefined;
+        const conflicts = Array.isArray(parsed.conflicts) ? parsed.conflicts : undefined;
+        const suggestedSlot = typeof parsed.suggestedSlot === "string" ? parsed.suggestedSlot : undefined;
+        const singleEvent = parsed.event && typeof parsed.event === "object" ? parsed.event : undefined;
+
+        parts.push({
+          type: "calendar",
+          data: {
+            mode,
+            label,
+            count,
+            events: eventsList,
+            event: singleEvent,
+            query,
+            oldTime,
+            newTime,
+            timeWindow,
+            isFree,
+            conflicts,
+            suggestedSlot,
+          },
+        });
+      } catch (err) {
+        console.warn("Failed to parse calendar-card JSON:", err);
+      }
+    } else if (tagType === "gmail-card") {
       try {
         let parsed: any;
         try {
@@ -516,7 +589,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|system-slider)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider)\[[\s\S]*$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -1429,6 +1502,37 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                                     onSendMessage(`Archive email ${emailId || ""}`, false);
                                   } else if (action === "mark_unread") {
                                     onSendMessage(`Mark email ${emailId || ""} as unread`, false);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "calendar") {
+                            return (
+                              <CalendarCard
+                                key={idx}
+                                mode={part.data.mode}
+                                label={part.data.label}
+                                count={part.data.count}
+                                events={part.data.events}
+                                event={part.data.event}
+                                query={part.data.query}
+                                oldTime={part.data.oldTime}
+                                newTime={part.data.newTime}
+                                timeWindow={part.data.timeWindow}
+                                isFree={part.data.isFree}
+                                conflicts={part.data.conflicts}
+                                suggestedSlot={part.data.suggestedSlot}
+                                onAction={(action, payload) => {
+                                  if (!onSendMessage) return;
+                                  if (action === "reschedule") {
+                                    const title = payload?.summary || "event";
+                                    onSendMessage(`Reschedule "${title}" to `, true);
+                                  } else if (action === "schedule") {
+                                    onSendMessage(`Schedule event for ${payload || "tomorrow"}: `, true);
+                                  } else if (action === "book_suggested") {
+                                    onSendMessage(`Book event during ${payload}`, true);
                                   }
                                 }}
                               />

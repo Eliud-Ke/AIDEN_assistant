@@ -491,6 +491,157 @@ fn get_gmail_status() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "has_credentials": false, "email": "" }))
 }
 
+#[tauri::command]
+fn get_calendar_status() -> Result<serde_json::Value, String> {
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--get-calendar")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to check Calendar status: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+            return Ok(parsed);
+        }
+    }
+    Ok(serde_json::json!({
+        "ok": false,
+        "has_token": false,
+        "has_client_config": false,
+        "email": "",
+        "client_source": "none"
+    }))
+}
+
+#[tauri::command]
+async fn start_calendar_oauth() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--calendar-oauth")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to run Calendar OAuth: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if output.status.success() {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                return Ok(parsed);
+            }
+            Ok(serde_json::json!({ "ok": true }))
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                return Ok(parsed);
+            }
+            Err(format!("OAuth failed: {} {}", stdout.trim(), stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("OAuth background task error: {}", e))?
+}
+
+#[tauri::command]
+fn save_calendar_client_credentials(client_id: String, client_secret: String) -> Result<String, String> {
+    let clean_cid = client_id.trim();
+    let clean_sec = client_secret.trim();
+    if clean_cid.is_empty() || clean_sec.is_empty() {
+        return Err("Client ID and Client Secret cannot be empty.".to_string());
+    }
+
+    let payload = serde_json::json!({
+        "client_id": clean_cid,
+        "client_secret": clean_sec,
+    });
+
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--save-calendar-client-stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(payload.to_string().as_bytes())
+            .map_err(|e| format!("Failed to pass custom credentials to backend: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+
+    if output.status.success() {
+        Ok("Custom Google Cloud credentials saved to Windows Credential Manager.".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        Err(format!("Backend failed to save custom credentials: {} {}", stdout.trim(), stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn disconnect_calendar() -> Result<String, String> {
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--delete-calendar")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to disconnect calendar: {}", e))?;
+
+    if output.status.success() {
+        Ok("Google Calendar disconnected successfully.".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Failed to disconnect calendar: {}", stderr.trim()))
+    }
+}
+
+#[tauri::command]
+fn delete_calendar_client_credentials() -> Result<String, String> {
+    let mut cmd = build_backend_command("auth_manager.py")?;
+    cmd.arg("--delete-calendar-client")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to remove custom credentials: {}", e))?;
+
+    if output.status.success() {
+        Ok("Custom credentials removed successfully.".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Failed to remove custom credentials: {}", stderr.trim()))
+    }
+}
+
 fn get_user_data_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -919,6 +1070,11 @@ pub fn run() {
             check_openai_key,
             save_gmail_credentials,
             get_gmail_status,
+            get_calendar_status,
+            start_calendar_oauth,
+            save_calendar_client_credentials,
+            disconnect_calendar,
+            delete_calendar_client_credentials,
             get_user_preferences,
             save_user_preferences,
             get_user_memories,

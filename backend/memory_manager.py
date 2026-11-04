@@ -70,6 +70,9 @@ def _clean_text_for_context(text: str, max_chars: int = 0) -> str:
     if not text:
         return ""
     cleaned = re.sub(r"::gmail-card\[.*?\]::", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r"::calendar-card\[.*?\]::", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"::calendar-agenda\[.*?\]::", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"::calendar-event\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"::system-slider\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"::location-card\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"::media-gallery\[.*?\]::", "", cleaned, flags=re.DOTALL)
