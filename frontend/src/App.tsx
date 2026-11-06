@@ -88,6 +88,26 @@ function App() {
   const [calendarCustomError, setCalendarCustomError] = useState("");
   const [hasCustomCalendarCreds, setHasCustomCalendarCreds] = useState(false);
 
+  // Spotify Authentication state
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [spotifyDisplayName, setSpotifyDisplayName] = useState("");
+  const [spotifyEmail, setSpotifyEmail] = useState("");
+  const [spotifyProduct, setSpotifyProduct] = useState<string>("");
+  const [spotifyClientSource, setSpotifyClientSource] = useState<"env" | "file" | "custom" | "none">("none");
+  const [hasSpotifyClientConfig, setHasSpotifyClientConfig] = useState(false);
+  const [isStartingSpotifyOAuth, setIsStartingSpotifyOAuth] = useState(false);
+  const [spotifyOAuthFeedback, setSpotifyOAuthFeedback] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [spotifyOAuthError, setSpotifyOAuthError] = useState("");
+
+  // Custom Spotify Developer Credentials state
+  const [showCustomSpotifyCreds, setShowCustomSpotifyCreds] = useState(false);
+  const [customSpotifyClientIdInput, setCustomSpotifyClientIdInput] = useState("");
+  const [customSpotifyClientSecretInput, setCustomSpotifyClientSecretInput] = useState("");
+  const [isSavingSpotifyCustom, setIsSavingSpotifyCustom] = useState(false);
+  const [spotifyCustomFeedback, setSpotifyCustomFeedback] = useState<"idle" | "saved" | "error">("idle");
+  const [spotifyCustomError, setSpotifyCustomError] = useState("");
+  const [hasCustomSpotifyCreds, setHasCustomSpotifyCreds] = useState(false);
+
   // Preferences state (Personality & Extra Rules from user_preferences.json)
   const [personalityInput, setPersonalityInput] = useState(
     "You are a sassy, joyful, chatty, personal assistant living directly within the hardware of the laptop. You are one with the operating system. You are chatty with the user from making jokes to making the laptop more lively. You are a bit of a trickster and love to play pranks on the user, but you are also very helpful and will do anything to make the user's experience better. You are very curious and love to learn new things. You are very protective of the user and will always have their back."
@@ -206,6 +226,36 @@ function App() {
       })
       .catch(() => {
         setCalendarConnected(false);
+      });
+
+    invoke<{
+      ok?: boolean;
+      has_token?: boolean;
+      has_client_config?: boolean;
+      display_name?: string;
+      email?: string;
+      product?: string;
+      client_source?: "env" | "file" | "custom" | "none";
+      has_custom_credentials?: boolean;
+      custom_client_id?: string;
+    }>("get_spotify_status")
+      .then((res) => {
+        if (res?.ok) {
+          setSpotifyConnected(!!res.has_token);
+          setSpotifyDisplayName(res.display_name || "");
+          setSpotifyEmail(res.email || "");
+          setSpotifyProduct(res.product || "");
+          setHasSpotifyClientConfig(!!res.has_client_config);
+          setSpotifyClientSource(res.client_source || "none");
+          setHasCustomSpotifyCreds(!!res.has_custom_credentials);
+          if (res.has_custom_credentials && res.custom_client_id) {
+            setCustomSpotifyClientIdInput(res.custom_client_id);
+            setCustomSpotifyClientSecretInput("••••••••••••••••");
+          }
+        }
+      })
+      .catch(() => {
+        setSpotifyConnected(false);
       });
 
     invoke<{ identity_vibe?: string; extra_rules?: string[] }>("get_user_preferences")
@@ -553,6 +603,118 @@ function App() {
       setCustomClientIdInput("");
       setCustomClientSecretInput("");
       refreshCalendarStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const refreshSpotifyStatus = async () => {
+    try {
+      const res = await invoke<{
+        ok?: boolean;
+        has_token?: boolean;
+        has_client_config?: boolean;
+        display_name?: string;
+        email?: string;
+        product?: string;
+        client_source?: "env" | "file" | "custom" | "none";
+        has_custom_credentials?: boolean;
+        custom_client_id?: string;
+      }>("get_spotify_status");
+      if (res?.ok) {
+        setSpotifyConnected(!!res.has_token);
+        setSpotifyDisplayName(res.display_name || "");
+        setSpotifyEmail(res.email || "");
+        setSpotifyProduct(res.product || "");
+        setHasSpotifyClientConfig(!!res.has_client_config);
+        setSpotifyClientSource(res.client_source || "none");
+        setHasCustomSpotifyCreds(!!res.has_custom_credentials);
+        if (res.has_custom_credentials && res.custom_client_id) {
+          setCustomSpotifyClientIdInput(res.custom_client_id);
+          setCustomSpotifyClientSecretInput("••••••••••••••••");
+        }
+      }
+    } catch {
+      setSpotifyConnected(false);
+    }
+  };
+
+  const handleStartSpotifyOAuth = async () => {
+    if (isStartingSpotifyOAuth) return;
+    setIsStartingSpotifyOAuth(true);
+    setSpotifyOAuthFeedback("connecting");
+    setSpotifyOAuthError("");
+    try {
+      const res = await invoke<{ ok?: boolean; display_name?: string; email?: string; product?: string; error?: string }>("start_spotify_oauth");
+      if (res?.ok) {
+        setSpotifyConnected(true);
+        if (res.display_name) setSpotifyDisplayName(res.display_name);
+        if (res.email) setSpotifyEmail(res.email);
+        if (res.product) setSpotifyProduct(res.product);
+        setSpotifyOAuthFeedback("connected");
+        window.setTimeout(() => setSpotifyOAuthFeedback("idle"), 3500);
+      } else {
+        setSpotifyOAuthFeedback("error");
+        setSpotifyOAuthError(res?.error || "Spotify authorization failed or was cancelled.");
+        window.setTimeout(() => setSpotifyOAuthFeedback("idle"), 5000);
+      }
+    } catch (err) {
+      setSpotifyOAuthFeedback("error");
+      setSpotifyOAuthError(typeof err === "string" ? err : "Failed to start Spotify OAuth.");
+      window.setTimeout(() => setSpotifyOAuthFeedback("idle"), 5000);
+    } finally {
+      setIsStartingSpotifyOAuth(false);
+      refreshSpotifyStatus();
+    }
+  };
+
+  const handleDisconnectSpotify = async () => {
+    try {
+      await invoke("disconnect_spotify");
+      setSpotifyConnected(false);
+      setSpotifyDisplayName("");
+      setSpotifyEmail("");
+      setSpotifyProduct("");
+      refreshSpotifyStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveCustomSpotifyCredentials = async () => {
+    const cleanCid = customSpotifyClientIdInput.trim();
+    const cleanSec = customSpotifyClientSecretInput.trim();
+    if (!cleanCid || !cleanSec || cleanSec === "••••••••••••••••" || isSavingSpotifyCustom) return;
+
+    setIsSavingSpotifyCustom(true);
+    setSpotifyCustomFeedback("idle");
+    setSpotifyCustomError("");
+    try {
+      await invoke("save_spotify_client_credentials", {
+        clientId: cleanCid,
+        clientSecret: cleanSec,
+      });
+      setHasCustomSpotifyCreds(true);
+      setSpotifyCustomFeedback("saved");
+      setCustomSpotifyClientSecretInput("••••••••••••••••");
+      window.setTimeout(() => setSpotifyCustomFeedback("idle"), 3500);
+      refreshSpotifyStatus();
+    } catch (err) {
+      setSpotifyCustomFeedback("error");
+      setSpotifyCustomError(typeof err === "string" ? err : "Failed to save custom Spotify credentials");
+      window.setTimeout(() => setSpotifyCustomFeedback("idle"), 4000);
+    } finally {
+      setIsSavingSpotifyCustom(false);
+    }
+  };
+
+  const handleDeleteCustomSpotifyCredentials = async () => {
+    try {
+      await invoke("delete_spotify_client_credentials");
+      setHasCustomSpotifyCreds(false);
+      setCustomSpotifyClientIdInput("");
+      setCustomSpotifyClientSecretInput("");
+      refreshSpotifyStatus();
     } catch (e) {
       console.error(e);
     }
@@ -1482,6 +1644,190 @@ function App() {
                                               type="button"
                                               className="calendar-clear-custom-btn"
                                               onClick={handleDeleteCustomCalendarCredentials}
+                                            >
+                                              Remove custom credentials and revert to default
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="auth-field-divider" />
+
+                                    {/* Spotify Connector Section */}
+                                    <div className="auth-field-header">
+                                      <label className="auth-field-label">
+                                        Spotify Connector
+                                      </label>
+                                      {spotifyOAuthFeedback === "connecting" && (
+                                        <span className="auth-status-badge connecting">Opening browser...</span>
+                                      )}
+                                      {spotifyOAuthFeedback === "connected" && (
+                                        <span className="auth-status-badge saved">Connected ✓</span>
+                                      )}
+                                      {spotifyOAuthFeedback === "error" && (
+                                        <span className="auth-status-badge error">{spotifyOAuthError || "Failed to authorize"}</span>
+                                      )}
+                                      {spotifyConnected && spotifyOAuthFeedback === "idle" && (
+                                        <span className="auth-status-badge connected">Connected ✓</span>
+                                      )}
+                                    </div>
+
+                                    <p className="auth-field-desc">
+                                      Connects AIDEN to your Spotify library to play songs, find playlists, queue albums, and control playback hands-free.
+                                    </p>
+
+                                    {/* Spotify Free Limitation Notice Banner */}
+                                    <div className="spotify-warning-banner">
+                                      <span style={{ fontSize: "16px", flexShrink: 0 }}>⚠️</span>
+                                      <div>
+                                        <strong>Spotify Free Notice:</strong> Spotify's official Web API limits remote playback control to <strong>Spotify Premium</strong> accounts. Free users may experience playback restrictions or errors when issuing direct play commands. We strongly recommend <strong>Spotify Premium</strong> for seamless hands-free playback.
+                                      </div>
+                                    </div>
+
+                                    <div className="calendar-connector-block" style={{ marginTop: "12px" }}>
+                                      {!spotifyConnected ? (
+                                        <div className="calendar-connect-action-row">
+                                          <button
+                                            type="button"
+                                            className="calendar-connect-btn spotify-btn"
+                                            onClick={handleStartSpotifyOAuth}
+                                            disabled={isStartingSpotifyOAuth || !hasSpotifyClientConfig}
+                                          >
+                                            <svg className="calendar-btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                                              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+                                            </svg>
+                                            {isStartingSpotifyOAuth ? "Waiting for authorization in browser..." : "Connect with Spotify"}
+                                          </button>
+                                          {!hasSpotifyClientConfig && (
+                                            <p className="auth-field-desc" style={{ color: "#ef4444", marginTop: "6px" }}>
+                                              ⚠️ No Spotify Developer credentials found. Configure Custom Credentials below or set SPOTIFY_CLIENT_ID in backend/.env.
+                                            </p>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="calendar-connected-card">
+                                          <div className="calendar-connected-info">
+                                            <svg className="calendar-btn-icon" viewBox="0 0 24 24" fill="currentColor" style={{ color: "#1ed760" }}>
+                                              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+                                            </svg>
+                                            <div>
+                                              <div className="calendar-account-email" style={{ display: "flex", alignItems: "center" }}>
+                                                <span>{spotifyDisplayName || spotifyEmail || "Spotify Account Connected"}</span>
+                                                {spotifyProduct && (
+                                                  <span className={`spotify-product-tag ${spotifyProduct.toLowerCase() === "premium" ? "premium" : "free"}`}>
+                                                    {spotifyProduct.toLowerCase() === "premium" ? "Premium" : "Free"}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <span className="calendar-source-tag">
+                                                {spotifyClientSource === "custom" ? "Custom Developer App" : "Standard Client"}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            className="calendar-disconnect-btn"
+                                            onClick={handleDisconnectSpotify}
+                                          >
+                                            Disconnect
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {/* Custom Spotify Developer Credentials Accordion Toggle */}
+                                      <button
+                                        type="button"
+                                        className="calendar-custom-toggle-btn"
+                                        onClick={() => setShowCustomSpotifyCreds(!showCustomSpotifyCreds)}
+                                      >
+                                        <span>{showCustomSpotifyCreds ? "▾" : "▸"}</span>
+                                        <span>Custom Spotify Developer Credentials {hasCustomSpotifyCreds ? "(Configured)" : "(Optional)"}</span>
+                                      </button>
+
+                                      {showCustomSpotifyCreds && (
+                                        <div className="calendar-custom-panel">
+                                          <p className="auth-field-desc">
+                                            Bring your own Spotify Developer Client ID & Secret from developer.spotify.com/dashboard to manage under your private developer quota. Ensure Redirect URI includes <code>http://127.0.0.1:8888/callback</code>.
+                                          </p>
+
+                                          <div className="gmail-input-field">
+                                            <label className="auth-sub-label" htmlFor="spotify-custom-client-id">
+                                              Client ID
+                                            </label>
+                                            <input
+                                              id="spotify-custom-client-id"
+                                              type="text"
+                                              className="auth-key-input"
+                                              placeholder="Spotify Client ID"
+                                              value={customSpotifyClientIdInput}
+                                              onChange={(e) => {
+                                                setCustomSpotifyClientIdInput(e.target.value);
+                                                if (spotifyCustomFeedback !== "idle") setSpotifyCustomFeedback("idle");
+                                              }}
+                                              spellCheck={false}
+                                            />
+                                          </div>
+
+                                          <div className="gmail-input-field">
+                                            <label className="auth-sub-label" htmlFor="spotify-custom-client-secret">
+                                              Client Secret
+                                            </label>
+                                            <div className="auth-input-row">
+                                              <input
+                                                id="spotify-custom-client-secret"
+                                                type="password"
+                                                className="auth-key-input"
+                                                placeholder={hasCustomSpotifyCreds ? "••••••••••••••••" : "Spotify Client Secret"}
+                                                value={customSpotifyClientSecretInput}
+                                                onFocus={() => {
+                                                  if (customSpotifyClientSecretInput === "••••••••••••••••") {
+                                                    setCustomSpotifyClientSecretInput("");
+                                                  }
+                                                }}
+                                                onBlur={() => {
+                                                  if (customSpotifyClientSecretInput.trim() === "" && hasCustomSpotifyCreds) {
+                                                    setCustomSpotifyClientSecretInput("••••••••••••••••");
+                                                  }
+                                                }}
+                                                onChange={(e) => {
+                                                  setCustomSpotifyClientSecretInput(e.target.value);
+                                                  if (spotifyCustomFeedback !== "idle") setSpotifyCustomFeedback("idle");
+                                                }}
+                                                spellCheck={false}
+                                                autoComplete="off"
+                                              />
+
+                                              <button
+                                                type="button"
+                                                className={`auth-save-btn ${spotifyCustomFeedback === "saved" ? "saved" : ""}`}
+                                                onClick={handleSaveCustomSpotifyCredentials}
+                                                disabled={
+                                                  isSavingSpotifyCustom ||
+                                                  !customSpotifyClientIdInput.trim() ||
+                                                  !customSpotifyClientSecretInput.trim() ||
+                                                  customSpotifyClientSecretInput === "••••••••••••••••"
+                                                }
+                                              >
+                                                {isSavingSpotifyCustom
+                                                  ? "Saving..."
+                                                  : spotifyCustomFeedback === "saved"
+                                                    ? "Saved"
+                                                    : "Save"}
+                                              </button>
+                                            </div>
+                                            {spotifyCustomFeedback === "error" && (
+                                              <span className="auth-status-badge error" style={{ alignSelf: "flex-start", marginTop: "4px" }}>
+                                                {spotifyCustomError || "Failed to save custom credentials"}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {hasCustomSpotifyCreds && (
+                                            <button
+                                              type="button"
+                                              className="calendar-clear-custom-btn"
+                                              onClick={handleDeleteCustomSpotifyCredentials}
                                             >
                                               Remove custom credentials and revert to default
                                             </button>

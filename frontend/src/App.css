@@ -1280,6 +1280,65 @@ html, body, #root {
   color: #dc2626;
 }
 
+/* Spotify Connector Specific Styles */
+.bottom-tray.dark .calendar-connect-btn.spotify-btn:hover:not(:disabled) {
+  background: rgba(30, 215, 96, 0.16);
+  border-color: rgba(30, 215, 96, 0.38);
+  box-shadow: 0 4px 16px rgba(30, 215, 96, 0.25);
+  color: #1ed760;
+}
+
+.bottom-tray.light .calendar-connect-btn.spotify-btn:hover:not(:disabled) {
+  background: #f0fdf4;
+  border-color: rgba(30, 215, 96, 0.4);
+  box-shadow: 0 4px 12px rgba(30, 215, 96, 0.15);
+  color: #15803d;
+}
+
+.spotify-warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  color: #f59e0b;
+}
+
+.bottom-tray.dark .spotify-warning-banner {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: #fbbf24;
+}
+
+.spotify-product-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.spotify-product-tag.premium {
+  background: rgba(30, 215, 96, 0.16);
+  color: #1ed760;
+  border: 1px solid rgba(30, 215, 96, 0.35);
+}
+
+.spotify-product-tag.free {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
 
 /* ==========================================================================
    MISSING OPENAI KEY CENTERED TOAST / ONBOARDING CARD
