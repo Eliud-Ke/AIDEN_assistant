@@ -105,7 +105,8 @@ def get_live_location() -> str:
         if not Geolocator:
             return {"error": "WinRT geolocation module not available"}
         try:
-            print(">> [LOCATION] Querying Windows Native Geolocation (Wi-Fi Triangulation)...")
+            print(
+                ">> [LOCATION] Querying Windows Native Geolocation (Wi-Fi Triangulation)...")
             geolocator = Geolocator()
             access_status = await Geolocator.request_access_async()
             if access_status != GeolocationAccessStatus.ALLOWED:
@@ -134,13 +135,15 @@ def get_live_location() -> str:
                     geo_data = asyncio.run(fetch_windows_location())
                 except RuntimeError:
                     loop = asyncio.get_event_loop()
-                    geo_data = loop.run_until_complete(fetch_windows_location())
+                    geo_data = loop.run_until_complete(
+                        fetch_windows_location())
             except Exception as e:
                 geo_data = {"error": str(e)}
 
         # Fallback to IP-based Geolocation if Windows Location is disabled or fails
         if not geo_data or "error" in geo_data:
-            print(">> [LOCATION] Windows GPS unavailable; falling back to IP Geolocation...")
+            print(
+                ">> [LOCATION] Windows GPS unavailable; falling back to IP Geolocation...")
             try:
                 ip_res = requests.get("http://ip-api.com/json/", timeout=4.0)
                 if ip_res.status_code == 200:
@@ -156,7 +159,8 @@ def get_live_location() -> str:
                 print(f">> [LOCATION] IP fallback failed: {ip_e}")
 
         if not geo_data or "error" in geo_data:
-            err_msg = geo_data.get("error", "Unknown error") if geo_data else "Failed to retrieve coordinates"
+            err_msg = geo_data.get(
+                "error", "Unknown error") if geo_data else "Failed to retrieve coordinates"
             return f"System Error retrieving location: {err_msg}"
 
         lat = geo_data["lat"]
@@ -184,7 +188,8 @@ def get_live_location() -> str:
         # Derive clean display title for the UI card
         clean_title = "My Location"
         if readable_address and readable_address != f"{lat:.4f}, {lon:.4f}":
-            parts = [p.strip() for p in readable_address.split(",") if p.strip()]
+            parts = [p.strip()
+                     for p in readable_address.split(",") if p.strip()]
             if len(parts) >= 2:
                 clean_title = f"{parts[0]}, {parts[1]}"
             elif len(parts) == 1:
@@ -863,8 +868,6 @@ def get_bible_passage(reference: str, translation: str = "web") -> str:
         return f"❌ Error executing Bible lookup: {str(e)}"
 
 
-
-
 # ---------------------------------------------------------
 # 19. GROUNDED WEB SEARCH TOOL (OPENAI REAL-TIME RESPONSES)
 # ---------------------------------------------------------
@@ -884,9 +887,11 @@ def grounded_web_search(query: str, search_context: str = "low") -> str:
 
         client = OpenAI(api_key=api_key)
 
-        depth = search_context.lower() if search_context in ["low", "medium", "high"] else "low"
+        depth = search_context.lower() if search_context in [
+            "low", "medium", "high"] else "low"
 
-        print(f"   [WEB SEARCH]: Querying live web via gpt-6-luna (Depth: {depth}): '{query}'")
+        print(
+            f"   [WEB SEARCH]: Querying live web via gpt-6-luna (Depth: {depth}): '{query}'")
 
         resp = client.responses.create(
             model="gpt-6-luna",
@@ -928,7 +933,8 @@ def grounded_web_search(query: str, search_context: str = "low") -> str:
                 unique_sources.append(cit)
 
         formatted_sources = (
-            "\n".join([f"• [{s['title']}]({s['url']})" for s in unique_sources])
+            "\n".join(
+                [f"• [{s['title']}]({s['url']})" for s in unique_sources])
             if unique_sources
             else "None explicitly provided."
         )
