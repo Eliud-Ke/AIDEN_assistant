@@ -2559,7 +2559,7 @@ export const ChatPillWindow: React.FC = () => {
       setTurns([]);
       followupThinkingPromptRef.current = null;
       setFollowupThinkingPrompt(null);
-      setActiveUiTag("THINKING");
+      setActiveUiTag("Thinking");
       setIsMaxHeight(false);
     } else {
       // Turn 2+: Follow-up query -> expand window to max luxury height, spawn follow-up bubble + in-stream thinking loader!

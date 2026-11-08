@@ -93,54 +93,54 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
 # ⚡ THE STATUS DICTIONARY (Minimalist Text Only)
 TOOL_STATUS_MAP = {
     # System Hardware & Settings
-    "get_system_telemetry": "CHECKING VITALS",
-    "get_active_windows": "SCANNING SCREEN",
-    "set_system_brightness": "ADJUSTING BRIGHTNESS",
-    "manage_system_power": "SYSTEM OVERRIDE",
-    "open_windows_setting": "OPENING SETTINGS",
-    "manage_recycle_bin": "MANAGING RECYCLE BIN",
+    "get_system_telemetry": "Checking vitals",
+    "get_active_windows": "Scanning screen",
+    "set_system_brightness": "Adjusting brightness",
+    "manage_system_power": "System override",
+    "open_windows_setting": "Opening settings",
+    "manage_recycle_bin": "Managing recycle bin",
 
     # Utilities & OS Apps
-    "get_current_time_date": "CHECKING CLOCK",
-    "get_live_location": "ACQUIRING GPS",
-    "get_weather_forecast": "CHECKING WEATHER",
-    "get_bible_passage": "READING SCRIPTURE",
-    "launch_app": "OPENING APP",
-    "close_application": "CLOSING APP",
-    "list_installed_apps": "SCANNING REGISTRY",
-    "open_in_browser": "OPENING BROWSER",
+    "get_current_time_date": "Checking clock",
+    "get_live_location": "Acquiring GPS",
+    "get_weather_forecast": "Checking weather",
+    "get_bible_passage": "Reading scripture",
+    "launch_app": "Opening app",
+    "close_application": "Closing app",
+    "list_installed_apps": "Scanning registry",
+    "open_in_browser": "Opening browser",
 
     # Media & Volume (System Level)
-    "get_currently_playing": "CHECKING MEDIA",
-    "control_media_playback": "CONTROLLING MEDIA",
-    "set_system_volume": "ADJUSTING VOLUME",
+    "get_currently_playing": "Checking media",
+    "control_media_playback": "Controlling media",
+    "set_system_volume": "Adjusting volume",
 
     # Web & Grounding
-    "grounded_web_search": "SEARCHING THE WEB",
+    "grounded_web_search": "Searching the web",
 
     # Gmail Connector Tools
-    "gmail_list_unread_emails": "CHECKING UNREAD",
-    "gmail_search_emails": "SEARCHING INBOX",
-    "gmail_read_email": "READING EMAIL",
-    "gmail_draft_email": "CREATING DRAFT",
-    "gmail_send_email": "SENDING EMAIL",
-    "gmail_reply_email": "REPLYING TO EMAIL",
-    "gmail_mark_emails_as_read": "MARKING AS READ",
-    "gmail_archive_email": "ARCHIVING EMAIL",
+    "gmail_list_unread_emails": "Checking unread",
+    "gmail_search_emails": "Searching inbox",
+    "gmail_read_email": "Reading email",
+    "gmail_draft_email": "Creating draft",
+    "gmail_send_email": "Sending email",
+    "gmail_reply_email": "Replying to email",
+    "gmail_mark_emails_as_read": "Marking as read",
+    "gmail_archive_email": "Archiving email",
 
     # Google Calendar Connector Tools
-    "calendar_get_agenda": "CHECKING AGENDA",
-    "calendar_create_event": "SCHEDULING EVENT",
-    "calendar_search_events": "SEARCHING CALENDAR",
-    "calendar_update_event": "UPDATING EVENT",
-    "calendar_delete_event": "CANCELING EVENT",
-    "calendar_check_availability": "CHECKING SCHEDULE",
+    "calendar_get_agenda": "Checking agenda",
+    "calendar_create_event": "Scheduling event",
+    "calendar_search_events": "Searching calendar",
+    "calendar_update_event": "Updating event",
+    "calendar_delete_event": "Canceling event",
+    "calendar_check_availability": "Checking schedule",
 
     # Spotify Connector Tools
-    "spotify_check_active_device": "CHECKING DEVICES",
-    "spotify_get_current_playback": "CHECKING TRACK",
-    "spotify_set_playback_mode": "UPDATING PLAYBACK",
-    "spotify_save_track": "SAVING TRACK",
+    "spotify_check_active_device": "Checking devices",
+    "spotify_get_current_playback": "Checking track",
+    "spotify_set_playback_mode": "Updating playback",
+    "spotify_save_track": "Saving track",
 }
 
 # ---------------------------------------------------------
@@ -221,7 +221,7 @@ def execute_and_intercept(tc_id, func_name, arguments_str):
                 print(f"   🔌 [MCP HANDSHAKE] Mounting connector stack: {resolved_key}")
                 active_connectors.add(resolved_key)
                 display_name = CONNECTORS_SCHEMA[resolved_key].get("display_name", resolved_key.upper())
-                server.broadcast_ui_tag(f"CONNECTING TO {display_name.upper()}", connector=resolved_key)
+                server.broadcast_ui_tag(f"Connecting to {display_name}", connector=resolved_key)
                 time.sleep(1.5)  # Deliberate 1500ms dwell time for natural connection perception
 
     try:
@@ -450,7 +450,7 @@ async def main_loop():
             # --- STANDARD AI PROCESSING ---
             print(f"\n☁️ [OPENAI CLOUD] THINKING...")
             active_turn_connectors.clear()
-            await server.broadcast_ui_tag_async("THINKING")
+            await server.broadcast_ui_tag_async("Thinking")
 
             try:
                 # ⚡ DYNAMIC CONSCIOUSNESS READ (EVERY TURN) - Instant RAM Access
@@ -615,9 +615,9 @@ async def main_loop():
                                     if func_name != "connect_service":
                                         status_payload = (
                                             TOOL_STATUS_MAP.get(
-                                                live_tool_names[0], "PROCESSING")
+                                                live_tool_names[0], "Processing")
                                             if len(live_tool_names) == 1
-                                            else "PARALLEL PROCESSING"
+                                            else "Processing tasks"
                                         )
                                         print(f"\n⚡ [STATUS]: {status_payload}")
                                         tool_conn = get_connector_for_tool(func_name)
@@ -653,7 +653,7 @@ async def main_loop():
                                             active_turn_connectors.add(svc)
                                             if svc not in active_connectors:
                                                 disp = CONNECTORS_SCHEMA.get(svc, {}).get("display_name", svc.upper())
-                                                status_payload = f"CONNECTING TO {disp.upper()}"
+                                                status_payload = f"Connecting to {disp}"
                                                 print(f"\n⚡ [STATUS]: {status_payload}")
                                                 await server.broadcast_ui_tag_async(status_payload, connector=svc)
 
