@@ -260,13 +260,34 @@ def resolve_or_activate_device(target_device: Optional[str] = None, timeout_seco
 
 def get_or_resolve_device_id() -> Optional[str]:
     """
-    Returns the cached device ID if recent, otherwise verifies or activates
-    a Spotify Connect device using resolve_or_activate_device().
+    Returns the currently active Spotify device ID.
+    Queries Spotify to find the active player; if none is active, activates an idle device.
     """
     global _active_device_state
-    dev_id = _active_device_state.get("device_id")
-    if dev_id:
-        return dev_id
+
+    # 1. Quick check against live Spotify player/devices
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        res = requests.get(f"{SPOTIFY_API_BASE}/me/player/devices", headers=headers, timeout=4)
+        if res.status_code == 200:
+            devices = res.json().get("devices", [])
+            active_dev = next((d for d in devices if d.get("is_active")), None)
+            if active_dev:
+                dev_id = active_dev["id"]
+                _active_device_state = {
+                    "device_id": dev_id,
+                    "device_name": active_dev.get("name", "Active Device"),
+                    "device_type": active_dev.get("type", "Speaker"),
+                    "volume_percent": active_dev.get("volume_percent", 80),
+                    "supports_volume": active_dev.get("supports_volume", True),
+                    "updated_at": time.time(),
+                }
+                return dev_id
+    except Exception:
+        pass
+
+    # 2. If no device is currently active, activate or wake up
     res = resolve_or_activate_device(timeout_seconds=8.0)
     return res.get("device_id") if res.get("ok") else None
 
@@ -309,9 +330,8 @@ def spotify_check_active_device(target_device: str = "") -> str:
 
 def spotify_play(query: str = "", context_type: str = "") -> str:
     """
-    Plays music on Spotify. If a query is provided (e.g. 'Starboy', 'Kendrick Lamar',
-    'chill lofi playlist'), searches Spotify and starts streaming the best match.
-    If no query is provided, unpauses/resumes the current playback.
+    Resumes Spotify music playback on the active device.
+    Strictly unpauses/resumes the current queue or track.
     """
     try:
         token = get_valid_token()
@@ -319,117 +339,29 @@ def spotify_play(query: str = "", context_type: str = "") -> str:
         dev_id = get_or_resolve_device_id()
 
         device_param = f"?device_id={dev_id}" if dev_id else ""
+        url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
+        res = requests.put(url, headers=headers, json={}, timeout=8)
 
-        # Case A: Resume playback (no search query)
-        if not query.strip():
-            url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
-            res = requests.put(url, headers=headers, json={}, timeout=8)
-            
-            if res.status_code in [200, 204]:
-                dev_name = _active_device_state.get("device_name", "your device")
-                return f"Resumed Spotify playback on {dev_name}."
-            
-            # Retry if no active device error
-            if res.status_code == 404:
-                _active_device_state["device_id"] = None
-                dev_id = get_or_resolve_device_id()
-                if dev_id:
-                    res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={dev_id}", headers=headers, json={}, timeout=8)
-                    if res2.status_code in [200, 204]:
-                        return f"Resumed Spotify playback on {_active_device_state.get('device_name', 'your device')}."
-            
-            # Handle already playing or restrictions
-            if res.status_code == 403:
-                return "Spotify is already playing or playback is restricted on this device."
-            
-            return "Could not resume Spotify playback. No active song is in the queue to resume."
+        if res.status_code in [200, 204]:
+            dev_name = _active_device_state.get("device_name", "your device")
+            return f"Resumed Spotify playback on {dev_name}."
 
-        # Case B: Search and play specific track / album / artist / playlist
-        clean_query = query.strip()
-        search_types = "track,album,playlist,artist"
-        if context_type.lower() in ["album", "playlist", "artist", "track"]:
-            search_types = context_type.lower()
+        # Retry if device was idle
+        if res.status_code == 404:
+            res_wake = resolve_or_activate_device(timeout_seconds=6.0)
+            if res_wake.get("ok"):
+                new_id = res_wake.get("device_id")
+                res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={new_id}", headers=headers, json={}, timeout=8)
+                if res2.status_code in [200, 204]:
+                    return f"Resumed Spotify playback on {res_wake.get('device_name', 'your device')}."
 
-        search_url = f"{SPOTIFY_API_BASE}/search"
-        s_res = requests.get(
-            search_url,
-            headers=headers,
-            params={"q": clean_query, "type": search_types, "limit": 1},
-            timeout=8
-        )
-        if s_res.status_code != 200:
-            return f"Error searching Spotify for '{clean_query}': {s_res.status_code}."
+        if res.status_code == 403:
+            return "Spotify is already playing or playback is restricted on this device."
 
-        s_data = s_res.json()
-        tracks = s_data.get("tracks", {}).get("items", [])
-        albums = s_data.get("albums", {}).get("items", [])
-        playlists = s_data.get("playlists", {}).get("items", [])
-        artists = s_data.get("artists", {}).get("items", [])
-
-        play_payload = {}
-        announcement = ""
-
-        # Priority resolution
-        if context_type.lower() == "album" and albums:
-            album = albums[0]
-            play_payload = {"context_uri": album["uri"]}
-            artist_name = album.get("artists", [{}])[0].get("name", "Unknown Artist")
-            announcement = f"Now playing album '{album['name']}' by {artist_name}."
-        elif context_type.lower() == "playlist" and playlists:
-            pl = playlists[0]
-            play_payload = {"context_uri": pl["uri"]}
-            announcement = f"Now playing playlist '{pl['name']}'."
-        elif context_type.lower() == "artist" and artists:
-            art = artists[0]
-            play_payload = {"context_uri": art["uri"]}
-            announcement = f"Now streaming music by {art['name']}."
-        elif tracks:
-            trk = tracks[0]
-            play_payload = {"uris": [trk["uri"]]}
-            artist_name = ", ".join(a.get("name", "") for a in trk.get("artists", []))
-            announcement = f"Now playing '{trk['name']}' by {artist_name}."
-        elif albums:
-            album = albums[0]
-            play_payload = {"context_uri": album["uri"]}
-            artist_name = album.get("artists", [{}])[0].get("name", "Unknown Artist")
-            announcement = f"Now playing album '{album['name']}' by {artist_name}."
-        elif playlists:
-            pl = playlists[0]
-            play_payload = {"context_uri": pl["uri"]}
-            announcement = f"Now playing playlist '{pl['name']}'."
-        elif artists:
-            art = artists[0]
-            play_payload = {"context_uri": art["uri"]}
-            announcement = f"Now streaming music by {art['name']}."
-        else:
-            return f"Could not find any music matching '{clean_query}' on Spotify."
-
-        # Send Play command
-        play_url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
-        p_res = requests.put(play_url, headers=headers, json=play_payload, timeout=8)
-
-        if p_res.status_code in [200, 204]:
-            dev_name = _active_device_state.get("device_name")
-            target_str = f" on {dev_name}" if dev_name else ""
-            return f"{announcement[:-1]}{target_str}."
-
-        # Retry once if device dropped
-        if p_res.status_code == 404:
-            _active_device_state["device_id"] = None
-            dev_id = get_or_resolve_device_id()
-            if dev_id:
-                p_res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={dev_id}", headers=headers, json=play_payload, timeout=8)
-                if p_res2.status_code in [200, 204]:
-                    dev_name = _active_device_state.get("device_name", "your device")
-                    return f"{announcement[:-1]} on {dev_name}."
-
-        if p_res.status_code == 403:
-            return f"{announcement} Note: Playback requires Spotify Premium or an active Spotify client."
-
-        return f"Spotify command error ({p_res.status_code}): {p_res.text}"
+        return "Could not resume Spotify playback. No active song is in the queue to resume."
 
     except Exception as e:
-        return f"Error executing Spotify play: {str(e)}"
+        return f"Error resuming Spotify playback: {str(e)}"
 
 
 # ---------------------------------------------------------------------------
@@ -593,35 +525,64 @@ def spotify_set_volume(volume_percent: Optional[int] = None, relative_change: Op
     try:
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-        dev_id = get_or_resolve_device_id()
-        device_param = f"&device_id={dev_id}" if dev_id else ""
 
-        target_vol = volume_percent
+        # 1. Fetch live connected devices to verify active player and hardware capabilities
+        dev_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/devices", headers=headers, timeout=5)
+        devices = dev_res.json().get("devices", []) if dev_res.status_code == 200 else []
 
+        active_dev = next((d for d in devices if d.get("is_active")), None)
+        if not active_dev:
+            # Wake or resolve standby device
+            res_wake = resolve_or_activate_device(timeout_seconds=6.0)
+            if not res_wake.get("ok"):
+                return "No active Spotify player found. Please start Spotify or select a playback device."
+            dev_id = res_wake.get("device_id")
+            dev_name = res_wake.get("device_name", "your device")
+            dev_type = res_wake.get("device_type", "Computer")
+            cur_vol = res_wake.get("volume_percent", 50)
+            supports_vol = True
+        else:
+            dev_id = active_dev.get("id")
+            dev_name = active_dev.get("name", "your device")
+            dev_type = active_dev.get("type", "Speaker")
+            cur_vol = active_dev.get("volume_percent", 50)
+            supports_vol = active_dev.get("supports_volume", True)
+
+        # 2. Guard against devices that don't support Connect volume (e.g. mobile smartphones)
+        if not supports_vol:
+            return (
+                f"{dev_name} ({dev_type}) does not support remote volume adjustments via Spotify Connect. "
+                "Please use the physical volume buttons on your device."
+            )
+
+        # 3. Compute target volume
         if relative_change is not None:
-            # Query current volume
-            cur_vol = 50
-            try:
-                p_res = requests.get(f"{SPOTIFY_API_BASE}/me/player", headers=headers, timeout=6)
-                if p_res.status_code == 200:
-                    cur_vol = p_res.json().get("device", {}).get("volume_percent", 50)
-            except Exception:
-                pass
-            target_vol = cur_vol + relative_change
-
-        if target_vol is None:
-            target_vol = 70
+            target_vol = (cur_vol if cur_vol is not None else 50) + relative_change
+        elif volume_percent is not None:
+            target_vol = volume_percent
+        else:
+            target_vol = 50
 
         target_vol = max(0, min(100, int(target_vol)))
 
+        # 4. Issue Volume Change to Spotify API
+        device_param = f"&device_id={dev_id}" if dev_id else ""
         url = f"{SPOTIFY_API_BASE}/me/player/volume?volume_percent={target_vol}{device_param}"
         res = requests.put(url, headers=headers, timeout=6)
 
         if res.status_code in [200, 204]:
+            # Wait 350ms for Spotify Connect audio sync
+            time.sleep(0.35)
             _active_device_state["volume_percent"] = target_vol
-            return f"Spotify volume set to {target_vol}%."
+            _active_device_state["device_id"] = dev_id
+            _active_device_state["device_name"] = dev_name
+            _active_device_state["device_type"] = dev_type
+            return f"Spotify volume set to {target_vol}% on {dev_name}."
 
-        return f"Could not set Spotify volume ({res.status_code})."
+        if res.status_code == 403:
+            return f"Spotify volume adjustment is restricted on {dev_name}."
+
+        return f"Could not set Spotify volume on {dev_name} ({res.status_code})."
 
     except Exception as e:
         return f"Error setting volume: {str(e)}"
@@ -758,24 +719,10 @@ SPOTIFY_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "spotify_play",
-            "description": (
-                "Plays music on Spotify. If a search query is provided (e.g. 'Starboy', 'Kendrick Lamar', "
-                "'chill lofi playlist'), searches Spotify and streams the best match. If no query is provided, "
-                "resumes currently paused playback."
-            ),
+            "description": "Resumes or unpauses Spotify playback on the active player device.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Song title, artist name, album, or playlist to search and play. Leave empty to resume current playback.",
-                    },
-                    "context_type": {
-                        "type": "string",
-                        "enum": ["track", "album", "artist", "playlist"],
-                        "description": "Optional type of music item to prioritize.",
-                    },
-                },
+                "properties": {},
                 "additionalProperties": False,
             },
         },

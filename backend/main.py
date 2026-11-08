@@ -138,7 +138,7 @@ TOOL_STATUS_MAP = {
 
     # Spotify Connector Tools
     "spotify_check_active_device": "CHECKING DEVICES",
-    "spotify_play": "STREAMING MUSIC",
+    "spotify_play": "PLAYING MUSIC",
     "spotify_pause": "PAUSING SPOTIFY",
     "spotify_next": "SKIPPING TRACK",
     "spotify_previous": "PREVIOUS TRACK",
