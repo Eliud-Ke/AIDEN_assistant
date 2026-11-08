@@ -3,14 +3,15 @@ AIDEN SPOTIFY CONNECTOR TOOLS
 Direct integration with Spotify Web API.
 Features zero external SDK bloat (pure Python requests).
 Handles in-memory access token caching, silent refresh via Windows Credential Manager,
-and automatic background hot-loading of the Spotify client on Windows.
+automatic background hot-loading of the Spotify client on Windows, and comprehensive
+playback and library controls.
 """
 
 import os
 import sys
 import time
 import subprocess
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import requests
 from auth_manager import (
@@ -54,7 +55,7 @@ def get_valid_token(force_refresh: bool = False) -> str:
     if not token:
         raise ValueError(
             "Spotify is not connected yet. Please click 'Connect with Spotify' "
-            "in the bottom tray under Settings -> Authentication -> Spotify."
+            "under Settings -> Authentication -> Spotify."
         )
 
     _cached_access_token = token
@@ -129,7 +130,6 @@ def resolve_or_activate_device(target_device: Optional[str] = None, timeout_seco
         try:
             res = requests.get(f"{SPOTIFY_API_BASE}/me/player/devices", headers=headers, timeout=6)
             if res.status_code == 401:
-                # Token expired in flight, refresh and retry once
                 token = get_valid_token(force_refresh=True)
                 headers["Authorization"] = f"Bearer {token}"
                 continue
@@ -152,7 +152,6 @@ def resolve_or_activate_device(target_device: Optional[str] = None, timeout_seco
 
             if matched:
                 dev_id = matched["id"]
-                # If not currently active, transfer playback to activate it
                 if not matched.get("is_active"):
                     try:
                         requests.put(
@@ -204,7 +203,6 @@ def resolve_or_activate_device(target_device: Optional[str] = None, timeout_seco
 
         # 3. Devices found, but none is active (e.g. PC or Phone is idle/asleep)
         if devices:
-            # Prefer Computer / Laptop device, else first device
             chosen = next((d for d in devices if d.get("type", "").lower() == "computer"), devices[0])
             dev_id = chosen["id"]
             try:
@@ -260,8 +258,21 @@ def resolve_or_activate_device(target_device: Optional[str] = None, timeout_seco
     }
 
 
+def get_or_resolve_device_id() -> Optional[str]:
+    """
+    Returns the cached device ID if recent, otherwise verifies or activates
+    a Spotify Connect device using resolve_or_activate_device().
+    """
+    global _active_device_state
+    dev_id = _active_device_state.get("device_id")
+    if dev_id:
+        return dev_id
+    res = resolve_or_activate_device(timeout_seconds=8.0)
+    return res.get("device_id") if res.get("ok") else None
+
+
 # ---------------------------------------------------------------------------
-# The Primary Tool: spotify_check_active_device
+# 1. Device Verification & Hot-Load
 # ---------------------------------------------------------------------------
 
 def spotify_check_active_device(target_device: str = "") -> str:
@@ -284,8 +295,6 @@ def spotify_check_active_device(target_device: str = "") -> str:
         if res["ok"]:
             dev_name = res["device_name"]
             dev_type = res["device_type"]
-            vol = res["volume_percent"]
-            
             return f"Spotify is active and ready on {dev_name} ({dev_type})."
         else:
             return res["message"]
@@ -295,11 +304,431 @@ def spotify_check_active_device(target_device: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
+# 2. Playback: Play / Resume / Search & Stream
+# ---------------------------------------------------------------------------
+
+def spotify_play(query: str = "", context_type: str = "") -> str:
+    """
+    Plays music on Spotify. If a query is provided (e.g. 'Starboy', 'Kendrick Lamar',
+    'chill lofi playlist'), searches Spotify and starts streaming the best match.
+    If no query is provided, unpauses/resumes the current playback.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+
+        device_param = f"?device_id={dev_id}" if dev_id else ""
+
+        # Case A: Resume playback (no search query)
+        if not query.strip():
+            url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
+            res = requests.put(url, headers=headers, json={}, timeout=8)
+            
+            if res.status_code in [200, 204]:
+                dev_name = _active_device_state.get("device_name", "your device")
+                return f"Resumed Spotify playback on {dev_name}."
+            
+            # Retry if no active device error
+            if res.status_code == 404:
+                _active_device_state["device_id"] = None
+                dev_id = get_or_resolve_device_id()
+                if dev_id:
+                    res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={dev_id}", headers=headers, json={}, timeout=8)
+                    if res2.status_code in [200, 204]:
+                        return f"Resumed Spotify playback on {_active_device_state.get('device_name', 'your device')}."
+            
+            # Handle already playing or restrictions
+            if res.status_code == 403:
+                return "Spotify is already playing or playback is restricted on this device."
+            
+            return "Could not resume Spotify playback. No active song is in the queue to resume."
+
+        # Case B: Search and play specific track / album / artist / playlist
+        clean_query = query.strip()
+        search_types = "track,album,playlist,artist"
+        if context_type.lower() in ["album", "playlist", "artist", "track"]:
+            search_types = context_type.lower()
+
+        search_url = f"{SPOTIFY_API_BASE}/search"
+        s_res = requests.get(
+            search_url,
+            headers=headers,
+            params={"q": clean_query, "type": search_types, "limit": 1},
+            timeout=8
+        )
+        if s_res.status_code != 200:
+            return f"Error searching Spotify for '{clean_query}': {s_res.status_code}."
+
+        s_data = s_res.json()
+        tracks = s_data.get("tracks", {}).get("items", [])
+        albums = s_data.get("albums", {}).get("items", [])
+        playlists = s_data.get("playlists", {}).get("items", [])
+        artists = s_data.get("artists", {}).get("items", [])
+
+        play_payload = {}
+        announcement = ""
+
+        # Priority resolution
+        if context_type.lower() == "album" and albums:
+            album = albums[0]
+            play_payload = {"context_uri": album["uri"]}
+            artist_name = album.get("artists", [{}])[0].get("name", "Unknown Artist")
+            announcement = f"Now playing album '{album['name']}' by {artist_name}."
+        elif context_type.lower() == "playlist" and playlists:
+            pl = playlists[0]
+            play_payload = {"context_uri": pl["uri"]}
+            announcement = f"Now playing playlist '{pl['name']}'."
+        elif context_type.lower() == "artist" and artists:
+            art = artists[0]
+            play_payload = {"context_uri": art["uri"]}
+            announcement = f"Now streaming music by {art['name']}."
+        elif tracks:
+            trk = tracks[0]
+            play_payload = {"uris": [trk["uri"]]}
+            artist_name = ", ".join(a.get("name", "") for a in trk.get("artists", []))
+            announcement = f"Now playing '{trk['name']}' by {artist_name}."
+        elif albums:
+            album = albums[0]
+            play_payload = {"context_uri": album["uri"]}
+            artist_name = album.get("artists", [{}])[0].get("name", "Unknown Artist")
+            announcement = f"Now playing album '{album['name']}' by {artist_name}."
+        elif playlists:
+            pl = playlists[0]
+            play_payload = {"context_uri": pl["uri"]}
+            announcement = f"Now playing playlist '{pl['name']}'."
+        elif artists:
+            art = artists[0]
+            play_payload = {"context_uri": art["uri"]}
+            announcement = f"Now streaming music by {art['name']}."
+        else:
+            return f"Could not find any music matching '{clean_query}' on Spotify."
+
+        # Send Play command
+        play_url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
+        p_res = requests.put(play_url, headers=headers, json=play_payload, timeout=8)
+
+        if p_res.status_code in [200, 204]:
+            dev_name = _active_device_state.get("device_name")
+            target_str = f" on {dev_name}" if dev_name else ""
+            return f"{announcement[:-1]}{target_str}."
+
+        # Retry once if device dropped
+        if p_res.status_code == 404:
+            _active_device_state["device_id"] = None
+            dev_id = get_or_resolve_device_id()
+            if dev_id:
+                p_res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={dev_id}", headers=headers, json=play_payload, timeout=8)
+                if p_res2.status_code in [200, 204]:
+                    dev_name = _active_device_state.get("device_name", "your device")
+                    return f"{announcement[:-1]} on {dev_name}."
+
+        if p_res.status_code == 403:
+            return f"{announcement} Note: Playback requires Spotify Premium or an active Spotify client."
+
+        return f"Spotify command error ({p_res.status_code}): {p_res.text}"
+
+    except Exception as e:
+        return f"Error executing Spotify play: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 3. Playback: Pause
+# ---------------------------------------------------------------------------
+
+def spotify_pause() -> str:
+    """
+    Pauses Spotify playback on the active device.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+        device_param = f"?device_id={dev_id}" if dev_id else ""
+
+        url = f"{SPOTIFY_API_BASE}/me/player/pause{device_param}"
+        res = requests.put(url, headers=headers, timeout=6)
+
+        if res.status_code in [200, 204]:
+            return "Paused Spotify playback."
+
+        if res.status_code == 403:
+            return "Spotify is already paused."
+
+        return f"Could not pause Spotify: {res.status_code}."
+
+    except Exception as e:
+        return f"Error pausing Spotify: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 4. Playback: Next & Previous
+# ---------------------------------------------------------------------------
+
+def spotify_next() -> str:
+    """
+    Skips to the next track in the Spotify queue.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+        device_param = f"?device_id={dev_id}" if dev_id else ""
+
+        url = f"{SPOTIFY_API_BASE}/me/player/next{device_param}"
+        res = requests.post(url, headers=headers, timeout=6)
+
+        if res.status_code in [200, 204]:
+            # Wait a moment for Spotify track state to transition
+            time.sleep(0.4)
+            try:
+                cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=5)
+                if cur_res.status_code == 200:
+                    item = cur_res.json().get("item", {})
+                    if item:
+                        t_name = item.get("name", "Next track")
+                        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+                        return f"Skipped to '{t_name}' by {artists}."
+            except Exception:
+                pass
+            return "Skipped to the next track."
+
+        return f"Could not skip track ({res.status_code})."
+
+    except Exception as e:
+        return f"Error skipping track: {str(e)}"
+
+
+def spotify_previous() -> str:
+    """
+    Returns to the previous track or restarts the current track on Spotify.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+        device_param = f"?device_id={dev_id}" if dev_id else ""
+
+        url = f"{SPOTIFY_API_BASE}/me/player/previous{device_param}"
+        res = requests.post(url, headers=headers, timeout=6)
+
+        if res.status_code in [200, 204]:
+            time.sleep(0.4)
+            try:
+                cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=5)
+                if cur_res.status_code == 200:
+                    item = cur_res.json().get("item", {})
+                    if item:
+                        t_name = item.get("name", "Previous track")
+                        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+                        return f"Playing '{t_name}' by {artists}."
+            except Exception:
+                pass
+            return "Playing previous track."
+
+        return f"Could not return to previous track ({res.status_code})."
+
+    except Exception as e:
+        return f"Error playing previous track: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 5. Playback: Get Currently Playing
+# ---------------------------------------------------------------------------
+
+def spotify_get_current_playback() -> str:
+    """
+    Retrieves information about what track is currently playing on Spotify,
+    including title, artist(s), album, and playback state.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+
+        url = f"{SPOTIFY_API_BASE}/me/player/currently-playing"
+        res = requests.get(url, headers=headers, timeout=6)
+
+        if res.status_code == 204 or not res.text:
+            return "Nothing is currently playing on Spotify."
+
+        if res.status_code != 200:
+            return f"Could not get current track ({res.status_code})."
+
+        data = res.json()
+        item = data.get("item")
+        if not item:
+            return "Nothing is currently playing on Spotify."
+
+        track_name = item.get("name", "Unknown Track")
+        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+        album = item.get("album", {}).get("name", "Unknown Album")
+        is_playing = data.get("is_playing", False)
+        
+        # Calculate human-friendly time formatting
+        prog_ms = data.get("progress_ms", 0)
+        dur_ms = item.get("duration_ms", 0)
+        prog_min = prog_ms // 60000
+        prog_sec = (prog_ms % 60000) // 1000
+        dur_min = dur_ms // 60000
+        dur_sec = (dur_ms % 60000) // 1000
+
+        state = "Playing" if is_playing else "Paused"
+        time_str = f"{prog_min}:{prog_sec:02d} / {dur_min}:{dur_sec:02d}"
+
+        return f"{state}: '{track_name}' by {artists} from the album '{album}' ({time_str})."
+
+    except Exception as e:
+        return f"Error checking current playback: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 6. Volume Control
+# ---------------------------------------------------------------------------
+
+def spotify_set_volume(volume_percent: Optional[int] = None, relative_change: Optional[int] = None) -> str:
+    """
+    Adjusts the volume of the active Spotify player.
+    Accepts either an absolute volume percentage (0-100) or a relative change (+15, -20).
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+        device_param = f"&device_id={dev_id}" if dev_id else ""
+
+        target_vol = volume_percent
+
+        if relative_change is not None:
+            # Query current volume
+            cur_vol = 50
+            try:
+                p_res = requests.get(f"{SPOTIFY_API_BASE}/me/player", headers=headers, timeout=6)
+                if p_res.status_code == 200:
+                    cur_vol = p_res.json().get("device", {}).get("volume_percent", 50)
+            except Exception:
+                pass
+            target_vol = cur_vol + relative_change
+
+        if target_vol is None:
+            target_vol = 70
+
+        target_vol = max(0, min(100, int(target_vol)))
+
+        url = f"{SPOTIFY_API_BASE}/me/player/volume?volume_percent={target_vol}{device_param}"
+        res = requests.put(url, headers=headers, timeout=6)
+
+        if res.status_code in [200, 204]:
+            _active_device_state["volume_percent"] = target_vol
+            return f"Spotify volume set to {target_vol}%."
+
+        return f"Could not set Spotify volume ({res.status_code})."
+
+    except Exception as e:
+        return f"Error setting volume: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 7. Playback Modes: Shuffle & Repeat
+# ---------------------------------------------------------------------------
+
+def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optional[str] = None) -> str:
+    """
+    Sets shuffle mode (True/False) or repeat mode ('track', 'context', or 'off') on Spotify.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+        device_param = f"&device_id={dev_id}" if dev_id else ""
+
+        results = []
+
+        if shuffle is not None:
+            s_val = "true" if shuffle else "false"
+            res = requests.put(f"{SPOTIFY_API_BASE}/me/player/shuffle?state={s_val}{device_param}", headers=headers, timeout=6)
+            if res.status_code in [200, 204]:
+                results.append(f"Shuffle {'enabled' if shuffle else 'disabled'}")
+
+        if repeat_mode is not None:
+            rep_clean = repeat_mode.strip().lower()
+            if rep_clean in ["track", "song", "one"]:
+                state_val = "track"
+            elif rep_clean in ["context", "album", "playlist", "all"]:
+                state_val = "context"
+            else:
+                state_val = "off"
+
+            res = requests.put(f"{SPOTIFY_API_BASE}/me/player/repeat?state={state_val}{device_param}", headers=headers, timeout=6)
+            if res.status_code in [200, 204]:
+                results.append(f"Repeat set to '{state_val}'")
+
+        if results:
+            return f"{', '.join(results)} on Spotify."
+
+        return "No playback mode change was specified."
+
+    except Exception as e:
+        return f"Error setting playback mode: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 8. Library: Like / Unlike Current Track
+# ---------------------------------------------------------------------------
+
+def spotify_save_track(action: str = "like") -> str:
+    """
+    Saves ('like') or removes ('unlike') the currently playing track to/from
+    the user's Liked Songs library on Spotify.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 1. Get currently playing track ID
+        cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=6)
+        if cur_res.status_code != 200 or not cur_res.text:
+            return "No track is currently playing on Spotify to save."
+
+        cur_data = cur_res.json()
+        item = cur_data.get("item")
+        if not item or not item.get("id"):
+            return "No track is currently playing on Spotify to save."
+
+        track_id = item["id"]
+        track_name = item.get("name", "Current track")
+        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+
+        is_unlike = action.strip().lower() in ["unlike", "remove", "delete"]
+
+        if is_unlike:
+            res = requests.delete(f"{SPOTIFY_API_BASE}/me/tracks?ids={track_id}", headers=headers, timeout=6)
+            if res.status_code in [200, 204]:
+                return f"Removed '{track_name}' by {artists} from your Liked Songs."
+            return f"Could not remove track ({res.status_code})."
+        else:
+            res = requests.put(f"{SPOTIFY_API_BASE}/me/tracks?ids={track_id}", headers=headers, timeout=6)
+            if res.status_code in [200, 204]:
+                return f"Saved '{track_name}' by {artists} to your Liked Songs."
+            return f"Could not save track ({res.status_code})."
+
+    except Exception as e:
+        return f"Error saving track: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
 # Schema & Registry Exports
 # ---------------------------------------------------------------------------
 
 SPOTIFY_TOOLS = {
     "spotify_check_active_device": spotify_check_active_device,
+    "spotify_play": spotify_play,
+    "spotify_pause": spotify_pause,
+    "spotify_next": spotify_next,
+    "spotify_previous": spotify_previous,
+    "spotify_get_current_playback": spotify_get_current_playback,
+    "spotify_set_volume": spotify_set_volume,
+    "spotify_set_playback_mode": spotify_set_playback_mode,
+    "spotify_save_track": spotify_save_track,
 }
 
 SPOTIFY_TOOLS_SCHEMA = [
@@ -324,5 +753,140 @@ SPOTIFY_TOOLS_SCHEMA = [
                 "additionalProperties": False,
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_play",
+            "description": (
+                "Plays music on Spotify. If a search query is provided (e.g. 'Starboy', 'Kendrick Lamar', "
+                "'chill lofi playlist'), searches Spotify and streams the best match. If no query is provided, "
+                "resumes currently paused playback."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Song title, artist name, album, or playlist to search and play. Leave empty to resume current playback.",
+                    },
+                    "context_type": {
+                        "type": "string",
+                        "enum": ["track", "album", "artist", "playlist"],
+                        "description": "Optional type of music item to prioritize.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_pause",
+            "description": "Pauses currently active music playback on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_next",
+            "description": "Skips to the next song in the Spotify playback queue.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_previous",
+            "description": "Goes back to the previous track or restarts the current song on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_get_current_playback",
+            "description": "Returns details about what song is currently playing on Spotify, including track title, artist, album, and progress.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_set_volume",
+            "description": "Adjusts Spotify playback volume. Accepts an absolute percentage (0-100) or relative adjustment (e.g. +15 or -20).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "volume_percent": {
+                        "type": "integer",
+                        "description": "Target volume percentage from 0 to 100.",
+                    },
+                    "relative_change": {
+                        "type": "integer",
+                        "description": "Relative adjustment (e.g. +10 to raise, -15 to lower).",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_set_playback_mode",
+            "description": "Sets Spotify shuffle mode (on/off) or repeat mode ('track', 'context', or 'off').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "shuffle": {
+                        "type": "boolean",
+                        "description": "Enable (true) or disable (false) shuffle mode.",
+                    },
+                    "repeat_mode": {
+                        "type": "string",
+                        "enum": ["track", "context", "off"],
+                        "description": "Repeat mode: 'track' to loop single song, 'context' to repeat album/playlist, 'off' to disable repeat.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_save_track",
+            "description": "Saves ('like') or removes ('unlike') the currently playing song to/from the user's Liked Songs library on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["like", "unlike"],
+                        "description": "Whether to 'like' (save) or 'unlike' (remove) the currently playing track.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
 ]

@@ -647,6 +647,7 @@ def run_spotify_oauth_flow(port: int = 8888, timeout: int = 120) -> dict:
         "user-read-playback-state "
         "user-read-currently-playing "
         "user-library-read "
+        "user-library-modify "
         "playlist-read-private "
         "playlist-read-collaborative "
         "user-read-email "
