@@ -93,54 +93,54 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
 # ⚡ THE STATUS DICTIONARY (Minimalist Text Only)
 TOOL_STATUS_MAP = {
     # System Hardware & Settings
-    "get_system_telemetry": "Checking vitals",
-    "get_active_windows": "Scanning screen",
-    "set_system_brightness": "Adjusting brightness",
-    "manage_system_power": "System override",
-    "open_windows_setting": "Opening settings",
-    "manage_recycle_bin": "Managing recycle bin",
+    "get_system_telemetry": "Checking system vitals",
+    "get_active_windows": "Scanning active windows",
+    "set_system_brightness": "Adjusting screen brightness",
+    "manage_system_power": "Applying power settings",
+    "open_windows_setting": "Opening Windows settings",
+    "manage_recycle_bin": "Emptying the recycle bin",
 
     # Utilities & OS Apps
-    "get_current_time_date": "Checking clock",
-    "get_live_location": "Acquiring GPS",
-    "get_weather_forecast": "Checking weather",
-    "get_bible_passage": "Reading scripture",
-    "launch_app": "Opening app",
-    "close_application": "Closing app",
-    "list_installed_apps": "Scanning registry",
-    "open_in_browser": "Opening browser",
+    "get_current_time_date": "Checking the time and date",
+    "get_live_location": "Acquiring your location",
+    "get_weather_forecast": "Checking the weather",
+    "get_bible_passage": "Fetching Bible scripture",
+    "launch_app": "Launching application",
+    "close_application": "Closing application",
+    "list_installed_apps": "Searching installed apps",
+    "open_in_browser": "Opening link in browser",
 
     # Media & Volume (System Level)
-    "get_currently_playing": "Checking media",
-    "control_media_playback": "Controlling media",
-    "set_system_volume": "Adjusting volume",
+    "get_currently_playing": "Checking current media",
+    "control_media_playback": "Updating media playback",
+    "set_system_volume": "Adjusting system volume",
 
     # Web & Grounding
     "grounded_web_search": "Searching the web",
 
     # Gmail Connector Tools
-    "gmail_list_unread_emails": "Checking unread",
-    "gmail_search_emails": "Searching inbox",
-    "gmail_read_email": "Reading email",
-    "gmail_draft_email": "Creating draft",
-    "gmail_send_email": "Sending email",
-    "gmail_reply_email": "Replying to email",
-    "gmail_mark_emails_as_read": "Marking as read",
-    "gmail_archive_email": "Archiving email",
+    "gmail_list_unread_emails": "Checking unread emails",
+    "gmail_search_emails": "Searching your inbox",
+    "gmail_read_email": "Reading email message",
+    "gmail_draft_email": "Drafting an email",
+    "gmail_send_email": "Sending your email",
+    "gmail_reply_email": "Sending your reply",
+    "gmail_mark_emails_as_read": "Marking emails as read",
+    "gmail_archive_email": "Archiving email message",
 
     # Google Calendar Connector Tools
-    "calendar_get_agenda": "Checking agenda",
-    "calendar_create_event": "Scheduling event",
-    "calendar_search_events": "Searching calendar",
-    "calendar_update_event": "Updating event",
-    "calendar_delete_event": "Canceling event",
-    "calendar_check_availability": "Checking schedule",
+    "calendar_get_agenda": "Checking your agenda",
+    "calendar_create_event": "Scheduling your event",
+    "calendar_search_events": "Searching your calendar",
+    "calendar_update_event": "Updating your event",
+    "calendar_delete_event": "Canceling your event",
+    "calendar_check_availability": "Checking schedule availability",
 
     # Spotify Connector Tools
-    "spotify_check_active_device": "Checking devices",
-    "spotify_get_current_playback": "Checking track",
-    "spotify_set_playback_mode": "Updating playback",
-    "spotify_save_track": "Saving track",
+    "spotify_check_active_device": "Checking Spotify devices",
+    "spotify_get_current_playback": "Checking what's playing",
+    "spotify_set_playback_mode": "Updating playback mode",
+    "spotify_save_track": "Saving song to library",
 }
 
 # ---------------------------------------------------------
@@ -615,7 +615,7 @@ async def main_loop():
                                     if func_name != "connect_service":
                                         status_payload = (
                                             TOOL_STATUS_MAP.get(
-                                                live_tool_names[0], "Processing")
+                                                live_tool_names[0], "Processing request")
                                             if len(live_tool_names) == 1
                                             else "Processing tasks"
                                         )
