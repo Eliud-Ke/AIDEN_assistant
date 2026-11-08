@@ -325,147 +325,7 @@ def spotify_check_active_device(target_device: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Playback: Play / Resume / Search & Stream
-# ---------------------------------------------------------------------------
-
-def spotify_play(query: str = "", context_type: str = "") -> str:
-    """
-    Resumes Spotify music playback on the active device.
-    Strictly unpauses/resumes the current queue or track.
-    """
-    try:
-        token = get_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        dev_id = get_or_resolve_device_id()
-
-        device_param = f"?device_id={dev_id}" if dev_id else ""
-        url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
-        res = requests.put(url, headers=headers, json={}, timeout=8)
-
-        if res.status_code in [200, 204]:
-            dev_name = _active_device_state.get("device_name", "your device")
-            return f"Resumed Spotify playback on {dev_name}."
-
-        # Retry if device was idle
-        if res.status_code == 404:
-            res_wake = resolve_or_activate_device(timeout_seconds=6.0)
-            if res_wake.get("ok"):
-                new_id = res_wake.get("device_id")
-                res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={new_id}", headers=headers, json={}, timeout=8)
-                if res2.status_code in [200, 204]:
-                    return f"Resumed Spotify playback on {res_wake.get('device_name', 'your device')}."
-
-        if res.status_code == 403:
-            return "Spotify is already playing or playback is restricted on this device."
-
-        return "Could not resume Spotify playback. No active song is in the queue to resume."
-
-    except Exception as e:
-        return f"Error resuming Spotify playback: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# 3. Playback: Pause
-# ---------------------------------------------------------------------------
-
-def spotify_pause() -> str:
-    """
-    Pauses Spotify playback on the active device.
-    """
-    try:
-        token = get_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        dev_id = get_or_resolve_device_id()
-        device_param = f"?device_id={dev_id}" if dev_id else ""
-
-        url = f"{SPOTIFY_API_BASE}/me/player/pause{device_param}"
-        res = requests.put(url, headers=headers, timeout=6)
-
-        if res.status_code in [200, 204]:
-            return "Paused Spotify playback."
-
-        if res.status_code == 403:
-            return "Spotify is already paused."
-
-        return f"Could not pause Spotify: {res.status_code}."
-
-    except Exception as e:
-        return f"Error pausing Spotify: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# 4. Playback: Next & Previous
-# ---------------------------------------------------------------------------
-
-def spotify_next() -> str:
-    """
-    Skips to the next track in the Spotify queue.
-    """
-    try:
-        token = get_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        dev_id = get_or_resolve_device_id()
-        device_param = f"?device_id={dev_id}" if dev_id else ""
-
-        url = f"{SPOTIFY_API_BASE}/me/player/next{device_param}"
-        res = requests.post(url, headers=headers, timeout=6)
-
-        if res.status_code in [200, 204]:
-            # Wait a moment for Spotify track state to transition
-            time.sleep(0.4)
-            try:
-                cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=5)
-                if cur_res.status_code == 200:
-                    item = cur_res.json().get("item", {})
-                    if item:
-                        t_name = item.get("name", "Next track")
-                        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-                        return f"Skipped to '{t_name}' by {artists}."
-            except Exception:
-                pass
-            return "Skipped to the next track."
-
-        return f"Could not skip track ({res.status_code})."
-
-    except Exception as e:
-        return f"Error skipping track: {str(e)}"
-
-
-def spotify_previous() -> str:
-    """
-    Returns to the previous track or restarts the current track on Spotify.
-    """
-    try:
-        token = get_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        dev_id = get_or_resolve_device_id()
-        device_param = f"?device_id={dev_id}" if dev_id else ""
-
-        url = f"{SPOTIFY_API_BASE}/me/player/previous{device_param}"
-        res = requests.post(url, headers=headers, timeout=6)
-
-        if res.status_code in [200, 204]:
-            time.sleep(0.4)
-            try:
-                cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=5)
-                if cur_res.status_code == 200:
-                    item = cur_res.json().get("item", {})
-                    if item:
-                        t_name = item.get("name", "Previous track")
-                        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-                        return f"Playing '{t_name}' by {artists}."
-            except Exception:
-                pass
-            return "Playing previous track."
-
-        return f"Could not return to previous track ({res.status_code})."
-
-    except Exception as e:
-        return f"Error playing previous track: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# 5. Playback: Get Currently Playing
+# 2. Track Metadata: Get Currently Playing
 # ---------------------------------------------------------------------------
 
 def spotify_get_current_playback() -> str:
@@ -514,82 +374,7 @@ def spotify_get_current_playback() -> str:
 
 
 # ---------------------------------------------------------------------------
-# 6. Volume Control
-# ---------------------------------------------------------------------------
-
-def spotify_set_volume(volume_percent: Optional[int] = None, relative_change: Optional[int] = None) -> str:
-    """
-    Adjusts the volume of the active Spotify player.
-    Accepts either an absolute volume percentage (0-100) or a relative change (+15, -20).
-    """
-    try:
-        token = get_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-
-        # 1. Fetch live connected devices to verify active player and hardware capabilities
-        dev_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/devices", headers=headers, timeout=5)
-        devices = dev_res.json().get("devices", []) if dev_res.status_code == 200 else []
-
-        active_dev = next((d for d in devices if d.get("is_active")), None)
-        if not active_dev:
-            # Wake or resolve standby device
-            res_wake = resolve_or_activate_device(timeout_seconds=6.0)
-            if not res_wake.get("ok"):
-                return "No active Spotify player found. Please start Spotify or select a playback device."
-            dev_id = res_wake.get("device_id")
-            dev_name = res_wake.get("device_name", "your device")
-            dev_type = res_wake.get("device_type", "Computer")
-            cur_vol = res_wake.get("volume_percent", 50)
-            supports_vol = True
-        else:
-            dev_id = active_dev.get("id")
-            dev_name = active_dev.get("name", "your device")
-            dev_type = active_dev.get("type", "Speaker")
-            cur_vol = active_dev.get("volume_percent", 50)
-            supports_vol = active_dev.get("supports_volume", True)
-
-        # 2. Guard against devices that don't support Connect volume (e.g. mobile smartphones)
-        if not supports_vol:
-            return (
-                f"{dev_name} ({dev_type}) does not support remote volume adjustments via Spotify Connect. "
-                "Please use the physical volume buttons on your device."
-            )
-
-        # 3. Compute target volume
-        if relative_change is not None:
-            target_vol = (cur_vol if cur_vol is not None else 50) + relative_change
-        elif volume_percent is not None:
-            target_vol = volume_percent
-        else:
-            target_vol = 50
-
-        target_vol = max(0, min(100, int(target_vol)))
-
-        # 4. Issue Volume Change to Spotify API
-        device_param = f"&device_id={dev_id}" if dev_id else ""
-        url = f"{SPOTIFY_API_BASE}/me/player/volume?volume_percent={target_vol}{device_param}"
-        res = requests.put(url, headers=headers, timeout=6)
-
-        if res.status_code in [200, 204]:
-            # Wait 350ms for Spotify Connect audio sync
-            time.sleep(0.35)
-            _active_device_state["volume_percent"] = target_vol
-            _active_device_state["device_id"] = dev_id
-            _active_device_state["device_name"] = dev_name
-            _active_device_state["device_type"] = dev_type
-            return f"Spotify volume set to {target_vol}% on {dev_name}."
-
-        if res.status_code == 403:
-            return f"Spotify volume adjustment is restricted on {dev_name}."
-
-        return f"Could not set Spotify volume on {dev_name} ({res.status_code})."
-
-    except Exception as e:
-        return f"Error setting volume: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# 7. Playback Modes: Shuffle & Repeat
+# 3. Playback Modes: Shuffle & Repeat
 # ---------------------------------------------------------------------------
 
 def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optional[str] = None) -> str:
@@ -633,7 +418,7 @@ def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optio
 
 
 # ---------------------------------------------------------------------------
-# 8. Library: Like / Unlike Current Track
+# 4. Library: Like / Unlike Current Track
 # ---------------------------------------------------------------------------
 
 def spotify_save_track(action: str = "like") -> str:
@@ -682,12 +467,7 @@ def spotify_save_track(action: str = "like") -> str:
 
 SPOTIFY_TOOLS = {
     "spotify_check_active_device": spotify_check_active_device,
-    "spotify_play": spotify_play,
-    "spotify_pause": spotify_pause,
-    "spotify_next": spotify_next,
-    "spotify_previous": spotify_previous,
     "spotify_get_current_playback": spotify_get_current_playback,
-    "spotify_set_volume": spotify_set_volume,
     "spotify_set_playback_mode": spotify_set_playback_mode,
     "spotify_save_track": spotify_save_track,
 }
@@ -718,80 +498,11 @@ SPOTIFY_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "spotify_play",
-            "description": "Resumes or unpauses Spotify playback on the active player device.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "spotify_pause",
-            "description": "Pauses currently active music playback on Spotify.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "spotify_next",
-            "description": "Skips to the next song in the Spotify playback queue.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "spotify_previous",
-            "description": "Goes back to the previous track or restarts the current song on Spotify.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "spotify_get_current_playback",
             "description": "Returns details about what song is currently playing on Spotify, including track title, artist, album, and progress.",
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "spotify_set_volume",
-            "description": "Adjusts Spotify playback volume. Accepts an absolute percentage (0-100) or relative adjustment (e.g. +15 or -20).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "volume_percent": {
-                        "type": "integer",
-                        "description": "Target volume percentage from 0 to 100.",
-                    },
-                    "relative_change": {
-                        "type": "integer",
-                        "description": "Relative adjustment (e.g. +10 to raise, -15 to lower).",
-                    },
-                },
                 "additionalProperties": False,
             },
         },

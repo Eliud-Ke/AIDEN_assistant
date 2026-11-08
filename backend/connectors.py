@@ -16,7 +16,7 @@ CONNECTORS_SCHEMA = {
     },
     "spotify": {
         "display_name": "Spotify",
-        "description": "Search tracks, playlists, and control Spotify music playback.",
+        "description": "Check active playback devices, inspect track details, toggle shuffle/repeat modes, and save songs to library.",
         "tools": tools_spotify.SPOTIFY_TOOLS_SCHEMA,
     },
     "google_calendar": {
