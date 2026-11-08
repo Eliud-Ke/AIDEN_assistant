@@ -286,12 +286,7 @@ def spotify_check_active_device(target_device: str = "") -> str:
             dev_type = res["device_type"]
             vol = res["volume_percent"]
             
-            # Emit structured acrylic UI tile tag
-            tile_tag = (
-                f'::spotify-device[{{"name": "{dev_name}", "type": "{dev_type}", '
-                f'"volume": {vol}, "is_active": true}}]::'
-            )
-            return f"Spotify is active and ready on **{dev_name}** ({dev_type}, Volume: {vol}%).\n\n{tile_tag}"
+            return f"Spotify is active and ready on {dev_name} ({dev_type})."
         else:
             return res["message"]
 

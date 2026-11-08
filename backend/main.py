@@ -135,6 +135,9 @@ TOOL_STATUS_MAP = {
     "calendar_update_event": "UPDATING EVENT",
     "calendar_delete_event": "CANCELING EVENT",
     "calendar_check_availability": "CHECKING SCHEDULE",
+
+    # Spotify Connector Tools
+    "spotify_check_active_device": "CHECKING DEVICES",
 }
 
 # ---------------------------------------------------------
