@@ -38,7 +38,7 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 560px;
+  max-width: 465px;
   transform: translateY(-22px) scale(0.96);
   opacity: 0;
   pointer-events: none;
@@ -98,7 +98,7 @@
    ========================================================================== */
 .siri-pill-capsule {
   width: 100%;
-  max-width: 560px;
+  max-width: 465px;
   min-height: 60px;
   height: auto;
   border-radius: 9999px; /* Pure capsule shape */
@@ -376,7 +376,7 @@
    ========================================================================== */
 .siri-card {
   width: 100%;
-  max-width: 560px;
+  max-width: 465px;
   min-height: 120px;
   max-height: 640px;
   border-radius: 28px; /* Large squircle corners */
@@ -2889,7 +2889,7 @@
 /* MODE 1: IDLE / INPUT */
 .siri-unified-pill.mode-idle {
   width: 100%;
-  max-width: 560px;
+  max-width: 465px;
   min-height: 60px;
   height: auto;
   border-radius: 9999px;
@@ -2962,7 +2962,7 @@
 
 @keyframes siriVoicePillMorph {
   0% {
-    max-width: 560px;
+    max-width: 465px;
     min-height: 60px;
     height: 60px;
     border-radius: 30px;
@@ -2971,7 +2971,7 @@
   }
   /* 1. Anticipation stretch: edges stretch out just a tiny bit */
   22% {
-    max-width: 585px;
+    max-width: 485px;
     min-height: 56px;
     height: 56px;
     border-radius: 28px;
@@ -3040,9 +3040,9 @@
     padding: 0;
     transform: scaleX(0.96) scaleY(1.04);
   }
-  /* 2. Explosive spring expansion: blooms outward past 560px */
+  /* 2. Explosive spring expansion: blooms outward past 465px */
   64% {
-    max-width: 585px;
+    max-width: 485px;
     min-height: 56px;
     height: 56px;
     border-radius: 28px;
@@ -3051,7 +3051,7 @@
   }
   /* 3. Elastic rebound cushion */
   84% {
-    max-width: 554px;
+    max-width: 460px;
     min-height: 61px;
     height: 61px;
     border-radius: 30px;
@@ -3060,7 +3060,7 @@
   }
   /* 4. Settles cleanly at standard idle search pill */
   100% {
-    max-width: 560px;
+    max-width: 465px;
     min-height: 60px;
     height: 60px;
     border-radius: 30px;
@@ -3145,7 +3145,7 @@
 /* MODE 2: THINKING (Full width capsule pill with left-aligned string orb and thinking shimmer) */
 .siri-unified-pill.mode-thinking {
   width: 100%;
-  max-width: 560px;
+  max-width: 465px;
   min-height: 60px;
   height: auto;
   border-radius: 9999px;
@@ -3212,7 +3212,7 @@
 /* MODE 3: RESPONDING (Expands back to full length and vertically into glass answer window) */
 .siri-unified-pill.mode-responding {
   width: 100%;
-  max-width: 560px;
+  max-width: 465px;
   min-height: 68px;
   height: auto;
   max-height: 620px;
@@ -3263,7 +3263,7 @@
 .siri-floating-close-btn {
   position: absolute;
   top: 16px;
-  right: 113px;
+  right: 18px;
   width: 48px;
   height: 48px;
   min-width: 48px;
@@ -3355,7 +3355,7 @@
   width: 100%;
   height: 24px;
   margin-bottom: 4px;
-  padding-right: 160px; /* Clearance for 48px floating minimize button */
+  padding-right: 56px; /* Clearance for 48px floating minimize button */
   box-sizing: border-box;
 }
 
@@ -3375,7 +3375,7 @@
   flex-direction: column;
   gap: 12px;
   /* Unhovered state: natural, compact padding */
-  padding: 8px 16px 10px 14px;
+  padding: 8px 0 10px 14px;
   scrollbar-width: none;
   -ms-overflow-style: none;
   /* Springy padding transition: pushes text down on hover, pulls back up on unhover */
@@ -3385,7 +3385,7 @@
 /* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar;
    applies colourless lens blur inside the exact 4 button shapes while keeping outside text razor-sharp */
 .siri-unified-pill.controls-visible .siri-unified-stream {
-  padding: 52px 18px 76px 14px;
+  padding: 52px 0 76px 14px;
   filter: url(#aiden-stream-lens-blur);
 }
 
@@ -3606,7 +3606,7 @@
 .siri-hover-followup-bar {
   position: absolute;
   left: 18px;
-  right: 113px;
+  right: 18px;
   bottom: 16px;
   z-index: 10;
   width: auto;

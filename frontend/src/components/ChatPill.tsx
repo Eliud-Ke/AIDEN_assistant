@@ -937,7 +937,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   // Track exact pixel dimensions of .siri-unified-stream so the SVG button-lens filter
   // blurs text ONLY inside the 4 clear-glass buttons while keeping text razor-sharp outside them
   const [streamBox, setStreamBox] = useState<{ w: number; h: number; topOffset: number }>({
-    w: 524,
+    w: 429,
     h: 360,
     topOffset: 0,
   });
@@ -950,7 +950,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     el.style.webkitMaskImage = "none";
 
     const updateBox = () => {
-      const w = el.clientWidth || 524;
+      const w = el.clientWidth || 429;
       const h = el.clientHeight || 360;
       const topOffset = 16 - el.offsetTop;
       setStreamBox((prev) =>
@@ -1068,9 +1068,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
-  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}"><circle cx="${streamBox.w - 119}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>${
+  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}"><circle cx="${streamBox.w - 24}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>${
     !voiceActive
-      ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 215)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 119}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
+      ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 120)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 24}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
       : ""
   }</svg>`;
   const lensMaskDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(lensMaskSvg)}`;
@@ -2124,7 +2124,11 @@ export const ChatPillWindow: React.FC = () => {
         hideTimerRef.current = null;
       }
       resetReplyState();
-      invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
+      invoke("set_chat_pill_state", { isAwake: true })
+        .then(() => {
+          requestAnimationFrame(() => measureAndSyncShape());
+        })
+        .catch(() => {});
     } else {
       // Immediately pass cursor events through so background clicks work while fading out
       invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});

@@ -239,7 +239,7 @@ fn shutdown_aiden(
             if let Ok(guard) = comp_state.0.lock() {
                 if let Some(host) = guard.as_ref() {
                     let _ = host.set_visible(false);
-                    let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                    let _ = host.update_shape(87.5, 18.0, 465.0, 60.0, 30.0);
                 }
             }
         }
@@ -278,7 +278,7 @@ fn restart_aiden(
             if let Ok(guard) = comp_state.0.lock() {
                 if let Some(host) = guard.as_ref() {
                     let _ = host.set_visible(false);
-                    let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                    let _ = host.update_shape(87.5, 18.0, 465.0, 60.0, 30.0);
                 }
             }
         }
@@ -964,9 +964,9 @@ fn set_chat_pill_size(
                             "responding" => {
                                 let card_h = (h - 70.0).max(60.0) as f32;
                                 let r = if card_h > 80.0 { 28.0 } else { 30.0 };
-                                (40.0f32, 18.0f32, 560.0f32, card_h, r)
+                                (87.5f32, 18.0f32, 465.0f32, card_h, r)
                             }
-                            _ => (40.0f32, 18.0f32, 560.0f32, 60.0f32, 30.0f32),
+                            _ => (87.5f32, 18.0f32, 465.0f32, 60.0f32, 30.0f32),
                         };
                         let _ = host.update_shape(offset_x, offset_y, shape_w, shape_h, radius);
                     }
@@ -999,7 +999,7 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
             if let Ok(guard) = comp_state.0.lock() {
                 if let Some(host) = guard.as_ref() {
                     let _ = host.set_visible(false);
-                    let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                    let _ = host.update_shape(87.5, 18.0, 465.0, 60.0, 30.0);
                 }
             }
         }
@@ -1027,11 +1027,11 @@ fn set_chat_pill_state(
                 if let Ok(guard) = comp_state.0.lock() {
                     if let Some(host) = guard.as_ref() {
                         let (w, h, r) = if is_exp {
-                            (560.0, 510.0, 28.0)
+                            (465.0, 510.0, 28.0)
                         } else {
-                            (560.0, 60.0, 30.0)
+                            (465.0, 60.0, 30.0)
                         };
-                        let _ = host.update_shape(40.0, 18.0, w, h, r);
+                        let _ = host.update_shape(87.5, 18.0, w, h, r);
                     }
                 }
             }
@@ -1046,7 +1046,7 @@ fn set_chat_pill_state(
                         if let Some(host) = guard.as_ref() {
                             let _ = host.set_visible(true);
                             if expanded != Some(true) {
-                                let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                                let _ = host.update_shape(87.5, 18.0, 465.0, 60.0, 30.0);
                             }
                         }
                     }
@@ -1066,7 +1066,7 @@ fn set_chat_pill_state(
                         if let Some(host) = guard.as_ref() {
                             // Immediately hide and reset the composition shape so no lingering blur box hangs in mid-air
                             let _ = host.set_visible(false);
-                            let _ = host.update_shape(40.0, 18.0, 560.0, 60.0, 30.0);
+                            let _ = host.update_shape(87.5, 18.0, 465.0, 60.0, 30.0);
                         }
                     }
                 }
@@ -1130,7 +1130,7 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 {
                     if let Ok(hwnd) = pill_win.hwnd() {
-                        match composition::CompositionHost::attach(hwnd, 40.0, 18.0, 560.0, 60.0, 30.0) {
+                        match composition::CompositionHost::attach(hwnd, 87.5, 18.0, 465.0, 60.0, 30.0) {
                             Ok(host) => {
                                 let comp_state = app.state::<CompositionState>();
                                 if let Ok(mut guard) = comp_state.0.lock() {
