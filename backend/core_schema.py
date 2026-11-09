@@ -218,24 +218,59 @@ CORE_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "control_media_playback",
-            "description": "Dispatches OS media playback controls (play, pause, stop, next, previous).",
+            "name": "media_play",
+            "description": "Resumes or starts playback on the currently active media player (Spotify, YouTube, browser, etc.).",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "enum": [
-                            "play",
-                            "pause",
-                            "stop",
-                            "next",
-                            "previous",
-                        ],
-                        "description": "Playback action.",
-                    }
-                },
-                "required": ["command"],
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_pause",
+            "description": "Pauses playback on the currently active media player (Spotify, YouTube, browser, etc.).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_next_track",
+            "description": "Skips to the next track in the currently active music or media playlist.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_previous_track",
+            "description": "Navigates back to the previous track in the playlist (jumps to the prior song, not just restarting the current one).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_restart_track",
+            "description": "Restarts the currently playing track from the beginning (0:00).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },

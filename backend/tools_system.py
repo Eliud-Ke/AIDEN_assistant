@@ -427,41 +427,123 @@ def get_currently_playing() -> str:
         return f"System Error reading media: {str(e)}"
 
 
-def control_media_playback(command: str) -> str:
-    """Controls the Windows media playback (play, pause, stop, next, previous)."""
+async def _get_active_media_session():
+    """Helper to retrieve the current Windows media session."""
+    if not MediaManager:
+        return None
+    sessions = await MediaManager.request_async()
+    return sessions.get_current_session()
+
+
+def _run_media_coroutine(coro):
+    """Helper to run async Windows media control coroutines safely."""
+    try:
+        return asyncio.run(coro)
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(coro)
+
+
+def media_play() -> str:
+    """Resumes or starts playback on the currently active media player (Spotify, YouTube, browser, etc.)."""
     if not MediaManager:
         return "Error: Windows SDK media controls are not installed."
 
-    async def _control(cmd):
-        sessions = await MediaManager.request_async()
-        current_session = sessions.get_current_session()
-        if not current_session:
-            return "Error: No active media session found to control."
-
-        cmd = cmd.lower().strip()
-        if cmd in ["play", "resume"]:
-            await current_session.try_play_async()
-            return "Media playback resumed."
-        elif cmd in ["pause", "stop"]:
-            await current_session.try_pause_async()
-            return "Media playback paused."
-        elif cmd in ["next", "skip"]:
-            await current_session.try_skip_next_async()
-            return "Skipped to the next track."
-        elif cmd in ["previous", "back"]:
-            await current_session.try_skip_previous_async()
-            return "Returned to the previous track."
-        else:
-            return f"Error: Unrecognized media command '{cmd}'."
+    async def _action():
+        session = await _get_active_media_session()
+        if not session:
+            return "No active media session found to play."
+        await session.try_play_async()
+        return "Media playback resumed."
 
     try:
-        try:
-            return asyncio.run(_control(command))
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(_control(command))
+        return _run_media_coroutine(_action())
     except Exception as e:
-        return f"System Error executing media command: {str(e)}"
+        return f"Error resuming media: {str(e)}"
+
+
+def media_pause() -> str:
+    """Pauses playback on the currently active media player (Spotify, YouTube, browser, etc.)."""
+    if not MediaManager:
+        return "Error: Windows SDK media controls are not installed."
+
+    async def _action():
+        session = await _get_active_media_session()
+        if not session:
+            return "No active media session found to pause."
+        await session.try_pause_async()
+        return "Media playback paused."
+
+    try:
+        return _run_media_coroutine(_action())
+    except Exception as e:
+        return f"Error pausing media: {str(e)}"
+
+
+def media_next_track() -> str:
+    """Skips to the next track in the currently active playlist or queue."""
+    if not MediaManager:
+        return "Error: Windows SDK media controls are not installed."
+
+    async def _action():
+        session = await _get_active_media_session()
+        if not session:
+            return "No active media session found to skip."
+        await session.try_skip_next_async()
+        return "Skipped to the next track."
+
+    try:
+        return _run_media_coroutine(_action())
+    except Exception as e:
+        return f"Error skipping to next track: {str(e)}"
+
+
+def media_previous_track() -> str:
+    """
+    Navigates back to the previous track in the playlist or queue.
+    Executes a rapid double-back command so the player actually returns to the prior track
+    rather than just restarting the currently playing song from 0:00.
+    """
+    if not MediaManager:
+        return "Error: Windows SDK media controls are not installed."
+
+    async def _action():
+        session = await _get_active_media_session()
+        if not session:
+            return "No active media session found."
+        # First press: resets playback head to 0:00
+        await session.try_skip_previous_async()
+        # 150ms debounce window satisfying Windows & Spotify double-tap threshold
+        await asyncio.sleep(0.15)
+        # Second press: jumps back to the prior track in queue
+        await session.try_skip_previous_async()
+        return "Returned to the previous track."
+
+    try:
+        return _run_media_coroutine(_action())
+    except Exception as e:
+        return f"Error returning to previous track: {str(e)}"
+
+
+def media_restart_track() -> str:
+    """
+    Restarts the currently playing track from the beginning (0:00).
+    Executes a single back command to seek the track back to its start.
+    """
+    if not MediaManager:
+        return "Error: Windows SDK media controls are not installed."
+
+    async def _action():
+        session = await _get_active_media_session()
+        if not session:
+            return "No active media session found."
+        await session.try_skip_previous_async()
+        return "Restarted the current track from the beginning."
+
+    try:
+        return _run_media_coroutine(_action())
+    except Exception as e:
+        return f"Error restarting track: {str(e)}"
 
 
 # ---------------------------------------------------------
@@ -972,7 +1054,11 @@ SYSTEM_TOOLS = {
     "open_windows_setting": open_windows_setting,
     "get_weather_forecast": get_weather_forecast,
     "get_currently_playing": get_currently_playing,
-    "control_media_playback": control_media_playback,
+    "media_play": media_play,
+    "media_pause": media_pause,
+    "media_next_track": media_next_track,
+    "media_previous_track": media_previous_track,
+    "media_restart_track": media_restart_track,
     "set_system_volume": set_system_volume,
     "open_in_browser": open_in_browser,
     "get_bible_passage": get_bible_passage

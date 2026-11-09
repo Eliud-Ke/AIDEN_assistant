@@ -112,7 +112,11 @@ TOOL_STATUS_MAP = {
 
     # Media & Volume (System Level)
     "get_currently_playing": "Checking current media",
-    "control_media_playback": "Updating media playback",
+    "media_play": "Resuming music",
+    "media_pause": "Pausing music",
+    "media_next_track": "Skipping track",
+    "media_previous_track": "Playing previous track",
+    "media_restart_track": "Restarting track",
     "set_system_volume": "Adjusting system volume",
 
     # Web & Grounding
