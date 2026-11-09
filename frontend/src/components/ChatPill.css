@@ -633,7 +633,7 @@
   line-height: 1.55;
   letter-spacing: 0.1px;
   color: #ffffff;
-  max-width: 415px;
+  max-width: 430px;
   word-break: break-word;
   white-space: pre-wrap;
   user-select: text;
@@ -1075,7 +1075,7 @@
 
 .siri-media-gallery.single-item .siri-media-card {
   flex: 0 0 auto;
-  width: 415px;
+  width: 430px;
   max-width: 100%;
   box-sizing: border-box;
   height: 240px;
@@ -1084,7 +1084,7 @@
 
 .siri-media-gallery.single-item.loading .siri-media-skeleton {
   flex: 0 0 auto;
-  width: 415px;
+  width: 430px;
   max-width: 100%;
   box-sizing: border-box;
   height: 240px;
@@ -1204,7 +1204,7 @@
 .siri-location-card {
   position: relative;
   width: 100%;
-  max-width: 415px;
+  max-width: 430px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   height: 250px;
@@ -1393,7 +1393,7 @@
    ========================================================================== */
 .siri-gmail-card {
   width: 100%;
-  max-width: 415px;
+  max-width: 430px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   border-radius: 24px;
@@ -1858,7 +1858,7 @@
    ========================================================================== */
 .siri-calendar-card {
   width: 100%;
-  max-width: 415px;
+  max-width: 430px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   border-radius: 24px;
@@ -2645,7 +2645,7 @@
    ========================================================================== */
 .siri-win-slider-pill {
   width: 100%;
-  max-width: 415px;
+  max-width: 430px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   height: 48px;
@@ -3375,7 +3375,7 @@
   flex-direction: column;
   gap: 12px;
   /* Unhovered state: natural, compact padding */
-  padding: 8px 1px 10px 14px;
+  padding: 8px 0 10px 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
   /* Springy padding transition: pushes text down on hover, pulls back up on unhover */
@@ -3385,7 +3385,7 @@
 /* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar;
    applies colourless lens blur inside the exact 4 button shapes while keeping outside text razor-sharp */
 .siri-unified-pill.controls-visible .siri-unified-stream {
-  padding: 52px 0 76px 14px;
+  padding: 52px 0 76px 0;
   filter: url(#aiden-stream-lens-blur);
 }
 
@@ -4547,7 +4547,7 @@
 .apple-weather-card {
   position: relative;
   width: 100%;
-  max-width: 415px;
+  max-width: 430px;
   box-sizing: border-box;
   height: 130px;
   border-radius: 26px;
