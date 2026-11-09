@@ -627,13 +627,15 @@
 .siri-assistant-reply {
   position: relative;
   align-self: flex-start;
+  width: 100%;
+  max-width: 422px;
+  box-sizing: border-box;
   padding-left: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.55;
   letter-spacing: 0.1px;
   color: #ffffff;
-  max-width: 430px;
   word-break: break-word;
   white-space: pre-wrap;
   user-select: text;
@@ -1075,7 +1077,7 @@
 
 .siri-media-gallery.single-item .siri-media-card {
   flex: 0 0 auto;
-  width: 430px;
+  width: 422px;
   max-width: 100%;
   box-sizing: border-box;
   height: 240px;
@@ -1084,7 +1086,7 @@
 
 .siri-media-gallery.single-item.loading .siri-media-skeleton {
   flex: 0 0 auto;
-  width: 430px;
+  width: 422px;
   max-width: 100%;
   box-sizing: border-box;
   height: 240px;
@@ -1204,7 +1206,7 @@
 .siri-location-card {
   position: relative;
   width: 100%;
-  max-width: 430px;
+  max-width: 422px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   height: 250px;
@@ -1212,14 +1214,14 @@
   overflow: hidden;
   background: #f4f3f0;
   border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.18), 0 2px 6px -2px rgba(0, 0, 0, 0.08);
   user-select: none;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .siri-location-card:hover {
   border-color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 14px 32px -6px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 26px -8px rgba(0, 0, 0, 0.24), 0 4px 10px -2px rgba(0, 0, 0, 0.1);
 }
 
 .siri-location-map {
@@ -1393,14 +1395,14 @@
    ========================================================================== */
 .siri-gmail-card {
   width: 100%;
-  max-width: 430px;
+  max-width: 422px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   border-radius: 24px;
   padding: 18px 18px 14px;
   background: linear-gradient(180deg, #fdfbf7 0%, #f7f3eb 100%);
   border: 1px solid rgba(115, 62, 10, 0.15);
-  box-shadow: 0 16px 40px -8px rgba(115, 62, 10, 0.14), 0 2px 10px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  box-shadow: 0 14px 32px -10px rgba(115, 62, 10, 0.16), 0 2px 6px -2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.95);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1858,7 +1860,7 @@
    ========================================================================== */
 .siri-calendar-card {
   width: 100%;
-  max-width: 430px;
+  max-width: 422px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   border-radius: 24px;
@@ -1866,8 +1868,8 @@
   background: linear-gradient(180deg, #fdfbf7 0%, #f7f3eb 100%);
   border: 1px solid rgba(115, 62, 10, 0.15);
   box-shadow: 
-    0 16px 36px -6px rgba(115, 62, 10, 0.16),
-    0 4px 12px rgba(0, 0, 0, 0.04),
+    0 14px 32px -10px rgba(115, 62, 10, 0.16),
+    0 2px 6px -2px rgba(0, 0, 0, 0.04),
     inset 0 1px 0 #ffffff;
   display: flex;
   flex-direction: column;
@@ -2645,7 +2647,7 @@
    ========================================================================== */
 .siri-win-slider-pill {
   width: 100%;
-  max-width: 430px;
+  max-width: 422px;
   box-sizing: border-box;
   margin: 10px 0 12px 0;
   height: 48px;
@@ -2657,7 +2659,7 @@
   user-select: none;
   background: rgba(26, 28, 32, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: 0 14px 32px -10px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   color: #ffffff;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
@@ -3374,8 +3376,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Unhovered state: natural, compact padding */
-  padding: 8px 0 10px 0;
+  /* Unhovered state: natural, compact padding with 3px side clearance */
+  padding: 8px 4px 10px 3px;
   scrollbar-width: none;
   -ms-overflow-style: none;
   /* Springy padding transition: pushes text down on hover, pulls back up on unhover */
@@ -3385,7 +3387,7 @@
 /* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar;
    applies colourless lens blur inside the exact 4 button shapes while keeping outside text razor-sharp */
 .siri-unified-pill.controls-visible .siri-unified-stream {
-  padding: 52px 0 76px 0;
+  padding: 52px 3px 76px 3px;
   filter: url(#aiden-stream-lens-blur);
 }
 
@@ -4547,7 +4549,7 @@
 .apple-weather-card {
   position: relative;
   width: 100%;
-  max-width: 430px;
+  max-width: 422px;
   box-sizing: border-box;
   height: 130px;
   border-radius: 26px;
@@ -4560,7 +4562,7 @@
   margin: 10px 0 12px 0;
   user-select: none;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
-  box-shadow: 0 12px 36px -10px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.6);
   transition: background 0.6s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.2s ease,
               box-shadow 0.2s ease;
@@ -4568,7 +4570,7 @@
 
 .apple-weather-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 16px 44px -10px rgba(0, 0, 0, 0.75);
+  box-shadow: 0 16px 38px -12px rgba(0, 0, 0, 0.75);
 }
 
 /* Atmospheric Smokey Clouds */
