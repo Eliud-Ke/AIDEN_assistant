@@ -1068,9 +1068,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
-  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}"><circle cx="${streamBox.w - 24}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>${
+  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}"><circle cx="${streamBox.w - 119}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>${
     !voiceActive
-      ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 120)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 24}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
+      ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 215)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 119}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
       : ""
   }</svg>`;
   const lensMaskDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(lensMaskSvg)}`;
