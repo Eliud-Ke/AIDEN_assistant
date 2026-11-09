@@ -1303,15 +1303,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             <div className="siri-thinking-content">
               <div className="siri-icon-morph-anchor">
                 <span
-                  className={`siri-string-orb thinking-orb ${isConnecting ? "is-imploded" : ""}`}
+                  className={`siri-apple-constellation ${isConnecting ? "is-imploded" : ""}`}
                   aria-hidden="true"
                 >
-                  <svg className="string-orb-svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                    <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                    <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                    <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                    <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
-                  </svg>
+                  <AppleConstellationSpinner />
                 </span>
                 {activeConnectorMeta && (
                   <div className={`siri-connector-sine-wrapper ${isConnecting ? "is-active" : ""}`}>
@@ -1366,15 +1361,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     <div className="siri-card-status-tag" key={activeUiTag}>
                       <div className="siri-icon-morph-anchor small">
                         <span
-                          className={`siri-string-orb ${isConnecting ? "is-imploded" : ""}`}
+                          className={`siri-apple-constellation small ${isConnecting ? "is-imploded" : ""}`}
                           aria-hidden="true"
                         >
-                          <svg className="string-orb-svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                            <ellipse className="orb-string orb-string-1" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                            <ellipse className="orb-string orb-string-2" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                            <ellipse className="orb-string orb-string-3" cx="12" cy="12" rx="9.5" ry="4.2" stroke="currentColor" strokeWidth="1.5" />
-                            <circle className="orb-core" cx="12" cy="12" r="2.1" fill="currentColor" />
-                          </svg>
+                          <AppleConstellationSpinner />
                         </span>
                         {activeConnectorMeta && (
                           <div className={`siri-connector-sine-wrapper small ${isConnecting ? "is-active" : ""}`}>

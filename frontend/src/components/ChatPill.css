@@ -3530,6 +3530,21 @@
   pointer-events: none;
 }
 
+.siri-apple-constellation.small {
+  width: 16px;
+  height: 16px;
+}
+
+.siri-apple-constellation.small .constellation-svg {
+  width: 16px;
+  height: 16px;
+}
+
+.siri-unified-pill.light-mode .siri-apple-constellation {
+  color: #111215;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.2));
+}
+
 .constellation-svg {
   overflow: visible;
 }
