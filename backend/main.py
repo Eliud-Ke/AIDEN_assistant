@@ -112,8 +112,8 @@ TOOL_STATUS_MAP = {
 
     # Media & Volume (System Level)
     "get_currently_playing": "Checking current media",
-    "media_play": "Resuming music",
-    "media_pause": "Pausing music",
+    "media_play": "Resuming media",
+    "media_pause": "Pausing media",
     "media_next_track": "Skipping track",
     "media_previous_track": "Playing previous track",
     "media_restart_track": "Restarting track",
@@ -142,6 +142,8 @@ TOOL_STATUS_MAP = {
 
     # Spotify Connector Tools
     "spotify_check_active_device": "Checking Spotify devices",
+    "spotify_search": "Searching Spotify",
+    "spotify_play_item": "Playing the music track",
     "spotify_set_playback_mode": "Changing playback mode",
     "spotify_like_track": "Saving song to library",
     "spotify_unlike_track": "Removing song from library",

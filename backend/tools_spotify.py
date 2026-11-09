@@ -325,7 +325,153 @@ def spotify_check_active_device(target_device: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Playback Modes: Shuffle & Repeat
+# 2. Catalog Search: Search Spotify Tracks, Albums, Artists & Playlists
+# ---------------------------------------------------------------------------
+
+def spotify_search(query: str, search_type: str = "track", limit: int = 5) -> str:
+    """
+    Searches the Spotify catalog for tracks, albums, artists, or playlists.
+    Returns the top matching results with their titles, artists, and Spotify IDs.
+    """
+    if not query or not query.strip():
+        return "Please specify a song title, artist, album, or playlist to search for."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+
+        clean_type = search_type.strip().lower()
+        if clean_type not in ["track", "album", "artist", "playlist"]:
+            clean_type = "track"
+
+        limit = max(1, min(10, int(limit)))
+
+        url = f"{SPOTIFY_API_BASE}/search"
+        params = {
+            "q": query.strip(),
+            "type": clean_type,
+            "limit": limit,
+            "market": "from_token"
+        }
+
+        res = requests.get(url, headers=headers, params=params, timeout=8)
+        if res.status_code != 200:
+            return f"Spotify search error ({res.status_code}): {res.text}"
+
+        data = res.json()
+        results_lines = []
+
+        if clean_type == "track":
+            tracks = data.get("tracks", {}).get("items", [])
+            if not tracks:
+                return f"No tracks found matching '{query}' on Spotify."
+            for idx, trk in enumerate(tracks, 1):
+                t_name = trk.get("name", "Unknown Track")
+                artists = ", ".join(a.get("name", "") for a in trk.get("artists", []))
+                album = trk.get("album", {}).get("name", "Unknown Album")
+                dur_ms = trk.get("duration_ms", 0)
+                dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
+                t_id = trk.get("id", "")
+                results_lines.append(f"{idx}. '{t_name}' by {artists} (Album: '{album}', {dur_str}) [ID: {t_id}]")
+
+        elif clean_type == "album":
+            albums = data.get("albums", {}).get("items", [])
+            if not albums:
+                return f"No albums found matching '{query}' on Spotify."
+            for idx, alb in enumerate(albums, 1):
+                a_name = alb.get("name", "Unknown Album")
+                artists = ", ".join(a.get("name", "") for a in alb.get("artists", []))
+                total_trks = alb.get("total_tracks", 0)
+                rel_date = alb.get("release_date", "")[:4]
+                a_id = alb.get("id", "")
+                results_lines.append(f"{idx}. Album: '{a_name}' by {artists} ({total_trks} tracks, {rel_date}) [ID: {a_id}]")
+
+        elif clean_type == "artist":
+            artists = data.get("artists", {}).get("items", [])
+            if not artists:
+                return f"No artists found matching '{query}' on Spotify."
+            for idx, art in enumerate(artists, 1):
+                art_name = art.get("name", "Unknown Artist")
+                genres = ", ".join(art.get("genres", [])[:2]) or "Music"
+                art_id = art.get("id", "")
+                results_lines.append(f"{idx}. Artist: {art_name} (Genres: {genres}) [ID: {art_id}]")
+
+        elif clean_type == "playlist":
+            playlists = data.get("playlists", {}).get("items", [])
+            if not playlists:
+                return f"No playlists found matching '{query}' on Spotify."
+            for idx, pl in enumerate(playlists, 1):
+                pl_name = pl.get("name", "Unknown Playlist")
+                owner = pl.get("owner", {}).get("display_name", "Spotify")
+                pl_id = pl.get("id", "")
+                results_lines.append(f"{idx}. Playlist: '{pl_name}' by {owner} [ID: {pl_id}]")
+
+        joined = "\n".join(results_lines)
+        return f"Spotify Search Results for '{query}' ({clean_type}s):\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='{clean_type}')` to start playing."
+
+    except Exception as e:
+        return f"Error executing Spotify search: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# 3. Streaming: Play Specific Song, Album, or Playlist
+# ---------------------------------------------------------------------------
+
+def spotify_play_item(spotify_id: str, item_type: str = "track") -> str:
+    """
+    Plays a specific track, album, playlist, or artist on Spotify by its ID or URI.
+    """
+    if not spotify_id or not spotify_id.strip():
+        return "Please provide a valid Spotify ID or URI to play."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+        device_param = f"?device_id={dev_id}" if dev_id else ""
+
+        # Clean ID
+        clean_id = spotify_id.strip()
+        if "spotify:" in clean_id:
+            parts = clean_id.split(":")
+            if len(parts) >= 3:
+                item_type = parts[1]
+                clean_id = parts[2]
+
+        clean_type = item_type.strip().lower()
+        if clean_type == "track":
+            play_payload = {"uris": [f"spotify:track:{clean_id}"]}
+        elif clean_type in ["album", "playlist", "artist"]:
+            play_payload = {"context_uri": f"spotify:{clean_type}:{clean_id}"}
+        else:
+            play_payload = {"uris": [f"spotify:track:{clean_id}"]}
+
+        play_url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
+        res = requests.put(play_url, headers=headers, json=play_payload, timeout=8)
+
+        if res.status_code in [200, 204]:
+            dev_name = _active_device_state.get("device_name", "your device")
+            return f"Playing on {dev_name}."
+
+        # If device was asleep or disconnected, retry once
+        if res.status_code == 404:
+            res_wake = resolve_or_activate_device(timeout_seconds=6.0)
+            if res_wake.get("ok"):
+                new_id = res_wake.get("device_id")
+                res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={new_id}", headers=headers, json=play_payload, timeout=8)
+                if res2.status_code in [200, 204]:
+                    return f"Playing on {res_wake.get('device_name', 'your device')}."
+
+        if res.status_code == 403:
+            return "Playback restricted on this device or Spotify Premium required for direct queue streaming."
+
+        return f"Could not start Spotify playback ({res.status_code}): {res.text}"
+
+    except Exception as e:
+        return f"Error playing Spotify item: {str(e)}"
+
+# ---------------------------------------------------------------------------
+# 4. Playback Modes: Shuffle & Repeat
 # ---------------------------------------------------------------------------
 
 def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optional[str] = None) -> str:
@@ -369,7 +515,7 @@ def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optio
 
 
 # ---------------------------------------------------------------------------
-# 3. Library: Like & Unlike Current Track
+# 5. Library: Like & Unlike Current Track
 # ---------------------------------------------------------------------------
 
 def _get_current_playing_track_info():
@@ -435,6 +581,8 @@ def spotify_unlike_track() -> str:
 
 SPOTIFY_TOOLS = {
     "spotify_check_active_device": spotify_check_active_device,
+    "spotify_search": spotify_search,
+    "spotify_play_item": spotify_play_item,
     "spotify_set_playback_mode": spotify_set_playback_mode,
     "spotify_like_track": spotify_like_track,
     "spotify_unlike_track": spotify_unlike_track,
@@ -459,6 +607,62 @@ SPOTIFY_TOOLS_SCHEMA = [
                         "description": "Optional name or type of device to connect to (e.g. 'phone', 'laptop', 'desktop'). Leave empty for automatic resolution.",
                     }
                 },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_search",
+            "description": (
+                "Searches the Spotify catalog for songs, albums, artists, or playlists. "
+                "Use when the user wants to discover, browse, or find music."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Song title, artist name, album, or playlist name to search for.",
+                    },
+                    "search_type": {
+                        "type": "string",
+                        "enum": ["track", "album", "artist", "playlist"],
+                        "description": "Type of item to search for. Default is 'track'.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of results to return (1 to 10). Default is 5.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_play_item",
+            "description": (
+                "Streams a specific track, album, playlist, or artist on Spotify using its ID or URI "
+                "(obtained from `spotify_search` or direct request)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spotify_id": {
+                        "type": "string",
+                        "description": "The Spotify ID or URI of the track, album, or playlist to stream.",
+                    },
+                    "item_type": {
+                        "type": "string",
+                        "enum": ["track", "album", "playlist", "artist"],
+                        "description": "Type of item being played. Default is 'track'.",
+                    },
+                },
+                "required": ["spotify_id"],
                 "additionalProperties": False,
             },
         },

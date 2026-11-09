@@ -16,7 +16,7 @@ CONNECTORS_SCHEMA = {
     },
     "spotify": {
         "display_name": "Spotify",
-        "description": "Check active playback devices, toggle shuffle/repeat modes, and like or unlike songs in your library.",
+        "description": "Search songs, albums, and artists, stream specific tracks, toggle shuffle/repeat, and manage your library.",
         "tools": tools_spotify.SPOTIFY_TOOLS_SCHEMA,
     },
     "google_calendar": {
