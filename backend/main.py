@@ -142,9 +142,9 @@ TOOL_STATUS_MAP = {
 
     # Spotify Connector Tools
     "spotify_check_active_device": "Checking Spotify devices",
-    "spotify_get_current_playback": "Checking what's playing",
-    "spotify_set_playback_mode": "Updating playback mode",
-    "spotify_save_track": "Saving song to library",
+    "spotify_set_playback_mode": "Changing playback mode",
+    "spotify_like_track": "Saving song to library",
+    "spotify_unlike_track": "Removing song from library",
 }
 
 # ---------------------------------------------------------

@@ -325,56 +325,7 @@ def spotify_check_active_device(target_device: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Track Metadata: Get Currently Playing
-# ---------------------------------------------------------------------------
-
-def spotify_get_current_playback() -> str:
-    """
-    Retrieves information about what track is currently playing on Spotify,
-    including title, artist(s), album, and playback state.
-    """
-    try:
-        token = get_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-
-        url = f"{SPOTIFY_API_BASE}/me/player/currently-playing"
-        res = requests.get(url, headers=headers, timeout=6)
-
-        if res.status_code == 204 or not res.text:
-            return "Nothing is currently playing on Spotify."
-
-        if res.status_code != 200:
-            return f"Could not get current track ({res.status_code})."
-
-        data = res.json()
-        item = data.get("item")
-        if not item:
-            return "Nothing is currently playing on Spotify."
-
-        track_name = item.get("name", "Unknown Track")
-        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-        album = item.get("album", {}).get("name", "Unknown Album")
-        is_playing = data.get("is_playing", False)
-        
-        # Calculate human-friendly time formatting
-        prog_ms = data.get("progress_ms", 0)
-        dur_ms = item.get("duration_ms", 0)
-        prog_min = prog_ms // 60000
-        prog_sec = (prog_ms % 60000) // 1000
-        dur_min = dur_ms // 60000
-        dur_sec = (dur_ms % 60000) // 1000
-
-        state = "Playing" if is_playing else "Paused"
-        time_str = f"{prog_min}:{prog_sec:02d} / {dur_min}:{dur_sec:02d}"
-
-        return f"{state}: '{track_name}' by {artists} from the album '{album}' ({time_str})."
-
-    except Exception as e:
-        return f"Error checking current playback: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# 3. Playback Modes: Shuffle & Repeat
+# 2. Playback Modes: Shuffle & Repeat
 # ---------------------------------------------------------------------------
 
 def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optional[str] = None) -> str:
@@ -418,47 +369,64 @@ def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optio
 
 
 # ---------------------------------------------------------------------------
-# 4. Library: Like / Unlike Current Track
+# 3. Library: Like & Unlike Current Track
 # ---------------------------------------------------------------------------
 
-def spotify_save_track(action: str = "like") -> str:
+def _get_current_playing_track_info():
+    """Helper to fetch currently playing track ID, title, and artists from Spotify."""
+    token = get_valid_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=6)
+    if cur_res.status_code != 200 or not cur_res.text:
+        return None, None, None
+    cur_data = cur_res.json()
+    item = cur_data.get("item")
+    if not item or not item.get("id"):
+        return None, None, None
+    track_id = item["id"]
+    track_name = item.get("name", "Current track")
+    artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+    return track_id, track_name, artists
+
+
+def spotify_like_track() -> str:
     """
-    Saves ('like') or removes ('unlike') the currently playing track to/from
-    the user's Liked Songs library on Spotify.
+    Saves ('likes') the currently playing track into the user's Liked Songs library on Spotify.
     """
     try:
+        track_id, track_name, artists = _get_current_playing_track_info()
+        if not track_id:
+            return "No track is currently playing on Spotify to like."
+
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-
-        # 1. Get currently playing track ID
-        cur_res = requests.get(f"{SPOTIFY_API_BASE}/me/player/currently-playing", headers=headers, timeout=6)
-        if cur_res.status_code != 200 or not cur_res.text:
-            return "No track is currently playing on Spotify to save."
-
-        cur_data = cur_res.json()
-        item = cur_data.get("item")
-        if not item or not item.get("id"):
-            return "No track is currently playing on Spotify to save."
-
-        track_id = item["id"]
-        track_name = item.get("name", "Current track")
-        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
-
-        is_unlike = action.strip().lower() in ["unlike", "remove", "delete"]
-
-        if is_unlike:
-            res = requests.delete(f"{SPOTIFY_API_BASE}/me/tracks?ids={track_id}", headers=headers, timeout=6)
-            if res.status_code in [200, 204]:
-                return f"Removed '{track_name}' by {artists} from your Liked Songs."
-            return f"Could not remove track ({res.status_code})."
-        else:
-            res = requests.put(f"{SPOTIFY_API_BASE}/me/tracks?ids={track_id}", headers=headers, timeout=6)
-            if res.status_code in [200, 204]:
-                return f"Saved '{track_name}' by {artists} to your Liked Songs."
-            return f"Could not save track ({res.status_code})."
+        res = requests.put(f"{SPOTIFY_API_BASE}/me/tracks?ids={track_id}", headers=headers, timeout=6)
+        if res.status_code in [200, 204]:
+            return f"Saved '{track_name}' by {artists} to your Liked Songs."
+        return f"Could not save track to Liked Songs ({res.status_code})."
 
     except Exception as e:
-        return f"Error saving track: {str(e)}"
+        return f"Error saving track to Liked Songs: {str(e)}"
+
+
+def spotify_unlike_track() -> str:
+    """
+    Removes ('unlikes') the currently playing track from the user's Liked Songs library on Spotify.
+    """
+    try:
+        track_id, track_name, artists = _get_current_playing_track_info()
+        if not track_id:
+            return "No track is currently playing on Spotify to unlike."
+
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        res = requests.delete(f"{SPOTIFY_API_BASE}/me/tracks?ids={track_id}", headers=headers, timeout=6)
+        if res.status_code in [200, 204]:
+            return f"Removed '{track_name}' by {artists} from your Liked Songs."
+        return f"Could not remove track from Liked Songs ({res.status_code})."
+
+    except Exception as e:
+        return f"Error removing track from Liked Songs: {str(e)}"
 
 
 # ---------------------------------------------------------------------------
@@ -467,9 +435,9 @@ def spotify_save_track(action: str = "like") -> str:
 
 SPOTIFY_TOOLS = {
     "spotify_check_active_device": spotify_check_active_device,
-    "spotify_get_current_playback": spotify_get_current_playback,
     "spotify_set_playback_mode": spotify_set_playback_mode,
-    "spotify_save_track": spotify_save_track,
+    "spotify_like_track": spotify_like_track,
+    "spotify_unlike_track": spotify_unlike_track,
 }
 
 SPOTIFY_TOOLS_SCHEMA = [
@@ -491,18 +459,6 @@ SPOTIFY_TOOLS_SCHEMA = [
                         "description": "Optional name or type of device to connect to (e.g. 'phone', 'laptop', 'desktop'). Leave empty for automatic resolution.",
                     }
                 },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "spotify_get_current_playback",
-            "description": "Returns details about what song is currently playing on Spotify, including track title, artist, album, and progress.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
                 "additionalProperties": False,
             },
         },
@@ -532,17 +488,23 @@ SPOTIFY_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "spotify_save_track",
-            "description": "Saves ('like') or removes ('unlike') the currently playing song to/from the user's Liked Songs library on Spotify.",
+            "name": "spotify_like_track",
+            "description": "Saves ('likes') the currently playing song into the user's Liked Songs library on Spotify.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["like", "unlike"],
-                        "description": "Whether to 'like' (save) or 'unlike' (remove) the currently playing track.",
-                    },
-                },
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_unlike_track",
+            "description": "Removes ('unlikes') the currently playing song from the user's Liked Songs library on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },
