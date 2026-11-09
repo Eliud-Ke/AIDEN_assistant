@@ -345,10 +345,11 @@ def spotify_search(query: str, search_type: str = "track", limit: int = 5) -> st
             clean_type = "track"
 
         limit = max(1, min(10, int(limit)))
+        clean_query = query.strip().strip('"\'')
 
         url = f"{SPOTIFY_API_BASE}/search"
         params = {
-            "q": query.strip(),
+            "q": clean_query,
             "type": clean_type,
             "limit": limit,
             "market": "from_token"
@@ -624,7 +625,10 @@ SPOTIFY_TOOLS_SCHEMA = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Song title, artist name, album, or playlist name to search for.",
+                        "description": (
+                            "Clean search keywords: song title, album, or artist name (e.g. 'Sexy For Me Jason Derulo', 'Talk Yeat', 'Find Me Sigma'). "
+                            "Do NOT include conversational filler like 'play', 'music', 'search for', or prepositions like 'by' unless they are part of the song's actual title."
+                        ),
                     },
                     "search_type": {
                         "type": "string",
