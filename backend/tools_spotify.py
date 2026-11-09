@@ -441,7 +441,26 @@ def spotify_play_item(spotify_id: str, item_type: str = "track") -> str:
 
         clean_type = item_type.strip().lower()
         if clean_type == "track":
-            play_payload = {"uris": [f"spotify:track:{clean_id}"]}
+            # Spotify Desktop (Win32 standalone) frequently ignores isolated 'uris' arrays
+            # when its local queue is idle. Providing its album 'context_uri' with track 'offset'
+            # guarantees immediate audio playback and proper Windows SMTC metadata registration.
+            try:
+                t_res = requests.get(f"{SPOTIFY_API_BASE}/tracks/{clean_id}", headers=headers, timeout=5)
+                if t_res.status_code == 200:
+                    t_data = t_res.json()
+                    alb_uri = t_data.get("album", {}).get("uri")
+                    if alb_uri:
+                        play_payload = {
+                            "context_uri": alb_uri,
+                            "offset": {"uri": f"spotify:track:{clean_id}"}
+                        }
+                    else:
+                        play_payload = {"uris": [f"spotify:track:{clean_id}"]}
+                else:
+                    play_payload = {"uris": [f"spotify:track:{clean_id}"]}
+            except Exception:
+                play_payload = {"uris": [f"spotify:track:{clean_id}"]}
+
         elif clean_type in ["album", "playlist", "artist"]:
             play_payload = {"context_uri": f"spotify:{clean_type}:{clean_id}"}
         else:
