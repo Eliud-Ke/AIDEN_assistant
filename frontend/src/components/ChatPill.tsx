@@ -636,18 +636,16 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 }
 
 export const AppleConstellationSpinner: React.FC = () => (
-  <span className="siri-apple-constellation" aria-hidden="true">
-    <svg className="constellation-svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <circle className="c-dot c-dot-1" cx="12" cy="3.5" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-2" cx="18" cy="6" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-3" cx="20.5" cy="12" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-4" cx="18" cy="18" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-5" cx="12" cy="20.5" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-6" cx="6" cy="18" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-7" cx="3.5" cy="12" r="1.6" fill="currentColor" />
-      <circle className="c-dot c-dot-8" cx="6" cy="6" r="1.6" fill="currentColor" />
-    </svg>
-  </span>
+  <svg className="constellation-svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <circle className="c-dot c-dot-1" cx="12" cy="3.5" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-2" cx="18" cy="6" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-3" cx="20.5" cy="12" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-4" cx="18" cy="18" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-5" cx="12" cy="20.5" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-6" cx="6" cy="18" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-7" cx="3.5" cy="12" r="1.6" fill="currentColor" />
+    <circle className="c-dot c-dot-8" cx="6" cy="6" r="1.6" fill="currentColor" />
+  </svg>
 );
 
 export const ChatPill: React.FC<ChatPillProps> = ({
@@ -937,7 +935,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   // Track exact pixel dimensions of .siri-unified-stream so the SVG button-lens filter
   // blurs text ONLY inside the 4 clear-glass buttons while keeping text razor-sharp outside them
   const [streamBox, setStreamBox] = useState<{ w: number; h: number; topOffset: number }>({
-    w: 429,
+    w: 430,
     h: 360,
     topOffset: 0,
   });
@@ -950,7 +948,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     el.style.webkitMaskImage = "none";
 
     const updateBox = () => {
-      const w = el.clientWidth || 429;
+      const w = el.clientWidth || 430;
       const h = el.clientHeight || 360;
       const topOffset = 16 - el.offsetTop;
       setStreamBox((prev) =>
@@ -965,12 +963,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const resizeObserver = new ResizeObserver(() => {
       updateBox();
     });
-    resizeObserver.observe(el);
+    resizeObserver.observe(el, { box: "border-box" });
 
     return () => {
       resizeObserver.disconnect();
     };
-  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible]);
+  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag]);
 
   const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
@@ -2124,11 +2122,7 @@ export const ChatPillWindow: React.FC = () => {
         hideTimerRef.current = null;
       }
       resetReplyState();
-      invoke("set_chat_pill_state", { isAwake: true })
-        .then(() => {
-          requestAnimationFrame(() => measureAndSyncShape());
-        })
-        .catch(() => {});
+      invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
     } else {
       // Immediately pass cursor events through so background clicks work while fading out
       invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
@@ -2235,7 +2229,11 @@ export const ChatPillWindow: React.FC = () => {
       measureAndSyncShape();
     });
 
-    observer.observe(el);
+    observer.observe(el, { box: "border-box" });
+    const pillEl = el.querySelector(".siri-unified-pill");
+    if (pillEl) {
+      observer.observe(pillEl, { box: "border-box" });
+    }
 
     return () => {
       observer.disconnect();
