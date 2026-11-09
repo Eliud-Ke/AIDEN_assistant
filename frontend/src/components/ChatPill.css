@@ -1075,16 +1075,18 @@
 
 .siri-media-gallery.single-item .siri-media-card {
   flex: 0 0 auto;
-  width: 440px;
+  width: 415px;
   max-width: 100%;
+  box-sizing: border-box;
   height: 240px;
   border-radius: 18px;
 }
 
 .siri-media-gallery.single-item.loading .siri-media-skeleton {
   flex: 0 0 auto;
-  width: 440px;
+  width: 415px;
   max-width: 100%;
+  box-sizing: border-box;
   height: 240px;
   border-radius: 18px;
 }
@@ -1203,6 +1205,7 @@
   position: relative;
   width: 100%;
   max-width: 415px;
+  box-sizing: border-box;
   margin: 10px 0 12px 0;
   height: 250px;
   border-radius: 20px;
@@ -1210,7 +1213,6 @@
   background: #f4f3f0;
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
-  margin: 10px 0 14px 0;
   user-select: none;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
@@ -1392,6 +1394,7 @@
 .siri-gmail-card {
   width: 100%;
   max-width: 415px;
+  box-sizing: border-box;
   margin: 10px 0 12px 0;
   border-radius: 24px;
   padding: 18px 18px 14px;
@@ -1401,7 +1404,6 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin: 10px 0 14px 0;
   user-select: none;
   transition: all 0.25s ease;
 }
@@ -1857,6 +1859,7 @@
 .siri-calendar-card {
   width: 100%;
   max-width: 415px;
+  box-sizing: border-box;
   margin: 10px 0 12px 0;
   border-radius: 24px;
   padding: 18px 18px 14px;
@@ -1870,8 +1873,6 @@
   flex-direction: column;
   gap: 14px;
   user-select: none;
-  margin: 10px 0 12px;
-  box-sizing: border-box;
   animation: siriMessagePartEnter 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -2645,6 +2646,7 @@
 .siri-win-slider-pill {
   width: 100%;
   max-width: 415px;
+  box-sizing: border-box;
   margin: 10px 0 12px 0;
   height: 48px;
   border-radius: 14px;
@@ -2659,7 +2661,6 @@
   color: #ffffff;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  margin: 8px 0 10px 0;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -4532,6 +4533,7 @@
   position: relative;
   width: 100%;
   max-width: 415px;
+  box-sizing: border-box;
   height: 130px;
   border-radius: 26px;
   padding: 18px 22px;
