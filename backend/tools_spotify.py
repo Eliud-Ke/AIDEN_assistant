@@ -325,96 +325,151 @@ def spotify_check_active_device(target_device: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Catalog Search: Search Spotify Tracks, Albums, Artists & Playlists
+# 2. Catalog Search: Search Spotify Tracks, Artists & Albums (Discrete Tools)
 # ---------------------------------------------------------------------------
 
-def spotify_search(query: str, search_type: str = "track", limit: int = 5) -> str:
+def spotify_search_tracks(query: str, limit: int = 7) -> str:
     """
-    Searches the Spotify catalog for tracks, albums, artists, or playlists.
-    Returns the top matching results with their titles, artists, and Spotify IDs.
+    Searches the Spotify catalog specifically for songs/tracks matching the query.
+    Returns up to 7 top track results with title, artist, album, duration, and Spotify ID.
     """
     if not query or not query.strip():
-        return "Please specify a song title, artist, album, or playlist to search for."
+        return "Please specify a song title or artist name to search for."
 
     try:
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-
-        clean_type = search_type.strip().lower()
-        if clean_type not in ["track", "album", "artist", "playlist"]:
-            clean_type = "track"
-
         limit = max(1, min(10, int(limit)))
         clean_query = query.strip().strip('"\'')
 
         url = f"{SPOTIFY_API_BASE}/search"
         params = {
             "q": clean_query,
-            "type": clean_type,
+            "type": "track",
             "limit": limit,
             "market": "from_token"
         }
 
         res = requests.get(url, headers=headers, params=params, timeout=8)
         if res.status_code != 200:
-            return f"Spotify search error ({res.status_code}): {res.text}"
+            return f"Spotify track search error ({res.status_code}): {res.text}"
 
         data = res.json()
+        tracks = data.get("tracks", {}).get("items", [])
+        if not tracks:
+            return f"No tracks found matching '{query}' on Spotify."
+
         results_lines = []
-
-        if clean_type == "track":
-            tracks = data.get("tracks", {}).get("items", [])
-            if not tracks:
-                return f"No tracks found matching '{query}' on Spotify."
-            for idx, trk in enumerate(tracks, 1):
-                t_name = trk.get("name", "Unknown Track")
-                artists = ", ".join(a.get("name", "") for a in trk.get("artists", []))
-                album = trk.get("album", {}).get("name", "Unknown Album")
-                dur_ms = trk.get("duration_ms", 0)
-                dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
-                t_id = trk.get("id", "")
-                results_lines.append(f"{idx}. '{t_name}' by {artists} (Album: '{album}', {dur_str}) [ID: {t_id}]")
-
-        elif clean_type == "album":
-            albums = data.get("albums", {}).get("items", [])
-            if not albums:
-                return f"No albums found matching '{query}' on Spotify."
-            for idx, alb in enumerate(albums, 1):
-                a_name = alb.get("name", "Unknown Album")
-                artists = ", ".join(a.get("name", "") for a in alb.get("artists", []))
-                total_trks = alb.get("total_tracks", 0)
-                rel_date = alb.get("release_date", "")[:4]
-                a_id = alb.get("id", "")
-                results_lines.append(f"{idx}. Album: '{a_name}' by {artists} ({total_trks} tracks, {rel_date}) [ID: {a_id}]")
-
-        elif clean_type == "artist":
-            artists = data.get("artists", {}).get("items", [])
-            if not artists:
-                return f"No artists found matching '{query}' on Spotify."
-            for idx, art in enumerate(artists, 1):
-                art_name = art.get("name", "Unknown Artist")
-                genres = ", ".join(art.get("genres", [])[:2]) or "Music"
-                art_id = art.get("id", "")
-                results_lines.append(f"{idx}. Artist: {art_name} (Genres: {genres}) [ID: {art_id}]")
-
-        elif clean_type == "playlist":
-            playlists = data.get("playlists", {}).get("items", [])
-            if not playlists:
-                return f"No playlists found matching '{query}' on Spotify."
-            for idx, pl in enumerate(playlists, 1):
-                pl_name = pl.get("name", "Unknown Playlist")
-                owner = pl.get("owner", {}).get("display_name", "Spotify")
-                pl_id = pl.get("id", "")
-                results_lines.append(f"{idx}. Playlist: '{pl_name}' by {owner} [ID: {pl_id}]")
+        for idx, trk in enumerate(tracks, 1):
+            t_name = trk.get("name", "Unknown Track")
+            artists = ", ".join(a.get("name", "") for a in trk.get("artists", []))
+            album = trk.get("album", {}).get("name", "Unknown Album")
+            dur_ms = trk.get("duration_ms", 0)
+            dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
+            t_id = trk.get("id", "")
+            results_lines.append(f"{idx}. '{t_name}' by {artists} (Album: '{album}', {dur_str}) [ID: {t_id}]")
 
         joined = "\n".join(results_lines)
-        return f"Spotify Search Results for '{query}' ({clean_type}s):\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='{clean_type}')` to start playing."
+        return f"Spotify Track Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='track')` to start playing."
 
     except Exception as e:
-        return f"Error executing Spotify search: {str(e)}"
+        return f"Error executing Spotify track search: {str(e)}"
 
 
-# ---------------------------------------------------------------------------
+def spotify_search_artists(query: str, limit: int = 7) -> str:
+    """
+    Searches the Spotify catalog specifically for music artists matching the query.
+    Returns up to 7 top matching artists with name, genres, followers, and Spotify ID.
+    """
+    if not query or not query.strip():
+        return "Please specify an artist name to search for."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        limit = max(1, min(10, int(limit)))
+        clean_query = query.strip().strip('"\'')
+
+        url = f"{SPOTIFY_API_BASE}/search"
+        params = {
+            "q": clean_query,
+            "type": "artist",
+            "limit": limit,
+            "market": "from_token"
+        }
+
+        res = requests.get(url, headers=headers, params=params, timeout=8)
+        if res.status_code != 200:
+            return f"Spotify artist search error ({res.status_code}): {res.text}"
+
+        data = res.json()
+        artists = data.get("artists", {}).get("items", [])
+        if not artists:
+            return f"No artists found matching '{query}' on Spotify."
+
+        results_lines = []
+        for idx, art in enumerate(artists, 1):
+            art_name = art.get("name", "Unknown Artist")
+            genres = ", ".join(art.get("genres", [])[:2]) or "Music"
+            followers = art.get("followers", {}).get("total", 0)
+            followers_str = f"{followers:,}" if followers else "N/A"
+            art_id = art.get("id", "")
+            results_lines.append(f"{idx}. Artist: {art_name} (Genres: {genres}, Followers: {followers_str}) [ID: {art_id}]")
+
+        joined = "\n".join(results_lines)
+        return f"Spotify Artist Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='artist')` to stream artist radio/top tracks."
+
+    except Exception as e:
+        return f"Error executing Spotify artist search: {str(e)}"
+
+
+def spotify_search_albums(query: str, limit: int = 7) -> str:
+    """
+    Searches the Spotify catalog specifically for albums matching the query.
+    Returns up to 7 top matching albums with title, artist, track count, release year, and Spotify ID.
+    """
+    if not query or not query.strip():
+        return "Please specify an album name or artist to search for."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        limit = max(1, min(10, int(limit)))
+        clean_query = query.strip().strip('"\'')
+
+        url = f"{SPOTIFY_API_BASE}/search"
+        params = {
+            "q": clean_query,
+            "type": "album",
+            "limit": limit,
+            "market": "from_token"
+        }
+
+        res = requests.get(url, headers=headers, params=params, timeout=8)
+        if res.status_code != 200:
+            return f"Spotify album search error ({res.status_code}): {res.text}"
+
+        data = res.json()
+        albums = data.get("albums", {}).get("items", [])
+        if not albums:
+            return f"No albums found matching '{query}' on Spotify."
+
+        results_lines = []
+        for idx, alb in enumerate(albums, 1):
+            a_name = alb.get("name", "Unknown Album")
+            artists = ", ".join(a.get("name", "") for a in alb.get("artists", []))
+            total_trks = alb.get("total_tracks", 0)
+            rel_date = alb.get("release_date", "")[:4]
+            a_id = alb.get("id", "")
+            results_lines.append(f"{idx}. Album: '{a_name}' by {artists} ({total_trks} tracks, {rel_date}) [ID: {a_id}]")
+
+        joined = "\n".join(results_lines)
+        return f"Spotify Album Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='album')` to stream this album."
+
+    except Exception as e:
+        return f"Error executing Spotify album search: {str(e)}"
+
+
 # 3. Streaming: Play Specific Song, Album, or Playlist
 # ---------------------------------------------------------------------------
 
@@ -601,7 +656,9 @@ def spotify_unlike_track() -> str:
 
 SPOTIFY_TOOLS = {
     "spotify_check_active_device": spotify_check_active_device,
-    "spotify_search": spotify_search,
+    "spotify_search_tracks": spotify_search_tracks,
+    "spotify_search_artists": spotify_search_artists,
+    "spotify_search_albums": spotify_search_albums,
     "spotify_play_item": spotify_play_item,
     "spotify_set_playback_mode": spotify_set_playback_mode,
     "spotify_like_track": spotify_like_track,
@@ -634,10 +691,10 @@ SPOTIFY_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "spotify_search",
+            "name": "spotify_search_tracks",
             "description": (
-                "Searches the Spotify catalog for songs, albums, artists, or playlists. "
-                "Use when the user wants to discover, browse, or find music."
+                "Searches Spotify specifically for songs/tracks matching the query. "
+                "Returns up to 7 top track results with song title, artist, album, duration, and Spotify ID."
             ),
             "parameters": {
                 "type": "object",
@@ -645,18 +702,13 @@ SPOTIFY_TOOLS_SCHEMA = [
                     "query": {
                         "type": "string",
                         "description": (
-                            "Clean search keywords: song title, album, or artist name (e.g. 'Sexy For Me Jason Derulo', 'Talk Yeat', 'Find Me Sigma'). "
+                            "Clean search keywords: song title, or song title + artist name (e.g. 'Starboy', 'Sexy For Me Jason Derulo', 'Talk Yeat'). "
                             "Do NOT include conversational filler like 'play', 'music', 'search for', or prepositions like 'by' unless they are part of the song's actual title."
                         ),
                     },
-                    "search_type": {
-                        "type": "string",
-                        "enum": ["track", "album", "artist", "playlist"],
-                        "description": "Type of item to search for. Default is 'track'.",
-                    },
                     "limit": {
                         "type": "integer",
-                        "description": "Number of results to return (1 to 10). Default is 5.",
+                        "description": "Number of tracks to return (1 to 10). Default is 7.",
                     },
                 },
                 "required": ["query"],
@@ -667,10 +719,66 @@ SPOTIFY_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "spotify_search_artists",
+            "description": (
+                "Searches Spotify specifically for music artists matching the query. "
+                "Returns up to 7 top matching artists with artist name, genres, followers, and Spotify ID."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Clean artist name (e.g. 'The Weeknd', 'Kendrick Lamar', 'Daft Punk', 'Taylor Swift'). "
+                            "Do NOT include conversational filler like 'who is', 'artist', 'musician', or 'search for'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of artists to return (1 to 10). Default is 7.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_search_albums",
+            "description": (
+                "Searches Spotify specifically for music albums matching the query. "
+                "Returns up to 7 top matching albums with album title, artist, total tracks, release year, and Spotify ID."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Clean album name or album + artist name (e.g. 'After Hours', 'DAMN', 'Discovery Daft Punk'). "
+                            "Do NOT include conversational filler like 'album', 'listen to', or 'search for'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of albums to return (1 to 10). Default is 7.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "spotify_play_item",
             "description": (
                 "Streams a specific track, album, playlist, or artist on Spotify using its ID or URI "
-                "(obtained from `spotify_search` or direct request)."
+                "(obtained from `spotify_search_tracks`, `spotify_search_albums`, or direct request)."
             ),
             "parameters": {
                 "type": "object",
