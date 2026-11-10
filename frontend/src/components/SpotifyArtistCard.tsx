@@ -44,12 +44,18 @@ export const SpotifyArtistCard: React.FC<SpotifyArtistCardData> = ({
   const listenersText = monthlyListeners || followers || "Popular on Spotify";
   const displayGenres = genres && genres !== "Music" ? genres : "";
 
-  // Guaranteed inline background image with subtle glass gradient vignette
+  // Multi-axis compound glass vignette:
+  // 1. Horizontal vignette (left-to-right) protects artist typography & metadata
+  // 2. Vertical vignette (bottom-to-top) cleanly grounds the bottom with 100% solid obsidian to prevent any light bleed
   const cardStyle: React.CSSProperties = image
     ? {
-        backgroundImage: `linear-gradient(to bottom, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(15, 15, 15, 0.95) 100%), url("${image}")`,
+        backgroundImage: [
+          `linear-gradient(to right, rgba(12, 12, 12, 0.94) 0%, rgba(12, 12, 12, 0.78) 38%, rgba(12, 12, 12, 0.22) 72%, rgba(12, 12, 12, 0.45) 100%)`,
+          `linear-gradient(to top, rgba(12, 12, 12, 1) 0%, rgba(12, 12, 12, 0.98) 18%, rgba(12, 12, 12, 0.55) 55%, rgba(12, 12, 12, 0.15) 85%, transparent 100%)`,
+          `url("${image}")`,
+        ].join(", "),
         backgroundSize: "cover",
-        backgroundPosition: "center 25%",
+        backgroundPosition: "center 20%",
         backgroundRepeat: "no-repeat",
       }
     : {};
