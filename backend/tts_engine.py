@@ -34,6 +34,9 @@ def clean_text_for_speech(raw_text: str) -> str:
 
     text = raw_text
 
+    # 0. Remove interactive UI card tags (::spotify-tracks-card[...]::, ::weather-card[...]::, etc.)
+    text = re.sub(r"::[a-zA-Z0-9_-]+\[[\s\S]*?\]::", "", text)
+
     # 1. Remove fenced code blocks (```python ... ```)
     text = re.sub(r"```[\w-]*\n[\s\S]*?```", " Code snippet omitted. ", text)
     # Remove inline code (`code`)

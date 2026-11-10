@@ -75,6 +75,8 @@ def _clean_text_for_context(text: str, max_chars: int = 0) -> str:
     cleaned = re.sub(r"::calendar-event\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"::system-slider\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"::location-card\[.*?\]::", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"::weather-card\[.*?\]::", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"::spotify-(?:artist|tracks|albums)-card\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"::media-gallery\[.*?\]::", "", cleaned, flags=re.DOTALL)
     cleaned = re.sub(r"\[([^\]]+)\]\(https?://[^\)]+\)", r"[\1]", cleaned)
     cleaned = re.sub(r"https?://\S+", "", cleaned)

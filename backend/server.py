@@ -297,6 +297,26 @@ async def handle_connection(websocket: Any):
                 except Exception as e:
                     print(f"⚠️ [HARDWARE CONTROL] Error: {e}")
 
+            elif msg_type == "spotify_play":
+                spotify_id = str(data.get("spotifyId", "")).strip()
+                item_type = str(data.get("itemType", "track")).strip() or "track"
+                if spotify_id:
+                    def _run_spotify_play(sid: str, itype: str):
+                        try:
+                            try:
+                                from tools_spotify import spotify_play_item
+                            except ImportError:
+                                from backend.tools_spotify import spotify_play_item
+                            res_msg = spotify_play_item(sid, itype)
+                            print(f"🎵 [SPOTIFY DIRECT PLAY] {itype}:{sid} -> {res_msg}")
+                        except Exception as sp_err:
+                            print(f"⚠️ [SPOTIFY DIRECT PLAY] Error: {sp_err}")
+                    threading.Thread(
+                        target=_run_spotify_play,
+                        args=(spotify_id, item_type),
+                        daemon=True,
+                    ).start()
+
             elif msg_type in ("voice_arm", "voice_start"):
                 print("🎙️ [WS BRIDGE] Voice mode armed.")
                 ve = get_voice_engine()

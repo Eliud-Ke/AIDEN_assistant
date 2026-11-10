@@ -8,6 +8,8 @@ import { CalendarCard, CalendarEventItem } from "./CalendarCard";
 import { SystemSlider } from "./SystemSlider";
 import { WeatherCard, WeatherCardData } from "./WeatherCard";
 import { SpotifyArtistCard, SpotifyArtistCardData } from "./SpotifyArtistCard";
+import { SpotifyTracksCard, SpotifyTracksCardData, SpotifyTrackItem } from "./SpotifyTracksCard";
+import { SpotifyAlbumsCard, SpotifyAlbumsCardData, SpotifyAlbumItem } from "./SpotifyAlbumsCard";
 import "./ChatPill.css";
 
 export interface ChatTurn {
@@ -105,6 +107,7 @@ interface ChatPillProps {
   onStartRecording?: () => void;
   onStopRecording?: () => void;
   onHardwareChange?: (action: "volume" | "brightness", level?: number, muted?: boolean) => void;
+  onSpotifyPlay?: (spotifyId: string, itemType: "track" | "album" | "artist") => void;
 }
 
 interface MediaGalleryItem {
@@ -164,7 +167,9 @@ type MessagePart =
   | { type: "calendar"; data: CalendarCardData }
   | { type: "system_slider"; data: SystemSliderData }
   | { type: "weather"; data: WeatherCardData }
-  | { type: "spotify_artist"; data: SpotifyArtistCardData };
+  | { type: "spotify_artist"; data: SpotifyArtistCardData }
+  | { type: "spotify_tracks"; data: SpotifyTracksCardData }
+  | { type: "spotify_albums"; data: SpotifyAlbumsCardData };
 
 function renderFormattedText(rawText: string): React.ReactNode {
   if (!rawText) return null;
@@ -359,7 +364,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-artist-card)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums)-card)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -534,6 +539,81 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       } catch (err) {
         console.warn("Failed to parse spotify-artist-card JSON:", err);
       }
+    } else if (tagType === "spotify-tracks-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const rawTracks = Array.isArray(parsed.tracks)
+          ? parsed.tracks
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
+        const tracks: SpotifyTrackItem[] = rawTracks
+          .filter((t: any) => t && typeof t === "object")
+          .slice(0, 5)
+          .map((t: any) => ({
+            id: String(t.id || ""),
+            name: String(t.name || "Unknown Track"),
+            artists: String(t.artists || "Unknown Artist"),
+            album: t.album ? String(t.album) : undefined,
+            image: t.image ? String(t.image) : undefined,
+            duration: t.duration ? String(t.duration) : undefined,
+            explicit: Boolean(t.explicit),
+            spotifyUrl: t.spotifyUrl ? String(t.spotifyUrl) : undefined,
+          }));
+        if (tracks.length > 0) {
+          parts.push({
+            type: "spotify_tracks",
+            data: {
+              query: parsed.query ? String(parsed.query) : undefined,
+              tracks,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to parse spotify-tracks-card JSON:", err);
+      }
+    } else if (tagType === "spotify-albums-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const rawAlbums = Array.isArray(parsed.albums)
+          ? parsed.albums
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
+        const albums: SpotifyAlbumItem[] = rawAlbums
+          .filter((a: any) => a && typeof a === "object")
+          .slice(0, 5)
+          .map((a: any) => ({
+            id: String(a.id || ""),
+            name: String(a.name || "Unknown Album"),
+            artists: String(a.artists || "Unknown Artist"),
+            totalTracks: typeof a.totalTracks === "number" ? a.totalTracks : undefined,
+            year: a.year ? String(a.year) : undefined,
+            image: a.image ? String(a.image) : undefined,
+            spotifyUrl: a.spotifyUrl ? String(a.spotifyUrl) : undefined,
+          }));
+        if (albums.length > 0) {
+          parts.push({
+            type: "spotify_albums",
+            data: {
+              query: parsed.query ? String(parsed.query) : undefined,
+              albums,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to parse spotify-albums-card JSON:", err);
+      }
     } else if (tagType === "weather-card") {
       try {
         let parsed: any;
@@ -647,7 +727,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-artist-card)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums)-card)\[[\s\S]*$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -706,6 +786,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onStartRecording: _onStartRecording,
   onStopRecording: _onStopRecording,
   onHardwareChange,
+  onSpotifyPlay,
 }) => {
   void _onStartRecording;
   void _onStopRecording;
@@ -1590,9 +1671,44 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                               <SpotifyArtistCard
                                 key={idx}
                                 {...part.data}
-                                onPlayItem={(_id, _type, title) => {
-                                  if (!onSendMessage) return;
-                                  onSendMessage(`play ${title || part.data.name}`, false);
+                                onPlayItem={(id, type, title) => {
+                                  if (onSpotifyPlay && id) {
+                                    onSpotifyPlay(id, type);
+                                  } else if (onSendMessage) {
+                                    onSendMessage(`play ${title || part.data.name}`, false);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "spotify_tracks") {
+                            return (
+                              <SpotifyTracksCard
+                                key={idx}
+                                {...part.data}
+                                onPlayItem={(id, type, title) => {
+                                  if (onSpotifyPlay && id) {
+                                    onSpotifyPlay(id, type);
+                                  } else if (onSendMessage) {
+                                    onSendMessage(`play ${title}`, false);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "spotify_albums") {
+                            return (
+                              <SpotifyAlbumsCard
+                                key={idx}
+                                {...part.data}
+                                onPlayItem={(id, type, title) => {
+                                  if (onSpotifyPlay && id) {
+                                    onSpotifyPlay(id, type);
+                                  } else if (onSendMessage) {
+                                    onSendMessage(`play album ${title}`, false);
+                                  }
                                 }}
                               />
                             );
@@ -2641,6 +2757,18 @@ export const ChatPillWindow: React.FC = () => {
     }
   }, []);
 
+  const handleSpotifyPlay = useCallback((spotifyId: string, itemType: "track" | "album" | "artist") => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "spotify_play",
+          spotifyId,
+          itemType,
+        })
+      );
+    }
+  }, []);
+
   return (
     <div className="chat-pill-desktop-window">
       <ChatPill
@@ -2663,6 +2791,7 @@ export const ChatPillWindow: React.FC = () => {
         }}
         onSendMessage={handleSendMessage}
         onHardwareChange={handleHardwareChange}
+        onSpotifyPlay={handleSpotifyPlay}
         activeAudioTurnId={activeAudioTurnId}
         isAudioPlaying={isAudioPlaying}
         onToggleTts={handleToggleTts}

@@ -330,10 +330,11 @@ def spotify_check_active_device(target_device: str = "") -> str:
 # 2. Catalog Search: Search Spotify Tracks, Artists & Albums (Discrete Tools)
 # ---------------------------------------------------------------------------
 
-def spotify_search_tracks(query: str, limit: int = 7) -> str:
+def spotify_search_tracks(query: str, limit: int = 5) -> str:
     """
     Searches the Spotify catalog specifically for songs/tracks matching the query.
-    Returns up to 7 top track results with title, artist, album, duration, and Spotify ID.
+    Returns up to 5 top track results with title, artist, album, duration, artwork,
+    Spotify ID, and an interactive visual card for immediate 1-tap playback.
     """
     if not query or not query.strip():
         return "Please specify a song title or artist name to search for."
@@ -341,7 +342,7 @@ def spotify_search_tracks(query: str, limit: int = 7) -> str:
     try:
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-        limit = max(1, min(10, int(limit)))
+        limit = max(1, min(5, int(limit)))
         clean_query = query.strip().strip('"\'')
 
         url = f"{SPOTIFY_API_BASE}/search"
@@ -362,17 +363,40 @@ def spotify_search_tracks(query: str, limit: int = 7) -> str:
             return f"No tracks found matching '{query}' on Spotify."
 
         results_lines = []
-        for idx, trk in enumerate(tracks, 1):
+        track_items = []
+        for idx, trk in enumerate(tracks[:5], 1):
+            t_id = trk.get("id", "")
             t_name = trk.get("name", "Unknown Track")
             artists = ", ".join(a.get("name", "") for a in trk.get("artists", []))
-            album = trk.get("album", {}).get("name", "Unknown Album")
-            dur_ms = trk.get("duration_ms", 0)
+            album_obj = trk.get("album", {}) or {}
+            album = album_obj.get("name", "Unknown Album")
+            imgs = album_obj.get("images", []) or []
+            img_url = imgs[0].get("url", "") if imgs else ""
+            dur_ms = trk.get("duration_ms", 0) or 0
             dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
-            t_id = trk.get("id", "")
+            explicit = bool(trk.get("explicit", False))
+            spotify_url = trk.get("external_urls", {}).get("spotify", f"https://open.spotify.com/track/{t_id}")
+
+            track_items.append({
+                "id": t_id,
+                "name": t_name,
+                "artists": artists,
+                "album": album,
+                "image": img_url,
+                "duration": dur_str,
+                "explicit": explicit,
+                "spotifyUrl": spotify_url,
+            })
             results_lines.append(f"{idx}. '{t_name}' by {artists} (Album: '{album}', {dur_str}) [ID: {t_id}]")
 
+        card_payload = {
+            "query": clean_query,
+            "tracks": track_items,
+        }
+        card_tag = f"::spotify-tracks-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
+
         joined = "\n".join(results_lines)
-        return f"Spotify Track Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='track')` to start playing."
+        return f"{card_tag}\n\nSpotify Track Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='track')` to start playing."
 
     except Exception as e:
         return f"Error executing Spotify track search: {str(e)}"
@@ -496,10 +520,11 @@ def spotify_search_artists(query: str) -> str:
         return f"Error executing Spotify artist search: {str(e)}"
 
 
-def spotify_search_albums(query: str, limit: int = 7) -> str:
+def spotify_search_albums(query: str, limit: int = 5) -> str:
     """
     Searches the Spotify catalog specifically for albums matching the query.
-    Returns up to 7 top matching albums with title, artist, track count, release year, and Spotify ID.
+    Returns up to 5 top matching albums with title, artist, track count, release year,
+    cover artwork, Spotify ID, and an interactive visual card for immediate 1-tap playback.
     """
     if not query or not query.strip():
         return "Please specify an album name or artist to search for."
@@ -507,7 +532,7 @@ def spotify_search_albums(query: str, limit: int = 7) -> str:
     try:
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-        limit = max(1, min(10, int(limit)))
+        limit = max(1, min(5, int(limit)))
         clean_query = query.strip().strip('"\'')
 
         url = f"{SPOTIFY_API_BASE}/search"
@@ -528,16 +553,36 @@ def spotify_search_albums(query: str, limit: int = 7) -> str:
             return f"No albums found matching '{query}' on Spotify."
 
         results_lines = []
-        for idx, alb in enumerate(albums, 1):
+        album_items = []
+        for idx, alb in enumerate(albums[:5], 1):
+            a_id = alb.get("id", "")
             a_name = alb.get("name", "Unknown Album")
             artists = ", ".join(a.get("name", "") for a in alb.get("artists", []))
-            total_trks = alb.get("total_tracks", 0)
-            rel_date = alb.get("release_date", "")[:4]
-            a_id = alb.get("id", "")
+            total_trks = int(alb.get("total_tracks", 0) or 0)
+            rel_date = str(alb.get("release_date", ""))[:4]
+            imgs = alb.get("images", []) or []
+            img_url = imgs[0].get("url", "") if imgs else ""
+            spotify_url = alb.get("external_urls", {}).get("spotify", f"https://open.spotify.com/album/{a_id}")
+
+            album_items.append({
+                "id": a_id,
+                "name": a_name,
+                "artists": artists,
+                "totalTracks": total_trks,
+                "year": rel_date,
+                "image": img_url,
+                "spotifyUrl": spotify_url,
+            })
             results_lines.append(f"{idx}. Album: '{a_name}' by {artists} ({total_trks} tracks, {rel_date}) [ID: {a_id}]")
 
+        card_payload = {
+            "query": clean_query,
+            "albums": album_items,
+        }
+        card_tag = f"::spotify-albums-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
+
         joined = "\n".join(results_lines)
-        return f"Spotify Album Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='album')` to stream this album."
+        return f"{card_tag}\n\nSpotify Album Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='album')` to stream this album."
 
     except Exception as e:
         return f"Error executing Spotify album search: {str(e)}"
@@ -767,7 +812,8 @@ SPOTIFY_TOOLS_SCHEMA = [
             "name": "spotify_search_tracks",
             "description": (
                 "Searches Spotify specifically for songs/tracks matching the query. "
-                "Returns up to 7 top track results with song title, artist, album, duration, and Spotify ID."
+                "Returns up to 5 top track results with an interactive visual track card (::spotify-tracks-card[...]::), "
+                "song title, artist, album, duration, and Spotify ID."
             ),
             "parameters": {
                 "type": "object",
@@ -781,7 +827,7 @@ SPOTIFY_TOOLS_SCHEMA = [
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Number of tracks to return (1 to 10). Default is 7.",
+                        "description": "Number of tracks to return (1 to 5). Default is 5.",
                     },
                 },
                 "required": ["query"],
@@ -794,8 +840,8 @@ SPOTIFY_TOOLS_SCHEMA = [
         "function": {
             "name": "spotify_search_artists",
             "description": (
-                "Searches Spotify for a music artist. Returns a complete artist spotlight with their profile "
-                "(genres, followers), their top 5 most popular tracks, and their 2 latest albums."
+                "Searches Spotify for a music artist. Returns a minimal interactive visual artist card "
+                "(::spotify-artist-card[...]::) with their verified profile, monthly listeners, primary genre, and Spotify ID."
             ),
             "parameters": {
                 "type": "object",
@@ -819,7 +865,8 @@ SPOTIFY_TOOLS_SCHEMA = [
             "name": "spotify_search_albums",
             "description": (
                 "Searches Spotify specifically for music albums matching the query. "
-                "Returns up to 7 top matching albums with album title, artist, total tracks, release year, and Spotify ID."
+                "Returns up to 5 top matching albums with an interactive visual album card (::spotify-albums-card[...]::), "
+                "album title, artist, total tracks, release year, and Spotify ID."
             ),
             "parameters": {
                 "type": "object",
@@ -833,7 +880,7 @@ SPOTIFY_TOOLS_SCHEMA = [
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Number of albums to return (1 to 10). Default is 7.",
+                        "description": "Number of albums to return (1 to 5). Default is 5.",
                     },
                 },
                 "required": ["query"],
