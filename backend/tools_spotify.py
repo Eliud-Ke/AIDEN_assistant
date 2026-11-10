@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import subprocess
+import json
 from typing import Optional, Dict, Any, List
 
 import requests
@@ -500,7 +501,68 @@ def spotify_search_artists(query: str) -> str:
         except Exception as e:
             print(f"⚠️ [SPOTIFY] Could not fetch albums for {artist_id}: {e}")
 
-        # 4. Alternates (if any)
+        # 4. Assemble Visual Card Data for AIDEN UI
+        card_tracks = []
+        for trk in tracks_data:
+            t_id = trk.get("id", "")
+            t_name = trk.get("name", "Unknown Track")
+            t_artists = ", ".join(a.get("name", "") for a in trk.get("artists", []))
+            dur_ms = trk.get("duration_ms", 0)
+            dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
+            t_explicit = bool(trk.get("explicit", False))
+            alb = trk.get("album", {})
+            t_album_name = alb.get("name", "")
+            alb_imgs = alb.get("images", [])
+            t_album_img = alb_imgs[0].get("url", "") if alb_imgs else ""
+            card_tracks.append({
+                "id": t_id,
+                "name": t_name,
+                "artists": t_artists,
+                "duration": dur_str,
+                "explicit": t_explicit,
+                "albumName": t_album_name,
+                "albumImage": t_album_img,
+            })
+
+        card_albums = []
+        for alb in chosen_albums:
+            a_id = alb.get("id", "")
+            a_name = alb.get("name", "Unknown Album")
+            rel_date = alb.get("release_date", "")[:4]
+            t_count = alb.get("total_tracks", 0)
+            a_type = alb.get("album_type", "album").capitalize()
+            alb_imgs = alb.get("images", [])
+            a_img = alb_imgs[0].get("url", "") if alb_imgs else ""
+            card_albums.append({
+                "id": a_id,
+                "name": a_name,
+                "year": rel_date,
+                "totalTracks": t_count,
+                "image": a_img,
+                "albumType": a_type,
+            })
+
+        # Artist hero image resolution
+        artist_imgs = primary_artist.get("images", [])
+        artist_img = artist_imgs[0].get("url", "") if artist_imgs else ""
+        if not artist_img and card_tracks and card_tracks[0].get("albumImage"):
+            artist_img = card_tracks[0]["albumImage"]
+
+        listeners_label = f"{followers:,} monthly listeners" if followers else "Popular on Spotify"
+
+        card_payload = {
+            "artistId": artist_id,
+            "name": artist_name,
+            "image": artist_img,
+            "verified": True,
+            "monthlyListeners": listeners_label,
+            "genres": genres,
+            "topTracks": card_tracks,
+            "albums": card_albums,
+        }
+        card_tag = f"::spotify-artist-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
+
+        # 5. Alternates (if any)
         alternates = []
         for alt in artists[1:3]:
             alt_name = alt.get("name", "")
@@ -508,7 +570,7 @@ def spotify_search_artists(query: str) -> str:
             if alt_name:
                 alternates.append(f"{alt_name} [ID: {alt_id}]")
 
-        # 5. Compile output text
+        # 6. Compile output text
         meta_items = []
         if followers_str != "N/A":
             meta_items.append(f"Followers: {followers_str}")
@@ -537,7 +599,7 @@ def spotify_search_artists(query: str) -> str:
             f"or `spotify_play_item(spotify_id=TRACK_ID, item_type='track')` to stream a song."
         )
 
-        return "\n".join(output_parts)
+        return f"{card_tag}\n\n" + "\n".join(output_parts)
 
     except Exception as e:
         return f"Error executing Spotify artist spotlight search: {str(e)}"

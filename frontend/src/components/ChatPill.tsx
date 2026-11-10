@@ -7,6 +7,7 @@ import { GmailCard, GmailEmailItem } from "./GmailCard";
 import { CalendarCard, CalendarEventItem } from "./CalendarCard";
 import { SystemSlider } from "./SystemSlider";
 import { WeatherCard, WeatherCardData } from "./WeatherCard";
+import { SpotifyArtistCard, SpotifyArtistCardData } from "./SpotifyArtistCard";
 import "./ChatPill.css";
 
 export interface ChatTurn {
@@ -162,7 +163,8 @@ type MessagePart =
   | { type: "gmail"; data: GmailCardData }
   | { type: "calendar"; data: CalendarCardData }
   | { type: "system_slider"; data: SystemSliderData }
-  | { type: "weather"; data: WeatherCardData };
+  | { type: "weather"; data: WeatherCardData }
+  | { type: "spotify_artist"; data: SpotifyArtistCardData };
 
 function renderFormattedText(rawText: string): React.ReactNode {
   if (!rawText) return null;
@@ -300,7 +302,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
   const unrevealed = text.slice(start);
 
   // Media gallery, Location card, Gmail card, or Calendar card boundary: don't split inside ::...[...]::
-  const embedMatch = /::(?:media-|location-|gmail-|calendar-)/.exec(unrevealed);
+  const embedMatch = /::(?:media-|location-|gmail-|calendar-|spotify-|system-|weather-)/.exec(unrevealed);
   if (embedMatch) {
     const embedIdx = embedMatch.index;
     if (embedIdx > 0) {
@@ -357,7 +359,7 @@ function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: bo
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-artist-card)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -503,6 +505,31 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       if (lat !== 0 || lon !== 0) {
         parts.push({ type: "location", data: { lat, lon, title } });
       }
+    } else if (tagType === "spotify-artist-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        parts.push({
+          type: "spotify_artist",
+          data: {
+            artistId: String(parsed.artistId || ""),
+            name: String(parsed.name || "Unknown Artist"),
+            image: parsed.image ? String(parsed.image) : undefined,
+            verified: parsed.verified !== false,
+            monthlyListeners: parsed.monthlyListeners ? String(parsed.monthlyListeners) : undefined,
+            followers: parsed.followers ? String(parsed.followers) : undefined,
+            genres: parsed.genres ? String(parsed.genres) : undefined,
+            topTracks: Array.isArray(parsed.topTracks) ? parsed.topTracks : [],
+            albums: Array.isArray(parsed.albums) ? parsed.albums : [],
+          },
+        });
+      } catch (err) {
+        console.warn("Failed to parse spotify-artist-card JSON:", err);
+      }
     } else if (tagType === "weather-card") {
       try {
         let parsed: any;
@@ -616,7 +643,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-artist-card)\[[\s\S]*$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -1548,6 +1575,25 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                                     onSendMessage(`Schedule event for ${payload || "tomorrow"}: `, true);
                                   } else if (action === "book_suggested") {
                                     onSendMessage(`Book event during ${payload}`, true);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "spotify_artist") {
+                            return (
+                              <SpotifyArtistCard
+                                key={idx}
+                                {...part.data}
+                                onPlayItem={(_id, type, title) => {
+                                  if (!onSendMessage) return;
+                                  if (type === "artist") {
+                                    onSendMessage(`play artist ${part.data.name}`, false);
+                                  } else if (type === "album") {
+                                    onSendMessage(`play album ${title || part.data.name}`, false);
+                                  } else {
+                                    onSendMessage(`play ${title || "track"}`, false);
                                   }
                                 }}
                               />
