@@ -520,11 +520,10 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
             name: String(parsed.name || "Unknown Artist"),
             image: parsed.image ? String(parsed.image) : undefined,
             verified: parsed.verified !== false,
-            monthlyListeners: parsed.monthlyListeners ? String(parsed.monthlyListeners) : undefined,
             followers: parsed.followers ? String(parsed.followers) : undefined,
             genres: parsed.genres ? String(parsed.genres) : undefined,
-            topTracks: Array.isArray(parsed.topTracks) ? parsed.topTracks : [],
-            albums: Array.isArray(parsed.albums) ? parsed.albums : [],
+            popularity: typeof parsed.popularity === "number" ? parsed.popularity : undefined,
+            spotifyUrl: parsed.spotifyUrl ? String(parsed.spotifyUrl) : undefined,
           },
         });
       } catch (err) {
@@ -1586,15 +1585,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                               <SpotifyArtistCard
                                 key={idx}
                                 {...part.data}
-                                onPlayItem={(_id, type, title) => {
+                                onPlayItem={(_id, _type, title) => {
                                   if (!onSendMessage) return;
-                                  if (type === "artist") {
-                                    onSendMessage(`play artist ${part.data.name}`, false);
-                                  } else if (type === "album") {
-                                    onSendMessage(`play album ${title || part.data.name}`, false);
-                                  } else {
-                                    onSendMessage(`play ${title || "track"}`, false);
-                                  }
+                                  onSendMessage(`play ${title || part.data.name}`, false);
                                 }}
                               />
                             );

@@ -4900,98 +4900,98 @@
   mix-blend-mode: screen;
 }
 
-
 /* ==========================================================================
-   SPOTIFY ARTIST SPOTLIGHT CARD (UNIFIED 422PX WIDTH)
-   Faithfully adapted from Spotify Desktop UI to AIDEN Liquid Glass
+   MINIMAL SPOTIFY ARTIST CARD (UNIFIED 422PX WIDTH)
+   Compact, luxury obsidian glass artist profile for immediate streaming
    ========================================================================== */
-.spotify-spotlight-card {
+.spotify-artist-card {
   width: 100%;
   max-width: 422px;
-  box-sizing: border-box;
-  margin: 8px 0 10px 0;
+  height: 154px;
+  position: relative;
   background: rgba(18, 18, 18, 0.94);
   backdrop-filter: blur(36px) saturate(190%);
   -webkit-backdrop-filter: blur(36px) saturate(190%);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 26px;
+  border-radius: 24px;
   overflow: hidden;
   box-shadow: 
     0 18px 44px -10px rgba(0, 0, 0, 0.75),
-    0 0 30px -10px rgba(29, 185, 84, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 0 30px -10px rgba(29, 185, 84, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  padding: 14px 18px;
+  margin: 8px 0 10px 0;
   user-select: none;
-  transition: all 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
   color: #ffffff;
 }
 
+.spotify-artist-card:hover {
+  border-color: rgba(29, 185, 84, 0.4);
+  box-shadow: 
+    0 22px 50px -10px rgba(0, 0, 0, 0.85),
+    0 0 36px -8px rgba(29, 185, 84, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
 /* Light Mode Variant */
-.light-mode .spotify-spotlight-card {
+.light-mode .spotify-artist-card {
   background: rgba(255, 255, 255, 0.94);
   border-color: rgba(0, 0, 0, 0.08);
   box-shadow: 
     0 16px 36px -8px rgba(0, 0, 0, 0.15),
-    0 0 24px -6px rgba(29, 185, 84, 0.15),
+    0 0 24px -6px rgba(29, 185, 84, 0.2),
     inset 0 1px 0 #ffffff;
   color: #121212;
 }
 
-/* --- 1. CINEMATIC ARTIST HERO BANNER --- */
-.spotlight-hero-banner {
-  position: relative;
-  width: 100%;
-  height: 148px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 14px 16px;
-  background: #181818;
-  flex-shrink: 0;
-}
-
-.spotlight-hero-bg {
+/* Cover Backdrop Image */
+.artist-hero-bg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center 25%;
-  filter: brightness(0.85);
+  filter: brightness(0.8);
   transform: scale(1.02);
-  transition: transform 0.4s ease;
+  transition: transform 0.5s ease;
 }
 
-.spotify-spotlight-card:hover .spotlight-hero-bg {
-  transform: scale(1.05);
+.spotify-artist-card:hover .artist-hero-bg {
+  transform: scale(1.06);
 }
 
-/* Cinematic Gradient Vignette */
-.spotlight-hero-vignette {
+/* Vignette Gradient */
+.artist-hero-vignette {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     to bottom,
-    rgba(0, 0, 0, 0.25) 0%,
-    rgba(0, 0, 0, 0.45) 45%,
-    rgba(18, 18, 18, 0.98) 100%
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.5) 45%,
+    rgba(15, 15, 15, 0.95) 100%
   );
   pointer-events: none;
 }
 
-.light-mode .spotlight-hero-vignette {
+.light-mode .artist-hero-vignette {
   background: linear-gradient(
     to bottom,
     rgba(0, 0, 0, 0.15) 0%,
-    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.45) 50%,
     rgba(255, 255, 255, 0.98) 100%
   );
 }
 
-/* Top Badges inside Hero */
-.spotlight-hero-top {
+/* Top Row */
+.artist-card-top {
   position: relative;
   z-index: 2;
   display: flex;
@@ -5006,8 +5006,8 @@
   gap: 6px;
   padding: 4px 10px 4px 8px;
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
   font-size: 11px;
@@ -5017,7 +5017,7 @@
 }
 
 .light-mode .spotify-pill-tag {
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.8);
   border-color: rgba(0, 0, 0, 0.1);
   color: #121212;
 }
@@ -5028,14 +5028,14 @@
   fill: #1DB954;
 }
 
-.spotlight-share-btn {
-  width: 28px;
-  height: 28px;
+.artist-open-link {
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5043,21 +5043,30 @@
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
+  outline: none;
 }
 
-.spotlight-share-btn svg {
+.light-mode .artist-open-link {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #121212;
+}
+
+.artist-open-link:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.1);
+  border-color: #1DB954;
+  color: #1DB954;
+}
+
+.artist-open-link svg {
   width: 14px;
   height: 14px;
   fill: currentColor;
 }
 
-.spotlight-share-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.08);
-}
-
-/* Bottom Row inside Hero */
-.spotlight-hero-bottom {
+/* Bottom Row */
+.artist-card-bottom {
   position: relative;
   z-index: 2;
   display: flex;
@@ -5066,11 +5075,12 @@
   width: 100%;
 }
 
-.artist-title-group {
+.artist-meta-group {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  padding-right: 12px;
 }
 
 .artist-verified-row {
@@ -5078,51 +5088,59 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: #1DB954;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.2px;
 }
 
-.verified-badge-icon {
+.verified-icon {
   width: 13px;
   height: 13px;
   fill: #1DB954;
 }
 
-.artist-hero-name {
+.artist-name-heading {
   font-size: 26px;
   font-weight: 900;
   color: #ffffff;
   letter-spacing: -0.8px;
-  line-height: 1.1;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  line-height: 1.15;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.light-mode .artist-hero-name {
+.light-mode .artist-name-heading {
   color: #121212;
   text-shadow: none;
 }
 
-.artist-listeners-text {
-  font-size: 11.5px;
+.artist-sub-info {
+  font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
-  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 1px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.light-mode .artist-listeners-text {
-  color: rgba(0, 0, 0, 0.65);
+.light-mode .artist-sub-info {
+  color: rgba(0, 0, 0, 0.7);
   text-shadow: none;
 }
 
-/* Giant Floating Spotify Green Play Button */
-.spotlight-play-fab {
-  width: 44px;
-  height: 44px;
+.artist-sub-dot {
+  opacity: 0.5;
+}
+
+/* Big Green Play Button */
+.artist-play-btn {
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: #1DB954;
   border: none;
@@ -5131,421 +5149,26 @@
   justify-content: center;
   color: #000000;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(29, 185, 84, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px rgba(29, 185, 84, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
   padding: 0;
 }
 
-.spotlight-play-fab svg {
-  width: 18px;
-  height: 18px;
+.artist-play-btn svg {
+  width: 19px;
+  height: 19px;
   fill: #000000;
   margin-left: 2px;
 }
 
-.spotlight-play-fab:hover {
+.artist-play-btn:hover {
   transform: scale(1.1);
   background: #1ed760;
-  box-shadow: 0 10px 24px rgba(29, 185, 84, 0.65);
+  box-shadow: 0 10px 28px rgba(29, 185, 84, 0.7);
 }
 
-.spotlight-play-fab:active {
-  transform: scale(0.94);
-}
-
-/* --- CARD BODY CONTENT --- */
-.spotlight-content-body {
-  padding: 12px 16px 4px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-title {
-  font-size: 13.5px;
-  font-weight: 800;
-  letter-spacing: -0.2px;
-  color: #ffffff;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.light-mode .section-title {
-  color: #121212;
-}
-
-.section-badge-pill {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-.light-mode .section-badge-pill {
-  color: rgba(0, 0, 0, 0.5);
-}
-
-/* --- 2. POPULAR TRACKS --- */
-.spotlight-tracks-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.spotlight-track-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.16s ease;
-}
-
-.spotlight-track-row:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.light-mode .spotlight-track-row:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.track-left-group {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-  flex: 1;
-}
-
-.track-index-num {
-  width: 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.light-mode .track-index-num {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.spotlight-track-row:hover .track-index-num {
-  color: #1DB954;
-}
-
-.track-album-thumb {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: #282828;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-.track-album-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.track-album-placeholder {
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.track-meta-group {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5px;
-  min-width: 0;
-}
-
-.track-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: -0.2px;
-}
-
-.light-mode .track-title {
-  color: #121212;
-}
-
-.spotlight-track-row:hover .track-title {
-  color: #1DB954;
-}
-
-.track-artist-sub {
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.light-mode .track-artist-sub {
-  color: rgba(0, 0, 0, 0.55);
-}
-
-.explicit-pill {
-  font-size: 9px;
-  font-weight: 800;
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-  padding: 0 4px;
-  border-radius: 3px;
-  line-height: 1.2;
-}
-
-.light-mode .explicit-pill {
-  background: rgba(0, 0, 0, 0.15);
-  color: #222222;
-}
-
-.track-right-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.track-duration {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
-  font-variant-numeric: tabular-nums;
-}
-
-.light-mode .track-duration {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.track-row-play-icon {
-  width: 14px;
-  height: 14px;
-  fill: #ffffff;
-  opacity: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.spotlight-track-row:hover .track-row-play-icon {
-  opacity: 1;
-  transform: scale(1.1);
-  fill: #1DB954;
-}
-
-/* ==========================================================================
-   DYNAMIC EXPANDABLE CONTAINER (Tracks 3-5 + Latest Releases)
-   ========================================================================== */
-.spotlight-expandable-drawer {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-  opacity: 0;
-}
-
-.spotlight-expandable-drawer-inner {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* Expanded State */
-.spotify-spotlight-card.expanded .spotlight-expandable-drawer {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-/* --- 3. LATEST RELEASES / ALBUMS (2 TILES) --- */
-.spotlight-albums-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding-top: 2px;
-}
-
-.spotlight-album-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  padding: 8px 10px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow: hidden;
-}
-
-.light-mode .spotlight-album-card {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-.spotlight-album-card:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(29, 185, 84, 0.4);
-  transform: translateY(-1.5px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-}
-
-.light-mode .spotlight-album-card:hover {
-  background: #ffffff;
-  border-color: rgba(29, 185, 84, 0.4);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-}
-
-.album-sleeve-thumb {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  background: #282828;
-}
-
-.album-sleeve-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.album-sleeve-placeholder {
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.album-text-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.album-name {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: -0.2px;
-}
-
-.light-mode .album-name {
-  color: #121212;
-}
-
-.album-year-sub {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.light-mode .album-year-sub {
-  color: rgba(0, 0, 0, 0.55);
-}
-
-.album-type-badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  background: rgba(29, 185, 84, 0.15);
-  color: #1DB954;
-  padding: 0 5px;
-  border-radius: 4px;
-}
-
-/* --- 4. SLEEK DOWNWARD CHEVRON EXPAND BAR --- */
-.spotlight-chevron-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 38px;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  transition: background 0.2s ease, border-color 0.2s ease;
-  outline: none;
-  padding: 0;
-}
-
-.light-mode .spotlight-chevron-bar {
-  border-top-color: rgba(0, 0, 0, 0.06);
-}
-
-.spotlight-chevron-bar:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-top-color: rgba(29, 185, 84, 0.25);
-}
-
-.light-mode .spotlight-chevron-bar:hover {
-  background: rgba(0, 0, 0, 0.03);
-  border-top-color: rgba(29, 185, 84, 0.35);
-}
-
-.chevron-icon-pill {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
-  transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-
-.light-mode .chevron-icon-pill {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.6);
-}
-
-.spotlight-chevron-bar:hover .chevron-icon-pill {
-  background: rgba(29, 185, 84, 0.18);
-  border-color: rgba(29, 185, 84, 0.45);
-  color: #1DB954;
-  transform: scale(1.08);
-}
-
-.chevron-icon-pill svg {
-  width: 15px;
-  height: 15px;
-  stroke: currentColor;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-  transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Chevron Rotation on Expanded */
-.spotify-spotlight-card.expanded .chevron-icon-pill svg {
-  transform: rotate(180deg);
+.artist-play-btn:active {
+  transform: scale(0.95);
 }
