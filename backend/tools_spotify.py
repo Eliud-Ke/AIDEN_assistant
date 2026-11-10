@@ -416,7 +416,7 @@ def spotify_search_artists(query: str) -> str:
         followers_str = f"{followers:,}" if followers else "N/A"
         popularity = primary_artist.get("popularity", 0)
 
-        # 2. Fetch primary artist's Top 5 Tracks
+        # 2. Fetch primary artist's Top 5 Tracks (with reliable search ranking fallback)
         top_tracks_lines = []
         try:
             tt_res = requests.get(
@@ -425,46 +425,78 @@ def spotify_search_artists(query: str) -> str:
                 params={"market": "from_token"},
                 timeout=6
             )
+            tracks_data = []
             if tt_res.status_code == 200:
                 tracks_data = tt_res.json().get("tracks", [])[:5]
-                for idx, trk in enumerate(tracks_data, 1):
-                    t_name = trk.get("name", "Unknown Track")
-                    dur_ms = trk.get("duration_ms", 0)
-                    dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
-                    t_id = trk.get("id", "")
-                    exp = " [E]" if trk.get("explicit") else ""
-                    top_tracks_lines.append(f"  {idx}. '{t_name}'{exp} ({dur_str}) [Track ID: {t_id}]")
+
+            # If /top-tracks is restricted (403 on standard dev tokens), query top track search
+            if not tracks_data:
+                tr_search = requests.get(
+                    f"{SPOTIFY_API_BASE}/search",
+                    headers=headers,
+                    params={"q": artist_name, "type": "track", "limit": 10},
+                    timeout=6
+                )
+                if tr_search.status_code == 200:
+                    raw_trks = tr_search.json().get("tracks", {}).get("items", [])
+                    for t in raw_trks:
+                        artist_names = [a.get("name", "").lower() for a in t.get("artists", [])]
+                        if artist_name.lower() in artist_names:
+                            tracks_data.append(t)
+                        if len(tracks_data) >= 5:
+                            break
+
+            for idx, trk in enumerate(tracks_data, 1):
+                t_name = trk.get("name", "Unknown Track")
+                dur_ms = trk.get("duration_ms", 0)
+                dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
+                t_id = trk.get("id", "")
+                exp = " [E]" if trk.get("explicit") else ""
+                top_tracks_lines.append(f"  {idx}. '{t_name}'{exp} ({dur_str}) [Track ID: {t_id}]")
         except Exception as e:
             print(f"⚠️ [SPOTIFY] Could not fetch top tracks for {artist_id}: {e}")
 
-        # 3. Fetch primary artist's Top 2 Latest Albums
+        # 3. Fetch primary artist's Top 2 Latest Official Albums
         top_albums_lines = []
         try:
             alb_res = requests.get(
                 f"{SPOTIFY_API_BASE}/artists/{artist_id}/albums",
                 headers=headers,
-                params={"include_groups": "album,single", "limit": 6, "market": "from_token"},
+                params={"include_groups": "album", "limit": 10, "market": "from_token"},
                 timeout=6
             )
-            if alb_res.status_code == 200:
-                raw_albums = alb_res.json().get("items", [])
-                seen_names = set()
-                chosen_albums = []
-                for alb in raw_albums:
-                    base_name = alb.get("name", "").split("(")[0].strip().lower()
-                    if base_name not in seen_names:
-                        seen_names.add(base_name)
-                        chosen_albums.append(alb)
-                    if len(chosen_albums) >= 2:
-                        break
+            raw_albums = alb_res.json().get("items", []) if alb_res.status_code == 200 else []
+            # Fallback to singles if artist has no full studio albums
+            if not raw_albums:
+                alb_res2 = requests.get(
+                    f"{SPOTIFY_API_BASE}/artists/{artist_id}/albums",
+                    headers=headers,
+                    params={"include_groups": "single", "limit": 6, "market": "from_token"},
+                    timeout=6
+                )
+                raw_albums = alb_res2.json().get("items", []) if alb_res2.status_code == 200 else []
 
-                for idx, alb in enumerate(chosen_albums, 1):
-                    a_name = alb.get("name", "Unknown Album")
-                    rel_date = alb.get("release_date", "")[:4]
-                    t_count = alb.get("total_tracks", 0)
-                    a_type = alb.get("album_type", "album").capitalize()
-                    a_id = alb.get("id", "")
-                    top_albums_lines.append(f"  {idx}. {a_type}: '{a_name}' ({rel_date}, {t_count} tracks) [Album ID: {a_id}]")
+            seen_names = set()
+            chosen_albums = []
+            for alb in raw_albums:
+                clean_name = alb.get("name", "").split("(")[0].strip()
+                low_name = clean_name.lower()
+                # Skip unofficial leaks/bootlegs
+                if any(bad in low_name for bad in ["leak", "leakyz", "unreleased"]):
+                    continue
+                if low_name not in seen_names:
+                    seen_names.add(low_name)
+                    chosen_albums.append(alb)
+                if len(chosen_albums) >= 2:
+                    break
+
+            for idx, alb in enumerate(chosen_albums, 1):
+                a_name = alb.get("name", "Unknown Album")
+                rel_date = alb.get("release_date", "")[:4]
+                t_count = alb.get("total_tracks", 0)
+                a_type = alb.get("album_type", "album").capitalize()
+                a_id = alb.get("id", "")
+                top_albums_lines.append(f"  {idx}. {a_type}: '{a_name}' ({rel_date}, {t_count} tracks) [Album ID: {a_id}]")
         except Exception as e:
             print(f"⚠️ [SPOTIFY] Could not fetch albums for {artist_id}: {e}")
 
@@ -477,10 +509,19 @@ def spotify_search_artists(query: str) -> str:
                 alternates.append(f"{alt_name} [ID: {alt_id}]")
 
         # 5. Compile output text
+        meta_items = []
+        if followers_str != "N/A":
+            meta_items.append(f"Followers: {followers_str}")
+        if genres != "Music":
+            meta_items.append(f"Genres: {genres}")
+        if popularity > 0:
+            meta_items.append(f"Popularity: {popularity}/100")
+
         output_parts = [
             f"Spotify Artist Spotlight: {artist_name} [Artist ID: {artist_id}]",
-            f"Followers: {followers_str} | Genres: {genres} | Popularity: {popularity}/100",
         ]
+        if meta_items:
+            output_parts.append(" | ".join(meta_items))
 
         if top_tracks_lines:
             output_parts.append("\nTop 5 Popular Tracks:\n" + "\n".join(top_tracks_lines))
