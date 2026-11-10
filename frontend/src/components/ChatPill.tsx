@@ -945,10 +945,24 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const activeScaleY = 1 + voiceIntensity * 0.48;
   const activeScaleX = 1 + voiceIntensity * 0.09;
 
-  // Controls (minimize button and command bar) are visible on hover, when input is focused/typed, or in-stream thinking (text mode only)
+  // Controls (minimize button and command bar) are visible on hover or when input is focused/typed (text mode only)
   const isControlsVisible = Boolean(
-    !voiceActive && (isHovered || isInputFocused || inputText.trim().length > 0 || followupThinkingPrompt)
+    !voiceActive && (isHovered || isInputFocused || inputText.trim().length > 0)
   );
+
+  // Delayed lens blur for minimize button: appears only after button finishes spring descent (420ms), vanishes immediately on unhover (0ms)
+  const [showMinimizeLens, setShowMinimizeLens] = useState(false);
+
+  useEffect(() => {
+    if (isControlsVisible) {
+      const timer = window.setTimeout(() => {
+        setShowMinimizeLens(true);
+      }, 420);
+      return () => window.clearTimeout(timer);
+    } else {
+      setShowMinimizeLens(false);
+    }
+  }, [isControlsVisible]);
 
   const respondingMountedAtRef = useRef<number>(0);
 
@@ -1150,7 +1164,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const trimmed = inputText.trim();
     if (!trimmed || isSubmitting) return;
     setIsSubmitting(true);
-    setIsHovered(false);
     if (onSendMessage) {
       onSendMessage(trimmed, showReplyWindow);
     }
@@ -1158,6 +1171,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setSelectionIndex(0);
     setCursorLeft(0);
     resetTextarea();
+    followupInputRef.current?.blur();
+    setIsInputFocused(false);
     window.setTimeout(() => {
       setIsSubmitting(false);
     }, 450);
@@ -1178,7 +1193,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
-  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}"><circle cx="${streamBox.w - 24}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>${
+  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}">${
+    showMinimizeLens
+      ? `<circle cx="${streamBox.w - 24}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>`
+      : ""
+  }${
     !voiceActive
       ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 120)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 24}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
       : ""

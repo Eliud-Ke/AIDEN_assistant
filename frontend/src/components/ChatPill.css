@@ -3287,23 +3287,46 @@
   padding: 0;
   outline: none;
   user-select: none;
-  /* Unhovered initial state: hidden above top boundary */
+  /* Unhovered state: tucked above top edge (exact reverse of bottom command buttons) */
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-26px) scale(0.85);
+  transform: translateY(-44px) scale(0.92);
   transition: opacity 0.16s ease-out,
-              transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.32, 0, 0.2, 1),
               box-shadow 0.25s ease,
               background 0.25s ease,
               color 0.25s ease;
 }
 
-/* Hover state: Springs down from the top with bouncy transition */
-.siri-unified-pill.controls-visible .siri-floating-close-btn,
-.siri-unified-pill.hover-active .siri-floating-close-btn {
+@keyframes minimizeWaveSpringDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-44px) scale(0.90);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.02);
+  }
+  78% {
+    transform: translateY(-1.5px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Hover state: Springs down from the top (exact reverse popping of the bottom [+] button) */
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-floating-close-btn,
+.siri-unified-pill.hover-active:not(.expanded-voice-active) .siri-floating-close-btn {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
+  transition: opacity 0.16s ease-out 0ms,
+              transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0ms,
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              color 0.25s ease;
 }
 
 /* Hover: Expanding effect only — stays colourless clear glass */
@@ -3317,6 +3340,7 @@
     inset 0 1px 0.5px rgba(255, 255, 255, 0.34),
     inset 0 -1px 1px rgba(0, 0, 0, 0.32),
     0 8px 20px rgba(0, 0, 0, 0.34);
+  transition-delay: 0ms !important;
 }
 
 /* Light Mode Floating Minimize Button */
@@ -3411,7 +3435,7 @@
    Past turns collapse to their natural text height so spacing between replies and bubbles is always clean and consistent! */
 .siri-unified-stream .siri-turn-item.pending-turn,
 .siri-unified-stream .siri-turn-item:not(:first-child):last-child {
-  min-height: 624px;
+  min-height: 640px;
   box-sizing: border-box;
   flex-shrink: 0;
 }
@@ -3420,9 +3444,9 @@
   display: flex;
   justify-content: flex-end;
   width: 100%;
-  /* Apple Siri layout: 48px clearance (+ 12px flex gap = 60px) hides past turns even when hovered (52px),
+  /* Apple Siri layout: 96px clearance provides doubled luxury spacing below the minimize button (52px),
      and 38px generous clearance below so the thinking animation & response appear lower */
-  margin: 48px 0 38px 0;
+  margin: 96px 0 38px 0;
   padding-right: 4px;
 }
 
