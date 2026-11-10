@@ -520,6 +520,11 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
             name: String(parsed.name || "Unknown Artist"),
             image: parsed.image ? String(parsed.image) : undefined,
             verified: parsed.verified !== false,
+            monthlyListeners: parsed.monthlyListeners
+              ? String(parsed.monthlyListeners)
+              : parsed.followers
+              ? String(parsed.followers)
+              : undefined,
             followers: parsed.followers ? String(parsed.followers) : undefined,
             genres: parsed.genres ? String(parsed.genres) : undefined,
             popularity: typeof parsed.popularity === "number" ? parsed.popularity : undefined,

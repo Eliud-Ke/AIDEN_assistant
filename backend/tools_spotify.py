@@ -12,6 +12,7 @@ import sys
 import time
 import subprocess
 import json
+import re
 from typing import Optional, Dict, Any, List
 
 import requests
@@ -412,10 +413,6 @@ def spotify_search_artists(query: str) -> str:
         primary_artist = artists[0]
         artist_id = primary_artist.get("id", "")
         artist_name = primary_artist.get("name", "Unknown Artist")
-        genres_list = primary_artist.get("genres", [])
-        genres = ", ".join(genres_list[:2]) if genres_list else "Music"
-        followers = primary_artist.get("followers", {}).get("total", 0) if isinstance(primary_artist.get("followers"), dict) else 0
-        followers_str = f"{followers:,} followers" if followers else "Popular on Spotify"
         popularity = primary_artist.get("popularity", 0)
 
         # High-res artist cover / profile image
@@ -425,20 +422,58 @@ def spotify_search_artists(query: str) -> str:
         # Web URL
         spotify_url = primary_artist.get("external_urls", {}).get("spotify", f"https://open.spotify.com/artist/{artist_id}")
 
-        # 2. Build Minimal Visual Card Payload
+        # 2. Enrich with exact Monthly Listeners & Real Genre
+        listeners_label = "Popular on Spotify"
+        try:
+            ssr_res = requests.get(
+                f"https://open.spotify.com/artist/{artist_id}",
+                headers={"User-Agent": "facebookexternalhit/1.1"},
+                timeout=3
+            )
+            if ssr_res.status_code == 200:
+                html = ssr_res.text
+                m_desc = re.search(r'<meta property="og:description" content="([^"]+)"', html)
+                if m_desc:
+                    m_listen = re.search(r'([0-9,.]+[KMkm]?\s+monthly listeners)', m_desc.group(1), re.IGNORECASE)
+                    if m_listen:
+                        listeners_label = m_listen.group(1).strip()
+                if not artist_img:
+                    m_img = re.search(r'<meta property="og:image" content="([^"]+)"', html)
+                    if m_img:
+                        artist_img = m_img.group(1).strip()
+        except Exception:
+            pass
+
+        # Extract primary music genre from iTunes Free Search API
+        primary_genre = "Music"
+        try:
+            it_res = requests.get(
+                "https://itunes.apple.com/search",
+                params={"term": artist_name, "entity": "musicArtist", "limit": 1},
+                timeout=3
+            )
+            if it_res.status_code == 200:
+                results = it_res.json().get("results", [])
+                if results and results[0].get("primaryGenreName"):
+                    primary_genre = results[0]["primaryGenreName"]
+        except Exception:
+            pass
+
+        # 3. Build Minimal Visual Card Payload
         card_payload = {
             "artistId": artist_id,
             "name": artist_name,
             "image": artist_img,
             "verified": True,
-            "followers": followers_str,
-            "genres": genres,
+            "monthlyListeners": listeners_label,
+            "followers": listeners_label,
+            "genres": primary_genre,
             "popularity": popularity,
             "spotifyUrl": spotify_url,
         }
         card_tag = f"::spotify-artist-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
 
-        # 3. Alternates (if any)
+        # 4. Alternates (if any)
         alternates = []
         for alt in artists[1:3]:
             alt_name = alt.get("name", "")
@@ -446,10 +481,10 @@ def spotify_search_artists(query: str) -> str:
             if alt_name:
                 alternates.append(f"{alt_name} [ID: {alt_id}]")
 
-        # 4. Compile output text
+        # 5. Compile output text
         output_parts = [
             f"Spotify Artist: {artist_name} [Artist ID: {artist_id}]",
-            f"Followers: {followers_str} | Genres: {genres}",
+            f"Monthly Listeners: {listeners_label} | Genre: {primary_genre}",
         ]
         if alternates:
             output_parts.append(f"Other matches: {', '.join(alternates)}")

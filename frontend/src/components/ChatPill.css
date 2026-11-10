@@ -4909,7 +4909,7 @@
   max-width: 422px;
   height: 154px;
   position: relative;
-  background: rgba(18, 18, 18, 0.94);
+  background-color: #121212;
   backdrop-filter: blur(36px) saturate(190%);
   -webkit-backdrop-filter: blur(36px) saturate(190%);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -4942,7 +4942,7 @@
 
 /* Light Mode Variant */
 .light-mode .spotify-artist-card {
-  background: rgba(255, 255, 255, 0.94);
+  background-color: #f7f9f8;
   border-color: rgba(0, 0, 0, 0.08);
   box-shadow: 
     0 16px 36px -8px rgba(0, 0, 0, 0.15),

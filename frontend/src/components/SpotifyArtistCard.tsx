@@ -6,6 +6,7 @@ export interface SpotifyArtistCardData {
   name: string;
   image?: string;
   verified?: boolean;
+  monthlyListeners?: string;
   followers?: string;
   genres?: string;
   popularity?: number;
@@ -18,6 +19,7 @@ export const SpotifyArtistCard: React.FC<SpotifyArtistCardData> = ({
   name,
   image,
   verified = true,
+  monthlyListeners,
   followers,
   genres,
   spotifyUrl,
@@ -39,24 +41,26 @@ export const SpotifyArtistCard: React.FC<SpotifyArtistCardData> = ({
     onPlayItem?.(artistId, "artist", `${name} Radio`);
   };
 
-  const displayFollowers = followers || "Popular on Spotify";
+  const listenersText = monthlyListeners || followers || "Popular on Spotify";
   const displayGenres = genres && genres !== "Music" ? genres : "";
 
-  return (
-    <div className="spotify-artist-card" onClick={handlePlayArtist} title={`Stream ${name} on Spotify`}>
-      {/* Background Artist Photography */}
-      {image && (
-        <img
-          className="artist-hero-bg"
-          src={image}
-          alt={name}
-          onError={(e) => {
-            (e.currentTarget as HTMLElement).style.display = "none";
-          }}
-        />
-      )}
-      <div className="artist-hero-vignette" />
+  // Guaranteed inline background image with subtle glass gradient vignette
+  const cardStyle: React.CSSProperties = image
+    ? {
+        backgroundImage: `linear-gradient(to bottom, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(15, 15, 15, 0.95) 100%), url("${image}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center 25%",
+        backgroundRepeat: "no-repeat",
+      }
+    : {};
 
+  return (
+    <div
+      className="spotify-artist-card"
+      style={cardStyle}
+      onClick={handlePlayArtist}
+      title={`Stream ${name} on Spotify`}
+    >
       {/* Top Controls Row */}
       <div className="artist-card-top">
         <div className="spotify-pill-tag">
@@ -93,7 +97,7 @@ export const SpotifyArtistCard: React.FC<SpotifyArtistCardData> = ({
             {name}
           </div>
           <div className="artist-sub-info">
-            <span>{displayFollowers}</span>
+            <span>{listenersText}</span>
             {displayGenres && (
               <>
                 <span className="artist-sub-dot">•</span>
