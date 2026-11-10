@@ -2076,7 +2076,12 @@ export const ChatPillWindow: React.FC = () => {
     }
     isRecordingRef.current = false;
     setIsRecording(false);
-    // Instant 0ms visual feedback: transition immediately into Thinking mode!
+    // Instant 0ms visual feedback: clear previous turn and transition immediately into compact Thinking mode!
+    turnsRef.current = [];
+    setTurns([]);
+    followupThinkingPromptRef.current = null;
+    setFollowupThinkingPrompt(null);
+    setIsMaxHeight(false);
     setActiveUiTag("Thinking");
   }, []);
 
@@ -2484,6 +2489,11 @@ export const ChatPillWindow: React.FC = () => {
                 setActiveUiTag(null);
               } else if (wasRecording) {
                 // Only show Thinking if we were actively recording audio and just released Shift
+                turnsRef.current = [];
+                setTurns([]);
+                followupThinkingPromptRef.current = null;
+                setFollowupThinkingPrompt(null);
+                setIsMaxHeight(false);
                 setActiveUiTag("Thinking");
               } else {
                 // Not recording and wasn't recording (e.g. idle arming) -> stay in listening mode
@@ -2506,19 +2516,12 @@ export const ChatPillWindow: React.FC = () => {
               const text = String(data.text || "").trim();
               if (text) {
                 wasOriginVoiceRef.current = true;
-                if (turnsRef.current.length > 0) {
-                  // Turn 2+ in Voice Mode: append follow-up bubble & keep scrollable history just like Keyboard Mode
-                  setIsMaxHeight(true);
-                  followupThinkingPromptRef.current = text;
-                  setFollowupThinkingPrompt(text);
-                  setActiveUiTag("Thinking");
-                } else {
-                  // Turn 1 in Voice Mode: clean initial turn
-                  followupThinkingPromptRef.current = null;
-                  setFollowupThinkingPrompt(null);
-                  setActiveUiTag("Thinking");
-                  setIsMaxHeight(false);
-                }
+                turnsRef.current = [];
+                setTurns([]);
+                followupThinkingPromptRef.current = null;
+                setFollowupThinkingPrompt(null);
+                setActiveUiTag("Thinking");
+                setIsMaxHeight(false);
               }
             } else if (msgType === "state" || msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
@@ -2558,18 +2561,17 @@ export const ChatPillWindow: React.FC = () => {
 
               const newTurnId = "turn-" + Date.now();
               currentTurnIdRef.current = newTurnId;
-              const userPromptForTurn = followupThinkingPromptRef.current;
               followupThinkingPromptRef.current = null;
               setFollowupThinkingPrompt(null);
 
               const newTurn: ChatTurn = {
                 id: newTurnId,
-                userPrompt: userPromptForTurn, // null for Turn 1, user query string for Turn 2+
+                userPrompt: null,
                 assistantReply: "",
                 isStreaming: true,
               };
 
-              setTurns((prev) => (userPromptForTurn ? [...prev, newTurn] : [newTurn]));
+              setTurns([newTurn]);
               startSmoothStreamLoop(newTurnId);
             } else if (msgType === "stream_chunk") {
               setIsStreaming(true);
@@ -2578,16 +2580,15 @@ export const ChatPillWindow: React.FC = () => {
               if (!currentTurnIdRef.current) {
                 const newTurnId = "turn-" + Date.now();
                 currentTurnIdRef.current = newTurnId;
-                const userPromptForTurn = followupThinkingPromptRef.current;
                 followupThinkingPromptRef.current = null;
                 setFollowupThinkingPrompt(null);
                 const newTurn: ChatTurn = {
                   id: newTurnId,
-                  userPrompt: userPromptForTurn,
+                  userPrompt: null,
                   assistantReply: "",
                   isStreaming: true,
                 };
-                setTurns((prev) => (userPromptForTurn ? [...prev, newTurn] : [newTurn]));
+                setTurns([newTurn]);
               }
 
               if (typeof data.fullContent === "string") {
@@ -2627,17 +2628,15 @@ export const ChatPillWindow: React.FC = () => {
               setIsStreaming(false);
               setActiveUiTag("Error");
               const errText = String(data.message || "An unexpected error occurred.");
-              const userPromptForTurn = followupThinkingPromptRef.current;
               followupThinkingPromptRef.current = null;
               setFollowupThinkingPrompt(null);
 
               const errorTurnId = "error-" + Date.now();
               currentTurnIdRef.current = null;
-              setTurns((prev) => [
-                ...prev,
+              setTurns([
                 {
                   id: errorTurnId,
-                  userPrompt: userPromptForTurn,
+                  userPrompt: null,
                   assistantReply: errText,
                   isStreaming: false,
                 },
@@ -2702,7 +2701,7 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, []);
 
-  const handleSendMessage = (msg: string, isFollowup?: boolean) => {
+  const handleSendMessage = (msg: string, _isFollowup?: boolean) => {
     stopStreamRaf();
     stopAudio();
     setIsVoiceActive(false);
@@ -2724,21 +2723,13 @@ export const ChatPillWindow: React.FC = () => {
     lastLineEmittedTimeRef.current = 0;
     setIsStreaming(false);
 
-    if (!isFollowup) {
-      // Turn 1 (Fresh query from idle pill): completely clean past turns, start compact
-      turnsRef.current = [];
-      setTurns([]);
-      followupThinkingPromptRef.current = null;
-      setFollowupThinkingPrompt(null);
-      setActiveUiTag("Thinking");
-      setIsMaxHeight(false);
-    } else {
-      // Turn 2+: Follow-up query -> expand window to max luxury height, spawn follow-up bubble + in-stream thinking loader!
-      setIsMaxHeight(true);
-      followupThinkingPromptRef.current = msg;
-      setFollowupThinkingPrompt(msg);
-      setActiveUiTag("Thinking");
-    }
+    // Every turn starts as a fresh single turn: collapse cleanly into Thinking pill, then show only the new response
+    turnsRef.current = [];
+    setTurns([]);
+    followupThinkingPromptRef.current = null;
+    setFollowupThinkingPrompt(null);
+    setActiveUiTag("Thinking");
+    setIsMaxHeight(false);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
@@ -2750,16 +2741,7 @@ export const ChatPillWindow: React.FC = () => {
     } else {
       setActiveUiTag("Offline");
       const offlineMsg = "Aiden's backend is not running. Boot up Aiden from the Control Panel first.";
-      if (turnsRef.current.length === 0) {
-        setTurns([{ id: "offline", userPrompt: null, assistantReply: offlineMsg, isStreaming: false }]);
-      } else {
-        setTurns((prev) => [
-          ...prev,
-          { id: "offline-" + Date.now(), userPrompt: msg, assistantReply: offlineMsg, isStreaming: false },
-        ]);
-        setFollowupThinkingPrompt(null);
-        followupThinkingPromptRef.current = null;
-      }
+      setTurns([{ id: "offline", userPrompt: null, assistantReply: offlineMsg, isStreaming: false }]);
     }
   };
 
