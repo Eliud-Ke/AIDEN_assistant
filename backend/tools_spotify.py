@@ -376,10 +376,11 @@ def spotify_search_tracks(query: str, limit: int = 7) -> str:
         return f"Error executing Spotify track search: {str(e)}"
 
 
-def spotify_search_artists(query: str, limit: int = 7) -> str:
+def spotify_search_artists(query: str) -> str:
     """
-    Searches the Spotify catalog specifically for music artists matching the query.
-    Returns up to 7 top matching artists with name, genres, followers, and Spotify ID.
+    Searches the Spotify catalog for an artist matching the query.
+    Returns the top matching artist showcase including their genres, follower count,
+    their top 5 most popular tracks, their 2 latest albums, and alternative artist matches.
     """
     if not query or not query.strip():
         return "Please specify an artist name to search for."
@@ -387,14 +388,14 @@ def spotify_search_artists(query: str, limit: int = 7) -> str:
     try:
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-        limit = max(1, min(10, int(limit)))
         clean_query = query.strip().strip('"\'')
 
+        # 1. Search for top 3 matching artists
         url = f"{SPOTIFY_API_BASE}/search"
         params = {
             "q": clean_query,
             "type": "artist",
-            "limit": limit,
+            "limit": 3,
             "market": "from_token"
         }
 
@@ -407,20 +408,98 @@ def spotify_search_artists(query: str, limit: int = 7) -> str:
         if not artists:
             return f"No artists found matching '{query}' on Spotify."
 
-        results_lines = []
-        for idx, art in enumerate(artists, 1):
-            art_name = art.get("name", "Unknown Artist")
-            genres = ", ".join(art.get("genres", [])[:2]) or "Music"
-            followers = art.get("followers", {}).get("total", 0)
-            followers_str = f"{followers:,}" if followers else "N/A"
-            art_id = art.get("id", "")
-            results_lines.append(f"{idx}. Artist: {art_name} (Genres: {genres}, Followers: {followers_str}) [ID: {art_id}]")
+        primary_artist = artists[0]
+        artist_id = primary_artist.get("id", "")
+        artist_name = primary_artist.get("name", "Unknown Artist")
+        genres = ", ".join(primary_artist.get("genres", [])[:3]) or "Music"
+        followers = primary_artist.get("followers", {}).get("total", 0)
+        followers_str = f"{followers:,}" if followers else "N/A"
+        popularity = primary_artist.get("popularity", 0)
 
-        joined = "\n".join(results_lines)
-        return f"Spotify Artist Results for '{query}':\n{joined}\n\nCall `spotify_play_item(spotify_id=ID, item_type='artist')` to stream artist radio/top tracks."
+        # 2. Fetch primary artist's Top 5 Tracks
+        top_tracks_lines = []
+        try:
+            tt_res = requests.get(
+                f"{SPOTIFY_API_BASE}/artists/{artist_id}/top-tracks",
+                headers=headers,
+                params={"market": "from_token"},
+                timeout=6
+            )
+            if tt_res.status_code == 200:
+                tracks_data = tt_res.json().get("tracks", [])[:5]
+                for idx, trk in enumerate(tracks_data, 1):
+                    t_name = trk.get("name", "Unknown Track")
+                    dur_ms = trk.get("duration_ms", 0)
+                    dur_str = f"{dur_ms // 60000}:{(dur_ms % 60000) // 1000:02d}"
+                    t_id = trk.get("id", "")
+                    exp = " [E]" if trk.get("explicit") else ""
+                    top_tracks_lines.append(f"  {idx}. '{t_name}'{exp} ({dur_str}) [Track ID: {t_id}]")
+        except Exception as e:
+            print(f"⚠️ [SPOTIFY] Could not fetch top tracks for {artist_id}: {e}")
+
+        # 3. Fetch primary artist's Top 2 Latest Albums
+        top_albums_lines = []
+        try:
+            alb_res = requests.get(
+                f"{SPOTIFY_API_BASE}/artists/{artist_id}/albums",
+                headers=headers,
+                params={"include_groups": "album,single", "limit": 6, "market": "from_token"},
+                timeout=6
+            )
+            if alb_res.status_code == 200:
+                raw_albums = alb_res.json().get("items", [])
+                seen_names = set()
+                chosen_albums = []
+                for alb in raw_albums:
+                    base_name = alb.get("name", "").split("(")[0].strip().lower()
+                    if base_name not in seen_names:
+                        seen_names.add(base_name)
+                        chosen_albums.append(alb)
+                    if len(chosen_albums) >= 2:
+                        break
+
+                for idx, alb in enumerate(chosen_albums, 1):
+                    a_name = alb.get("name", "Unknown Album")
+                    rel_date = alb.get("release_date", "")[:4]
+                    t_count = alb.get("total_tracks", 0)
+                    a_type = alb.get("album_type", "album").capitalize()
+                    a_id = alb.get("id", "")
+                    top_albums_lines.append(f"  {idx}. {a_type}: '{a_name}' ({rel_date}, {t_count} tracks) [Album ID: {a_id}]")
+        except Exception as e:
+            print(f"⚠️ [SPOTIFY] Could not fetch albums for {artist_id}: {e}")
+
+        # 4. Alternates (if any)
+        alternates = []
+        for alt in artists[1:3]:
+            alt_name = alt.get("name", "")
+            alt_id = alt.get("id", "")
+            if alt_name:
+                alternates.append(f"{alt_name} [ID: {alt_id}]")
+
+        # 5. Compile output text
+        output_parts = [
+            f"Spotify Artist Spotlight: {artist_name} [Artist ID: {artist_id}]",
+            f"Followers: {followers_str} | Genres: {genres} | Popularity: {popularity}/100",
+        ]
+
+        if top_tracks_lines:
+            output_parts.append("\nTop 5 Popular Tracks:\n" + "\n".join(top_tracks_lines))
+
+        if top_albums_lines:
+            output_parts.append("\nLatest Albums / Releases:\n" + "\n".join(top_albums_lines))
+
+        if alternates:
+            output_parts.append(f"\nOther artist matches: {', '.join(alternates)}")
+
+        output_parts.append(
+            f"\nTo play: Call `spotify_play_item(spotify_id='{artist_id}', item_type='artist')` for artist radio, "
+            f"or `spotify_play_item(spotify_id=TRACK_ID, item_type='track')` to stream a song."
+        )
+
+        return "\n".join(output_parts)
 
     except Exception as e:
-        return f"Error executing Spotify artist search: {str(e)}"
+        return f"Error executing Spotify artist spotlight search: {str(e)}"
 
 
 def spotify_search_albums(query: str, limit: int = 7) -> str:
@@ -721,8 +800,8 @@ SPOTIFY_TOOLS_SCHEMA = [
         "function": {
             "name": "spotify_search_artists",
             "description": (
-                "Searches Spotify specifically for music artists matching the query. "
-                "Returns up to 7 top matching artists with artist name, genres, followers, and Spotify ID."
+                "Searches Spotify for a music artist. Returns a complete artist spotlight with their profile "
+                "(genres, followers), their top 5 most popular tracks, and their 2 latest albums."
             ),
             "parameters": {
                 "type": "object",
@@ -730,13 +809,9 @@ SPOTIFY_TOOLS_SCHEMA = [
                     "query": {
                         "type": "string",
                         "description": (
-                            "Clean artist name (e.g. 'The Weeknd', 'Kendrick Lamar', 'Daft Punk', 'Taylor Swift'). "
+                            "Clean artist name (e.g. 'Yeat', 'The Weeknd', 'Kendrick Lamar', 'Travis Scott'). "
                             "Do NOT include conversational filler like 'who is', 'artist', 'musician', or 'search for'."
                         ),
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Number of artists to return (1 to 10). Default is 7.",
                     },
                 },
                 "required": ["query"],
