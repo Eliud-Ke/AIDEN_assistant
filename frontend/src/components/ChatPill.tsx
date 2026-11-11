@@ -2539,7 +2539,7 @@ export const ChatPillWindow: React.FC = () => {
 
               polishTimerRef.current = window.setTimeout(() => {
                 polishTimerRef.current = null;
-                // Default behavior: keep header tag intact without collapsing!
+                setActiveUiTag(null);
                 setTurns([newTurn]);
               }, delay);
             } else if (msgType === "error") {
