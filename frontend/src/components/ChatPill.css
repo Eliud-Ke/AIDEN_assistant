@@ -16,20 +16,22 @@
   overflow: hidden;
 }
 
-/* Outer floating viewport container anchored in the upper third/quarter of the display */
+/* Outer floating viewport container filling the native HWND pill window */
 .chat-pill-anchor {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 18px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   z-index: 90;
   pointer-events: none;
-  padding: 0 40px;
+  padding: 0;
+  margin: 0;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Slide Down Spring Animation Wrapper (Spotlight / Siri style from upper screen) */
@@ -38,24 +40,24 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 466px;
-  transform: translateY(-22px) scale(0.96);
+  height: 100%;
+  max-width: 100%;
   opacity: 0;
+  transform: scale(0.97);
   pointer-events: none;
-  /* Smooth exit animation when transitioning to sleep */
-  transition: transform 0.28s cubic-bezier(0.32, 0, 0.2, 1),
-              opacity 0.24s ease-out;
+  transition: transform 0.24s cubic-bezier(0.32, 0, 0.2, 1),
+              opacity 0.20s ease-out;
   will-change: transform, opacity;
+  box-sizing: border-box;
 }
 
-/* Awake State: Glides down smoothly into view */
+/* Awake State: Blooms smoothly into view */
 .chat-pill-wrapper.awake {
-  transform: translateY(0) scale(1);
+  transform: scale(1);
   opacity: 1;
   pointer-events: auto;
-  /* Premium spring glide-down animation when waking up */
-  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ==========================================================================
@@ -2817,9 +2819,11 @@
   position: relative;
   z-index: 10;
   display: flex;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
-  will-change: width, max-width, min-height, height, transform, border-radius;
   cursor: default;
 
   /* Shared Ultra-Clear Apple Glass Material */
@@ -2834,23 +2838,13 @@
     rgba(26, 26, 26, 0.10) 92%,
     rgba(26, 26, 26, 0.0) 100%
   ) !important;
-  /* No parent backdrop-filter so inner glass controls serve as the primary backdrop-filter layer */
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 16px 36px -4px rgba(0, 0, 0, 0.65),
-    0 6px 14px rgba(0, 0, 0, 0.45) !important;
+  /* Top specular highlight rim (DWM handles native window border & shadow) */
+  border: none !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
 
-  /* Continuous Apple Spring Morphing between modes & smooth theme transitions */
   transition: 
-    width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
-    max-width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
-    min-height 0.35s cubic-bezier(0.18, 1.15, 0.3, 1),
-    border-radius 0.32s ease,
-    padding 0.32s ease,
-    box-shadow 0.30s ease,
     background 0.35s ease,
-    border-color 0.35s ease;
+    box-shadow 0.30s ease;
 }
 
 /* Light Mode Frosted Glass Aesthetic */
@@ -2866,11 +2860,8 @@
     rgba(225, 225, 232, 0.10) 92%,
     rgba(225, 225, 232, 0.0) 100%
   ) !important;
-  border: 1px solid rgba(0, 0, 0, 0.12) !important;
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.90),
-    0 16px 36px -4px rgba(0, 0, 0, 0.14),
-    0 6px 14px rgba(0, 0, 0, 0.08) !important;
+  border: none !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.90) !important;
 }
 
 .siri-unified-pill.light-mode textarea,
@@ -2891,10 +2882,7 @@
 /* MODE 1: IDLE / INPUT */
 .siri-unified-pill.mode-idle {
   width: 100%;
-  max-width: 466px;
-  min-height: 60px;
-  height: auto;
-  border-radius: 9999px;
+  height: 100%;
   display: flex;
   align-items: center;
   padding: 0 24px;
@@ -2947,63 +2935,15 @@
   color: #007AFF;
 }
 
-/* MODE 1.5: LISTENING / VOICE MODE (Half width, 80px Height Compact Organic Capsule) */
+/* MODE 1.5: LISTENING / VOICE MODE (WindowMorpher sizes window to 280x80) */
 .siri-unified-pill.mode-listening {
   width: 100%;
-  max-width: 280px;
-  min-height: 80px;
-  height: 80px;
-  border-radius: 40px;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   cursor: pointer;
-  animation: siriVoicePillMorph 0.52s cubic-bezier(0.18, 1.25, 0.35, 1) both;
-}
-
-@keyframes siriVoicePillMorph {
-  0% {
-    max-width: 466px;
-    min-height: 60px;
-    height: 60px;
-    border-radius: 30px;
-    padding: 0 24px;
-    transform: scale(1);
-  }
-  /* 1. Anticipation stretch: edges stretch out just a tiny bit */
-  22% {
-    max-width: 485px;
-    min-height: 56px;
-    height: 56px;
-    border-radius: 28px;
-    padding: 0 24px;
-    transform: scaleX(1.045) scaleY(0.95);
-  }
-  /* 2. Move inwards as if the pill is shrinking: half size width (280px), gaining height (80px) */
-  68% {
-    max-width: 265px;
-    min-height: 84px;
-    height: 84px;
-    border-radius: 40px;
-    transform: scaleX(0.96) scaleY(1.04);
-  }
-  /* 3. Gentle rebound settle */
-  85% {
-    max-width: 284px;
-    min-height: 78px;
-    height: 78px;
-    border-radius: 40px;
-    transform: scaleX(1.01) scaleY(0.99);
-  }
-  /* 4. Settles cleanly at half width (280px) and 80px height */
-  100% {
-    max-width: 280px;
-    min-height: 80px;
-    height: 80px;
-    border-radius: 40px;
-    transform: scale(1);
-  }
 }
 
 .siri-listening-content {
@@ -3015,60 +2955,11 @@
   position: relative;
   cursor: pointer;
   overflow: hidden;
-  border-radius: 40px;
 }
 
 /* MODE 1.5 -> 1: REVERSE EXPAND MORPH (Voice Exit back to Idle Search Capsule) */
 .siri-unified-pill.mode-idle.exiting-voice {
   transition: none !important;
-  animation: siriVoicePillExpand 0.48s cubic-bezier(0.18, 1.25, 0.35, 1) both;
-}
-
-@keyframes siriVoicePillExpand {
-  0% {
-    max-width: 280px;
-    min-height: 80px;
-    height: 80px;
-    border-radius: 40px;
-    padding: 0;
-    transform: scale(1);
-  }
-  /* 1. Anticipation squash: gathers kinetic energy before popping open */
-  18% {
-    max-width: 265px;
-    min-height: 84px;
-    height: 84px;
-    border-radius: 40px;
-    padding: 0;
-    transform: scaleX(0.96) scaleY(1.04);
-  }
-  /* 2. Explosive spring expansion: blooms outward past 465px */
-  64% {
-    max-width: 485px;
-    min-height: 56px;
-    height: 56px;
-    border-radius: 28px;
-    padding: 0 16px;
-    transform: scaleX(1.045) scaleY(0.95);
-  }
-  /* 3. Elastic rebound cushion */
-  84% {
-    max-width: 460px;
-    min-height: 61px;
-    height: 61px;
-    border-radius: 30px;
-    padding: 0 24px;
-    transform: scaleX(0.99) scaleY(1.01);
-  }
-  /* 4. Settles cleanly at standard idle search pill */
-  100% {
-    max-width: 466px;
-    min-height: 60px;
-    height: 60px;
-    border-radius: 30px;
-    padding: 0 24px;
-    transform: scale(1);
-  }
 }
 
 /* Staggered Content Reveal on Voice Exit: Fade in near center separated, then spring smoothly outwards to ends */
@@ -3144,13 +3035,10 @@
   }
 }
 
-/* MODE 2: THINKING (Full width capsule pill with left-aligned string orb and thinking shimmer) */
+/* MODE 2: THINKING */
 .siri-unified-pill.mode-thinking {
   width: 100%;
-  max-width: 466px;
-  min-height: 60px;
-  height: auto;
-  border-radius: 9999px;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -3211,54 +3099,23 @@
   100% { background-position: -100% 0; }
 }
 
-/* MODE 3: RESPONDING (Expands back to full length and vertically into glass answer window) */
+/* MODE 3: RESPONDING */
 .siri-unified-pill.mode-responding {
   width: 100%;
-  max-width: 466px;
-  min-height: 68px;
-  height: auto;
-  max-height: 620px;
-  border-radius: 28px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   padding: 16px 18px 16px 18px;
   position: relative;
-  animation: siriRespondingBouncy 0.44s cubic-bezier(0.18, 1.15, 0.3, 1);
-  transition: 
-    width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
-    max-width 0.42s cubic-bezier(0.18, 1.22, 0.3, 1),
-    min-height 0.38s cubic-bezier(0.18, 1.25, 0.32, 1),
-    border-radius 0.32s ease,
-    padding 0.32s ease,
-    box-shadow 0.25s ease;
+  overflow: hidden;
 }
 
-/* Hover/active state: expands to comfortable 180px height to cradle minimize button & command bar */
 .siri-unified-pill.mode-responding.controls-visible {
-  min-height: 180px;
+  /* Controls visibility handled by child elements and WindowMorpher */
 }
 
 .siri-unified-pill.mode-responding.max-height {
-  height: 620px;
-  min-height: 620px;
-}
-
-@keyframes siriRespondingBouncy {
-  0% {
-    opacity: 0.5;
-    transform: translateY(-8px) scale(0.95);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(2px) scale(1.018);
-  }
-  75% {
-    transform: translateY(-0.8px) scale(0.996);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  height: 100%;
 }
 
 /* Floating Circular Colourless Clear Glass Minimize Button */

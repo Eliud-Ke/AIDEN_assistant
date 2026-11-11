@@ -108,6 +108,7 @@ interface ChatPillProps {
   onStopRecording?: () => void;
   onHardwareChange?: (action: "volume" | "brightness", level?: number, muted?: boolean) => void;
   onSpotifyPlay?: (spotifyId: string, itemType: "track" | "album" | "artist") => void;
+  onHeightChange?: (targetH: number, durationMs?: number) => void;
 }
 
 interface MediaGalleryItem {
@@ -787,6 +788,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onStopRecording: _onStopRecording,
   onHardwareChange,
   onSpotifyPlay,
+  onHeightChange,
 }) => {
   void _onStartRecording;
   void _onStopRecording;
@@ -975,6 +977,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       setIsHovered(false);
     }
   }, [pillMode]);
+
+  const lastReportedHRef = useRef<number>(0);
+
+  // Synchronize responding height (content + controls) with the native HWND pill
+  useEffect(() => {
+    if (pillMode !== "responding") {
+      lastReportedHRef.current = 0;
+      return;
+    }
+    const el = streamContainerRef.current;
+    const contentH = el ? el.scrollHeight : 80;
+    const headerH = (activeUiTag && !followupThinkingPrompt) ? 40 : 0;
+    const controlsH = isControlsVisible ? 90 : 0;
+    const targetH = Math.min(620, Math.max(120, contentH + headerH + controlsH + 40));
+
+    if (Math.abs(targetH - lastReportedHRef.current) >= 6) {
+      lastReportedHRef.current = targetH;
+      if (onHeightChange) {
+        onHeightChange(targetH, 220);
+      }
+    }
+  }, [pillMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange]);
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
 
@@ -2336,128 +2360,57 @@ export const ChatPillWindow: React.FC = () => {
   const currentModeRef = useRef(currentMode);
   currentModeRef.current = currentMode;
 
-  // Architecture A: Native DWM GPU KeyFrame Animation Sync
-  const prevModeRef = useRef<"idle" | "listening" | "thinking" | "responding">("idle");
-  const collapseTimerRef = useRef<number | null>(null);
+  // Native Window Morpher: The HWND itself is the pill
+  const lastSyncWidthRef = useRef<number>(466);
   const lastSyncHeightRef = useRef<number>(60);
 
-  const triggerGpuShapeAnimation = useCallback(
-    (targetMode: "idle" | "listening" | "thinking" | "responding", durationMs = 400, explicitHeight?: number) => {
+  const morphTo = useCallback(
+    (targetWidth: number, targetHeight: number, durationMs = 280) => {
       if (!isAwake) return;
-
-      if (collapseTimerRef.current !== null) {
-        window.clearTimeout(collapseTimerRef.current);
-        collapseTimerRef.current = null;
+      if (
+        Math.abs(targetWidth - lastSyncWidthRef.current) < 2 &&
+        Math.abs(targetHeight - lastSyncHeightRef.current) < 4
+      ) {
+        return;
       }
-
-      if (targetMode === "listening") {
-        lastSyncHeightRef.current = 80;
-        invoke("animate_chat_pill_shape", {
-          offsetX: 180.0,
-          offsetY: 18.0,
-          width: 280.0,
-          height: 80.0,
-          cornerRadius: 40.0,
-          durationMs,
-          windowHeight: 130.0,
-        }).catch(() => {});
-      } else if (targetMode === "idle" || targetMode === "thinking") {
-        const wasResponding = prevModeRef.current === "responding";
-        lastSyncHeightRef.current = 60;
-
-        // Animate the acrylic blur back to the idle capsule shape
-        invoke("animate_chat_pill_shape", {
-          offsetX: 87.0,
-          offsetY: 18.0,
-          width: 466.0,
-          height: 60.0,
-          cornerRadius: 30.0,
-          durationMs,
-          // If collapsing from responding mode, don't clamp window height until animation completes!
-          windowHeight: wasResponding ? undefined : 130.0,
-        }).catch(() => {});
-
-        // If collapsing from responding, clamp the Win32 window after animation completes
-        if (wasResponding) {
-          collapseTimerRef.current = window.setTimeout(() => {
-            invoke("animate_chat_pill_shape", {
-              offsetX: 87.0,
-              offsetY: 18.0,
-              width: 466.0,
-              height: 60.0,
-              cornerRadius: 30.0,
-              durationMs: 0,
-              windowHeight: 130.0,
-            }).catch(() => {});
-            collapseTimerRef.current = null;
-          }, durationMs + 20);
-        }
-      } else if (targetMode === "responding") {
-        const wrapper = contentRef.current;
-        const pillEl = (wrapper?.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
-        const targetH = explicitHeight ?? Math.min(620, Math.max(100, pillEl?.scrollHeight || 180));
-        lastSyncHeightRef.current = targetH;
-        const targetWinH = Math.max(400, Math.min(960, targetH + 80));
-
-        // Single GPU instruction to DWM compositor: animate cutout over durationMs
-        invoke("animate_chat_pill_shape", {
-          offsetX: 87.0,
-          offsetY: 18.0,
-          width: 466.0,
-          height: targetH,
-          cornerRadius: targetH > 80 ? 28.0 : 30.0,
-          durationMs,
-          windowHeight: targetWinH,
-        }).catch(() => {});
-      }
-
-      prevModeRef.current = targetMode;
+      lastSyncWidthRef.current = targetWidth;
+      lastSyncHeightRef.current = targetHeight;
+      invoke("morph_pill", {
+        targetWidth,
+        targetHeight,
+        durationMs,
+      }).catch(() => {});
     },
     [isAwake]
   );
 
-  // Trigger single-instruction DWM GPU animation whenever mode transitions
+  // Sync mode changes with native HWND geometry
   useEffect(() => {
     if (!isAwake) return;
-    const dur = currentMode === "listening" ? 420 : currentMode === "responding" ? 440 : 380;
-    triggerGpuShapeAnimation(currentMode, dur);
-  }, [currentMode, isAwake, triggerGpuShapeAnimation]);
+    if (currentMode === "listening") {
+      morphTo(280, 80, 320);
+    } else if (currentMode === "idle" || currentMode === "thinking") {
+      morphTo(466, 60, 280);
+    } else if (currentMode === "responding") {
+      const wrapper = contentRef.current;
+      const pillEl = (wrapper?.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
+      const targetH = Math.min(620, Math.max(120, pillEl?.scrollHeight || 180));
+      morphTo(466, targetH, 320);
+    }
+  }, [currentMode, isAwake, morphTo]);
 
-  // Synchronize height changes during responding mode (e.g. streaming or hover controls)
+  // Sync theme changes with DWM Acrylic backdrop & border
   useEffect(() => {
-    if (!isAwake || currentMode !== "responding") return;
-    const el = contentRef.current;
-    if (!el) return;
+    invoke("set_pill_theme", { darkMode: isDarkMode }).catch(() => {});
+  }, [isDarkMode]);
 
-    const pillEl = (el.querySelector(".siri-unified-pill") as HTMLElement) ?? el;
-    let resizeDebounce: number | null = null;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const measuredH = Math.round(entry.contentRect.height);
-        // Only notify if height changed substantially (>= 12px) to prevent tiny jitter
-        if (Math.abs(measuredH - lastSyncHeightRef.current) >= 12) {
-          if (resizeDebounce !== null) {
-            window.clearTimeout(resizeDebounce);
-          }
-          resizeDebounce = window.setTimeout(() => {
-            const currentH = Math.min(620, Math.max(100, pillEl.scrollHeight || measuredH));
-            triggerGpuShapeAnimation("responding", 200, currentH);
-            resizeDebounce = null;
-          }, 40);
-        }
-      }
-    });
-
-    observer.observe(pillEl, { box: "border-box" });
-
-    return () => {
-      observer.disconnect();
-      if (resizeDebounce !== null) {
-        window.clearTimeout(resizeDebounce);
-      }
-    };
-  }, [currentMode, isAwake, triggerGpuShapeAnimation]);
+  const handlePillHeightChange = useCallback(
+    (targetH: number, durationMs = 220) => {
+      if (!isAwake || currentMode !== "responding") return;
+      morphTo(466, targetH, durationMs);
+    },
+    [isAwake, currentMode, morphTo]
+  );
 
   // Sync state events from Tauri main process
   useEffect(() => {
@@ -2839,6 +2792,7 @@ export const ChatPillWindow: React.FC = () => {
         isRecording={isRecording}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
+        onHeightChange={handlePillHeightChange}
       />
     </div>
   );
