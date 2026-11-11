@@ -244,7 +244,7 @@ const LINE_LENGTH_THRESHOLD = 75;
 function splitIntoSpringLines(text: string): string[] {
   if (!text) return [];
 
-  const rawParagraphs = text.split("\r\n");
+  const rawParagraphs = text.split(/\r?\n/);
   const result: string[] = [];
 
   for (const para of rawParagraphs) {
@@ -284,82 +284,6 @@ function splitIntoSpringLines(text: string): string[] {
   }
 
   return result.length > 0 ? result : [text];
-}
-
-function findNextLineBoundary(text: string, fromIndex: number, isStreamEnded: boolean): number {
-  if (fromIndex >= text.length) {
-    return text.length;
-  }
-
-  if (isStreamEnded) {
-    return text.length;
-  }
-
-  // Skip leading newlines right at fromIndex
-  let start = fromIndex;
-  while (start < text.length && (text[start] === "\r\n" || text[start] === "\r")) {
-    start++;
-  }
-
-  if (start >= text.length) {
-    return fromIndex;
-  }
-
-  const unrevealed = text.slice(start);
-
-  // Media gallery, Location card, Gmail card, or Calendar card boundary: don't split inside ::...[...]::
-  const embedMatch = /::(?:media-|location-|gmail-|calendar-|spotify-|system-|weather-)/.exec(unrevealed);
-  if (embedMatch) {
-    const embedIdx = embedMatch.index;
-    if (embedIdx > 0) {
-      return start + embedIdx;
-    }
-    const embedEnd = unrevealed.indexOf("::", 8);
-    if (embedEnd !== -1) {
-      return start + embedEnd + 2;
-    }
-    return fromIndex;
-  }
-
-  // 1. Check for explicit newline (\r\n)
-  const newlineIdx = unrevealed.indexOf("\r\n");
-  if (newlineIdx !== -1) {
-    let end = start + newlineIdx + 1;
-    // Consume consecutive newlines (\r\n\r\n or \r\n) so the next line starts with content
-    while (end < text.length && (text[end] === "\r\n" || text[end] === "\r")) {
-      end++;
-    }
-    return end;
-  }
-
-  // 2. Length threshold for paragraphs without newlines
-  if (unrevealed.length >= LINE_LENGTH_THRESHOLD) {
-    const sentenceRegex = /([.!?:]+[\s]+)(?=[A-Z0-9\p{Emoji}])/gu;
-    let match: RegExpExecArray | null;
-    let bestCut = -1;
-
-    while ((match = sentenceRegex.exec(unrevealed)) !== null) {
-      const cutPos = match.index + match[1].length;
-      if (cutPos >= 35) {
-        bestCut = cutPos;
-        break;
-      }
-    }
-
-    if (bestCut !== -1) {
-      return start + bestCut;
-    }
-
-    // If paragraph is very long (>= 110 chars) without punctuation, break cleanly on a word boundary
-    if (unrevealed.length >= 110) {
-      const lastSpace = unrevealed.lastIndexOf(" ", 100);
-      if (lastSpace >= 45) {
-        return start + lastSpace + 1;
-      }
-    }
-  }
-
-  return fromIndex;
 }
 
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
@@ -921,8 +845,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     ? [{ id: "single-turn", userPrompt: null, assistantReply: responseMessage, isStreaming }]
     : [];
 
-  const hasTurns = activeTurns.length > 0;
-  const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || isStreaming || followupThinkingPrompt);
+  const hasTurns = activeTurns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt));
+  const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || followupThinkingPrompt);
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
 
   const pillMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
@@ -981,7 +905,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const lastReportedHRef = useRef<number>(0);
 
   // Synchronize responding height (pure content + controls) with the native HWND pill
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (pillMode !== "responding") {
       lastReportedHRef.current = 0;
       return;
@@ -2263,44 +2187,6 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  const startSmoothStreamLoop = (turnId: string) => {
-    if (rafIdRef.current !== null) return;
-
-    const tick = () => {
-      const activeId = currentTurnIdRef.current || turnId;
-      const target = targetTextRef.current;
-      const currentLen = displayedLengthRef.current;
-      const isEnded = streamEndedRef.current;
-
-      const nextBoundary = findNextLineBoundary(target, currentLen, isEnded);
-
-      const now = Date.now();
-      const elapsedSinceLastLine = now - lastLineEmittedTimeRef.current;
-      // Minimum pacing between line reveals to let the Apple spring bounce play (85ms)
-      const MIN_LINE_INTERVAL = 85;
-
-      if (nextBoundary > currentLen && (elapsedSinceLastLine >= MIN_LINE_INTERVAL || currentLen === 0)) {
-        displayedLengthRef.current = nextBoundary;
-        lastLineEmittedTimeRef.current = now;
-        const sliced = target.slice(0, nextBoundary);
-        setTurns((prev) =>
-          prev.map((t) => (t.id === activeId ? { ...t, assistantReply: sliced, isStreaming: true } : t))
-        );
-      } else if (isEnded && currentLen >= target.length) {
-        setTurns((prev) =>
-          prev.map((t) => (t.id === activeId ? { ...t, assistantReply: target, isStreaming: false } : t))
-        );
-        setIsStreaming(false);
-        stopStreamRaf();
-        return;
-      }
-
-      rafIdRef.current = requestAnimationFrame(tick);
-    };
-
-    rafIdRef.current = requestAnimationFrame(tick);
-  };
-
   const resetReplyState = () => {
     stopStreamRaf();
     stopAudio();
@@ -2333,7 +2219,7 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  const hasReplyText = turns.length > 0 || Boolean(followupThinkingPrompt) || isStreaming;
+  const hasReplyText = turns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt)) || Boolean(followupThinkingPrompt);
   const isThinking = Boolean(!hasReplyText && activeUiTag);
   const currentMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
@@ -2409,23 +2295,7 @@ export const ChatPillWindow: React.FC = () => {
     } else if (currentMode === "idle" || currentMode === "thinking") {
       morphTo(466, 60, 280);
     } else if (currentMode === "responding") {
-      const wrapper = contentRef.current;
-      const pillEl = (wrapper?.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
-      const streamEl = (pillEl?.querySelector(".siri-unified-stream") as HTMLElement) ?? null;
-      let contentH = 80;
-      if (streamEl && streamEl.children.length > 0) {
-        let total = 0;
-        for (let i = 0; i < streamEl.children.length; i++) {
-          const child = streamEl.children[i] as HTMLElement;
-          total += child.offsetHeight || child.scrollHeight || 0;
-        }
-        if (streamEl.children.length > 1) {
-          total += (streamEl.children.length - 1) * 12;
-        }
-        contentH = Math.max(60, total);
-      }
-      const targetH = Math.min(620, Math.max(120, contentH + 36));
-      morphTo(466, targetH, 280);
+      // ChatPill's layout effect computes exact content clearance and invokes handlePillHeightChange
     }
   }, [currentMode, isAwake, morphTo]);
 
@@ -2561,15 +2431,46 @@ export const ChatPillWindow: React.FC = () => {
               }
             } else if (msgType === "stream_start") {
               stopStreamRaf();
-    stopAudio();
+              stopAudio();
               targetTextRef.current = "";
               displayedLengthRef.current = 0;
               streamEndedRef.current = false;
               lastLineEmittedTimeRef.current = 0;
               setIsStreaming(true);
-              setActiveUiTag(null);
 
               // Tracker: If originated from audio/mic mode, keep expanded UI in mic mode too
+              if (wasOriginVoiceRef.current) {
+                setIsVoiceActive(true);
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: "voice_arm" }));
+                }
+              }
+              // In non-streaming mode: preserve activeUiTag in thinking capsule until complete!
+            } else if (msgType === "stream_chunk") {
+              setIsStreaming(true);
+              if (typeof data.fullContent === "string") {
+                targetTextRef.current = data.fullContent;
+              } else if (typeof data.token === "string") {
+                targetTextRef.current += data.token;
+              }
+            } else if (msgType === "stream_end") {
+              stopStreamRaf();
+              stopAudio();
+              streamEndedRef.current = true;
+              setIsStreaming(false);
+
+              if (typeof data.fullContent === "string" && data.fullContent.length > 0) {
+                targetTextRef.current = data.fullContent;
+              } else if (typeof data.reply === "string" && data.reply.length > 0) {
+                targetTextRef.current = data.reply;
+              }
+              const finalContent = targetTextRef.current.trim();
+
+              const serverConnectors: string[] = Array.isArray(data.connectors) ? data.connectors : [];
+              serverConnectors.forEach((c) => currentTurnConnectorsRef.current.add(c));
+              const turnConnectorsList = Array.from(currentTurnConnectorsRef.current);
+              currentTurnConnectorsRef.current.clear();
+
               if (wasOriginVoiceRef.current) {
                 setIsVoiceActive(true);
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -2585,61 +2486,19 @@ export const ChatPillWindow: React.FC = () => {
               const newTurn: ChatTurn = {
                 id: newTurnId,
                 userPrompt: null,
-                assistantReply: "",
-                isStreaming: true,
+                assistantReply: finalContent,
+                isStreaming: false,
+                connectors: turnConnectorsList.length > 0 ? turnConnectorsList : undefined,
               };
 
+              // Clear "Thinking" tag for normal conversational replies so header is clean,
+              // but preserve real tool/connector tags so the user sees the badge!
+              if (activeUiTag === "Thinking") {
+                setActiveUiTag(null);
+              }
+
+              // Mount the complete response all at once!
               setTurns([newTurn]);
-              startSmoothStreamLoop(newTurnId);
-            } else if (msgType === "stream_chunk") {
-              setIsStreaming(true);
-              setActiveUiTag(null);
-
-              if (!currentTurnIdRef.current) {
-                const newTurnId = "turn-" + Date.now();
-                currentTurnIdRef.current = newTurnId;
-                followupThinkingPromptRef.current = null;
-                setFollowupThinkingPrompt(null);
-                const newTurn: ChatTurn = {
-                  id: newTurnId,
-                  userPrompt: null,
-                  assistantReply: "",
-                  isStreaming: true,
-                };
-                setTurns([newTurn]);
-              }
-
-              if (typeof data.fullContent === "string") {
-                targetTextRef.current = data.fullContent;
-              } else if (typeof data.token === "string") {
-                targetTextRef.current += data.token;
-              }
-              if (currentTurnIdRef.current) {
-                startSmoothStreamLoop(currentTurnIdRef.current);
-              }
-            } else if (msgType === "stream_end") {
-              setActiveUiTag(null);
-              setActiveConnector(null);
-              if (typeof data.fullContent === "string") {
-                targetTextRef.current = data.fullContent;
-              }
-              const serverConnectors: string[] = Array.isArray(data.connectors) ? data.connectors : [];
-              serverConnectors.forEach((c) => currentTurnConnectorsRef.current.add(c));
-              const turnConnectorsList = Array.from(currentTurnConnectorsRef.current);
-              if (currentTurnIdRef.current && turnConnectorsList.length > 0) {
-                setTurns((prev) =>
-                  prev.map((t) =>
-                    t.id === currentTurnIdRef.current
-                      ? { ...t, connectors: Array.from(new Set([...(t.connectors || []), ...turnConnectorsList])) }
-                      : t
-                  )
-                );
-              }
-              currentTurnConnectorsRef.current.clear();
-              streamEndedRef.current = true;
-              if (currentTurnIdRef.current) {
-                startSmoothStreamLoop(currentTurnIdRef.current);
-              }
             } else if (msgType === "error") {
               stopStreamRaf();
     stopAudio();
