@@ -2286,6 +2286,10 @@ export const ChatPillWindow: React.FC = () => {
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
     lastLineEmittedTimeRef.current = 0;
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "clear_response" }));
+    }
   };
 
   const hasReplyText = turns.length > 0 || Boolean(followupThinkingPrompt) || isStreaming;
@@ -2328,101 +2332,132 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, [isAwake]);
 
-  // Maintain latest mode ref for stable measureAndSyncShape identity
+  // Maintain latest mode ref for stable shape identity
   const currentModeRef = useRef(currentMode);
   currentModeRef.current = currentMode;
 
-  // Dynamic Real-Time Shape Measurement & Synchronization (Option A)
-  const morphRafRef = useRef<number | null>(null);
+  // Architecture A: Native DWM GPU KeyFrame Animation Sync
+  const prevModeRef = useRef<"idle" | "listening" | "thinking" | "responding">("idle");
+  const collapseTimerRef = useRef<number | null>(null);
+  const lastSyncHeightRef = useRef<number>(60);
 
-  const measureAndSyncShape = useCallback((targetWinHeight?: number) => {
-    if (!isAwake) return;
-    const wrapper = contentRef.current;
-    if (!wrapper) return;
-    const pillEl = (wrapper.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
-    const rect = pillEl.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+  const triggerGpuShapeAnimation = useCallback(
+    (targetMode: "idle" | "listening" | "thinking" | "responding", durationMs = 400, explicitHeight?: number) => {
+      if (!isAwake) return;
 
-    const shapeX = Math.round(rect.left);
-    const shapeY = Math.round(rect.top);
-    const shapeW = Math.round(rect.width);
-    const shapeH = Math.round(rect.height);
-
-    const mode = currentModeRef.current;
-    const shapeR = mode === "responding" ? (shapeH > 80 ? 28 : 30) : Math.round(shapeH / 2);
-
-    const winH = targetWinHeight ?? (
-      mode === "responding"
-        ? Math.max(130, Math.ceil(shapeH + 70))
-        : 150
-    );
-
-    invoke("set_chat_pill_size", {
-      width: 640,
-      height: winH,
-      pillMode: mode,
-      shapeX,
-      shapeY,
-      shapeW,
-      shapeH,
-      shapeR,
-    }).catch(() => {});
-  }, [isAwake]);
-
-  // Launch smooth frame-by-frame rAF tracker during morph transitions (550ms)
-  const startMorphTracking = useCallback((durationMs = 550) => {
-    if (morphRafRef.current !== null) {
-      cancelAnimationFrame(morphRafRef.current);
-    }
-    const startTime = performance.now();
-
-    const tick = (now: number) => {
-      const elapsed = now - startTime;
-      measureAndSyncShape();
-      if (elapsed < durationMs) {
-        morphRafRef.current = requestAnimationFrame(tick);
-      } else {
-        morphRafRef.current = null;
-        measureAndSyncShape();
+      if (collapseTimerRef.current !== null) {
+        window.clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
       }
-    };
 
-    morphRafRef.current = requestAnimationFrame(tick);
-  }, [measureAndSyncShape]);
+      if (targetMode === "listening") {
+        lastSyncHeightRef.current = 80;
+        invoke("animate_chat_pill_shape", {
+          offsetX: 180.0,
+          offsetY: 18.0,
+          width: 280.0,
+          height: 80.0,
+          cornerRadius: 40.0,
+          durationMs,
+          windowHeight: 130.0,
+        }).catch(() => {});
+      } else if (targetMode === "idle" || targetMode === "thinking") {
+        const wasResponding = prevModeRef.current === "responding";
+        lastSyncHeightRef.current = 60;
 
-  // Whenever mode changes, start continuous morph tracking
+        // Animate the acrylic blur back to the idle capsule shape
+        invoke("animate_chat_pill_shape", {
+          offsetX: 87.0,
+          offsetY: 18.0,
+          width: 466.0,
+          height: 60.0,
+          cornerRadius: 30.0,
+          durationMs,
+          // If collapsing from responding mode, don't clamp window height until animation completes!
+          windowHeight: wasResponding ? undefined : 130.0,
+        }).catch(() => {});
+
+        // If collapsing from responding, clamp the Win32 window after animation completes
+        if (wasResponding) {
+          collapseTimerRef.current = window.setTimeout(() => {
+            invoke("animate_chat_pill_shape", {
+              offsetX: 87.0,
+              offsetY: 18.0,
+              width: 466.0,
+              height: 60.0,
+              cornerRadius: 30.0,
+              durationMs: 0,
+              windowHeight: 130.0,
+            }).catch(() => {});
+            collapseTimerRef.current = null;
+          }, durationMs + 20);
+        }
+      } else if (targetMode === "responding") {
+        const wrapper = contentRef.current;
+        const pillEl = (wrapper?.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
+        const targetH = explicitHeight ?? Math.min(620, Math.max(100, pillEl?.scrollHeight || 180));
+        lastSyncHeightRef.current = targetH;
+        const targetWinH = Math.max(400, Math.min(960, targetH + 80));
+
+        // Single GPU instruction to DWM compositor: animate cutout over durationMs
+        invoke("animate_chat_pill_shape", {
+          offsetX: 87.0,
+          offsetY: 18.0,
+          width: 466.0,
+          height: targetH,
+          cornerRadius: targetH > 80 ? 28.0 : 30.0,
+          durationMs,
+          windowHeight: targetWinH,
+        }).catch(() => {});
+      }
+
+      prevModeRef.current = targetMode;
+    },
+    [isAwake]
+  );
+
+  // Trigger single-instruction DWM GPU animation whenever mode transitions
   useEffect(() => {
     if (!isAwake) return;
-    startMorphTracking(550);
-    return () => {
-      if (morphRafRef.current !== null) {
-        cancelAnimationFrame(morphRafRef.current);
-      }
-    };
-  }, [currentMode, isAwake, startMorphTracking]);
+    const dur = currentMode === "listening" ? 420 : currentMode === "responding" ? 440 : 380;
+    triggerGpuShapeAnimation(currentMode, dur);
+  }, [currentMode, isAwake, triggerGpuShapeAnimation]);
 
-  // Manage window resizing and ongoing height changes (e.g. streaming or hover in responding mode)
+  // Synchronize height changes during responding mode (e.g. streaming or hover controls)
   useEffect(() => {
-    if (!isAwake) return;
+    if (!isAwake || currentMode !== "responding") return;
     const el = contentRef.current;
     if (!el) return;
 
-    measureAndSyncShape();
+    const pillEl = (el.querySelector(".siri-unified-pill") as HTMLElement) ?? el;
+    let resizeDebounce: number | null = null;
 
-    const observer = new ResizeObserver(() => {
-      measureAndSyncShape();
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const measuredH = Math.round(entry.contentRect.height);
+        // Only notify if height changed substantially (>= 12px) to prevent tiny jitter
+        if (Math.abs(measuredH - lastSyncHeightRef.current) >= 12) {
+          if (resizeDebounce !== null) {
+            window.clearTimeout(resizeDebounce);
+          }
+          resizeDebounce = window.setTimeout(() => {
+            const currentH = Math.min(620, Math.max(100, pillEl.scrollHeight || measuredH));
+            triggerGpuShapeAnimation("responding", 200, currentH);
+            resizeDebounce = null;
+          }, 40);
+        }
+      }
     });
 
-    observer.observe(el, { box: "border-box" });
-    const pillEl = el.querySelector(".siri-unified-pill");
-    if (pillEl) {
-      observer.observe(pillEl, { box: "border-box" });
-    }
+    observer.observe(pillEl, { box: "border-box" });
 
     return () => {
       observer.disconnect();
+      if (resizeDebounce !== null) {
+        window.clearTimeout(resizeDebounce);
+      }
     };
-  }, [isAwake, measureAndSyncShape]);
+  }, [currentMode, isAwake, triggerGpuShapeAnimation]);
 
   // Sync state events from Tauri main process
   useEffect(() => {

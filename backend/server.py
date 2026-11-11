@@ -224,11 +224,50 @@ async def broadcast_stream_chunk(token: str, full_content: str):
     })
 
 
-async def broadcast_stream_end(full_content: str, connectors: Optional[list] = None):
+def estimate_response_height(text: str, connectors: Optional[list] = None) -> float:
+    """Calculates estimated pixel height of response card for DWM & Chromium lockstep animation."""
+    # Base container: top padding (16px) + speaker/close button headroom (32px) + bottom margin/padding (32px)
+    base_h = 80.0
+
+    clean_text = (text or "").strip()
+    if clean_text:
+        lines = clean_text.split("\n")
+        total_wrapped_lines = 0
+        for line in lines:
+            trimmed = line.strip()
+            if not trimmed:
+                total_wrapped_lines += 1
+                continue
+            # Approximately 52 chars per line inside 430px text wrap at 14px Segoe UI Variable
+            wrapped = max(1, (len(trimmed) + 51) // 52)
+            total_wrapped_lines += wrapped
+        # ~22px line height per rendered markdown line
+        text_h = total_wrapped_lines * 22.0
+    else:
+        text_h = 40.0
+
+    # Extra height for embedded cards
+    conn_h = 0.0
+    if connectors:
+        if any(c in connectors for c in ["spotify_track", "spotify_artist", "spotify_album", "spotify"]):
+            conn_h += 135.0
+        elif any(c in connectors for c in ["clock", "weather"]):
+            conn_h += 110.0
+        else:
+            conn_h += 50.0
+
+    total_h = base_h + text_h + conn_h
+    # Clamp to valid response card bounds (min 120px, max 620px matching CSS)
+    return float(max(120.0, min(620.0, total_h)))
+
+
+async def broadcast_stream_end(full_content: str, connectors: Optional[list] = None, target_height: Optional[float] = None):
     """Marks completion of the streamed assistant reply."""
+    calc_h = target_height if target_height is not None else estimate_response_height(full_content, connectors)
     payload: Dict[str, Any] = {
         "type": "stream_end",
         "fullContent": full_content,
+        "targetHeight": calc_h,
     }
     if connectors:
         payload["connectors"] = connectors
@@ -317,17 +356,25 @@ async def handle_connection(websocket: Any):
                         daemon=True,
                     ).start()
 
+            elif msg_type == "clear_response":
+                print("🧹 [WS BRIDGE] Clear response received.")
+                await broadcast_event_async({
+                    "type": "clear_response"
+                })
+
             elif msg_type in ("voice_arm", "voice_start"):
                 print("🎙️ [WS BRIDGE] Voice mode armed.")
                 ve = get_voice_engine()
                 if ve:
                     ve.arm()
+                await broadcast_event_async({"type": "voice_start"})
 
             elif msg_type in ("voice_disarm", "voice_stop", "voice_cancel"):
                 print("⏹️ [WS BRIDGE] Voice mode disarmed.")
                 ve = get_voice_engine()
                 if ve:
                     ve.disarm()
+                await broadcast_event_async({"type": "voice_cancel"})
 
             elif msg_type == "recording_start":
                 print("🔴 [WS BRIDGE] Recording started (Push-to-Talk).")

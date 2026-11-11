@@ -916,6 +916,165 @@ fn save_user_memories(memories: serde_json::Value) -> Result<serde_json::Value, 
     }))
 }
 
+#[cfg(target_os = "windows")]
+fn handle_dwm_event(app: &AppHandle, data: &serde_json::Value) {
+    let msg_type = data.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let comp_state = app.state::<CompositionState>();
+    let guard = match comp_state.0.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let host = match guard.as_ref() {
+        Some(h) => h,
+        None => return,
+    };
+
+    match msg_type {
+        "stream_end" => {
+            let target_h = data.get("targetHeight")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(240.0) as f32;
+            let _ = host.set_visible(true);
+            let _ = host.animate_shape(87.0, 18.0, 466.0, target_h, 28.0, 440);
+
+            // Only expand HWND if it wasn't already expanded to avoid any swapchain reallocations
+            if let Some(pill_win) = app.get_webview_window("chat_pill") {
+                let win_h = (target_h as f64 + 80.0).max(400.0).min(960.0);
+                if let Ok(curr_size) = pill_win.inner_size() {
+                    if let Ok(scale) = pill_win.scale_factor() {
+                        let curr_h = curr_size.height as f64 / scale;
+                        if curr_h < win_h {
+                            let _ = pill_win.set_size(LogicalSize::new(640.0, win_h));
+                        }
+                    }
+                }
+            }
+        }
+        "stream_start" => {
+            // Expand window headroom ahead of time so stream_end never stalls waiting for HWND resize
+            if let Some(pill_win) = app.get_webview_window("chat_pill") {
+                if let Ok(curr_size) = pill_win.inner_size() {
+                    if let Ok(scale) = pill_win.scale_factor() {
+                        let curr_h = curr_size.height as f64 / scale;
+                        if curr_h < 680.0 {
+                            let _ = pill_win.set_size(LogicalSize::new(640.0, 680.0));
+                        }
+                    }
+                }
+            }
+        }
+        "ui_tag" => {
+            let tag = data.get("tag").and_then(|v| v.as_str()).unwrap_or("");
+            if tag == "Thinking" || tag.starts_with("Thinking") {
+                let _ = host.set_visible(true);
+                let _ = host.animate_shape(87.0, 18.0, 466.0, 60.0, 30.0, 380);
+            }
+        }
+        "voice_start" | "voice_arm" => {
+            let _ = host.set_visible(true);
+            let _ = host.animate_shape(180.0, 18.0, 280.0, 80.0, 40.0, 420);
+        }
+        "voice_disarm" | "voice_cancel" | "clear_response" => {
+            let _ = host.set_visible(true);
+            let _ = host.animate_shape(87.0, 18.0, 466.0, 60.0, 30.0, 380);
+
+            // After 380ms collapse animation, clamp HWND back to 130px
+            let pill_win_opt = app.get_webview_window("chat_pill");
+            if let Some(pill_win) = pill_win_opt {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    let _ = pill_win.set_size(LogicalSize::new(640.0, 130.0));
+                });
+            }
+        }
+        "state" => {
+            if let Some(is_awake) = data.get("isAwake").and_then(|v| v.as_bool()) {
+                if !is_awake {
+                    let _ = host.set_visible(false);
+                    let _ = host.update_shape(87.0, 18.0, 466.0, 60.0, 30.0);
+                } else {
+                    let _ = host.set_visible(true);
+                    let is_voice = data.get("voiceActive").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if is_voice {
+                        let _ = host.animate_shape(180.0, 18.0, 280.0, 80.0, 40.0, 420);
+                    } else {
+                        let _ = host.animate_shape(87.0, 18.0, 466.0, 60.0, 30.0, 380);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn start_dwm_ws_listener(app_handle: AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            if is_port_8765_active() {
+                if let Ok((mut socket, _response)) = tungstenite::connect("ws://127.0.0.1:8765") {
+                    println!("[DWM WS] Rust connected to ws://127.0.0.1:8765 instruction stream");
+                    while let Ok(msg) = socket.read() {
+                        if let tungstenite::Message::Text(text) = msg {
+                            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                                handle_dwm_event(&app_handle, &data);
+                            }
+                        }
+                    }
+                    println!("[DWM WS] Socket closed, reconnecting in 1.5s...");
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
+    });
+}
+
+#[tauri::command]
+fn animate_chat_pill_shape(
+    app: AppHandle,
+    offset_x: f32,
+    offset_y: f32,
+    width: f32,
+    height: f32,
+    corner_radius: f32,
+    duration_ms: u64,
+    window_height: Option<f64>,
+) -> Result<(), String> {
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        if let Some(win_h) = window_height {
+            let clamped_h = win_h.max(130.0).min(960.0);
+            if let Ok(curr_size) = pill_win.inner_size() {
+                if let Ok(scale) = pill_win.scale_factor() {
+                    let curr_h = curr_size.height as f64 / scale;
+                    if (curr_h - clamped_h).abs() >= 15.0 {
+                        let _ = pill_win.set_size(LogicalSize::new(640.0, clamped_h));
+                    }
+                } else {
+                    let _ = pill_win.set_size(LogicalSize::new(640.0, clamped_h));
+                }
+            } else {
+                let _ = pill_win.set_size(LogicalSize::new(640.0, clamped_h));
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let comp_state = app.state::<CompositionState>();
+            if let Ok(guard) = comp_state.0.lock() {
+                if let Some(host) = guard.as_ref() {
+                    let _ = host.set_visible(true);
+                    if duration_ms > 0 {
+                        let _ = host.animate_shape(offset_x, offset_y, width, height, corner_radius, duration_ms);
+                    } else {
+                        let _ = host.update_shape(offset_x, offset_y, width, height, corner_radius);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn set_chat_pill_size(
     app: AppHandle,
@@ -1143,6 +1302,9 @@ pub fn run() {
                             }
                         }
                     }
+
+                    let listener_app = app.handle().clone();
+                    start_dwm_ws_listener(listener_app);
                 }
 
                 if let Ok(Some(monitor)) = pill_win.primary_monitor() {
@@ -1241,6 +1403,7 @@ pub fn run() {
             hide_chat_pill,
             resize_chat_pill,
             set_chat_pill_size,
+            animate_chat_pill_shape,
             boot_aiden,
             shutdown_aiden,
             restart_aiden,

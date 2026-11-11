@@ -158,6 +158,9 @@ impl CompositionHost {
     }
 
     pub fn update_shape(&self, offset_x: f32, offset_y: f32, width: f32, height: f32, corner_radius: f32) -> Result<()> {
+        let _ = self.geometry.StopAnimation(windows::core::h!("Offset"));
+        let _ = self.geometry.StopAnimation(windows::core::h!("Size"));
+        let _ = self.geometry.StopAnimation(windows::core::h!("CornerRadius"));
         self.geometry.SetOffset(Vector2 {
             X: offset_x,
             Y: offset_y,
@@ -170,6 +173,43 @@ impl CompositionHost {
             X: corner_radius,
             Y: corner_radius,
         })?;
+        Ok(())
+    }
+
+    pub fn animate_shape(
+        &self,
+        offset_x: f32,
+        offset_y: f32,
+        width: f32,
+        height: f32,
+        corner_radius: f32,
+        duration_ms: u64,
+    ) -> Result<()> {
+        if duration_ms == 0 {
+            return self.update_shape(offset_x, offset_y, width, height, corner_radius);
+        }
+
+        let duration = std::time::Duration::from_millis(duration_ms);
+        let easing = self._compositor.CreateCubicBezierEasingFunction(
+            Vector2 { X: 0.18, Y: 1.25 },
+            Vector2 { X: 0.35, Y: 1.0 },
+        )?;
+
+        let size_anim = self._compositor.CreateVector2KeyFrameAnimation()?;
+        size_anim.SetDuration(duration.into())?;
+        size_anim.InsertKeyFrameWithEasingFunction(1.0, Vector2 { X: width, Y: height }, &easing)?;
+
+        let radius_anim = self._compositor.CreateVector2KeyFrameAnimation()?;
+        radius_anim.SetDuration(duration.into())?;
+        radius_anim.InsertKeyFrameWithEasingFunction(1.0, Vector2 { X: corner_radius, Y: corner_radius }, &easing)?;
+
+        let offset_anim = self._compositor.CreateVector2KeyFrameAnimation()?;
+        offset_anim.SetDuration(duration.into())?;
+        offset_anim.InsertKeyFrameWithEasingFunction(1.0, Vector2 { X: offset_x, Y: offset_y }, &easing)?;
+
+        self.geometry.StartAnimation(windows::core::h!("Size"), &size_anim)?;
+        self.geometry.StartAnimation(windows::core::h!("CornerRadius"), &radius_anim)?;
+        self.geometry.StartAnimation(windows::core::h!("Offset"), &offset_anim)?;
         Ok(())
     }
 }
