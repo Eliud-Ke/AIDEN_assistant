@@ -980,22 +980,39 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const lastReportedHRef = useRef<number>(0);
 
-  // Synchronize responding height (content + controls) with the native HWND pill
+  // Synchronize responding height (pure content + controls) with the native HWND pill
   useEffect(() => {
     if (pillMode !== "responding") {
       lastReportedHRef.current = 0;
       return;
     }
     const el = streamContainerRef.current;
-    const contentH = el ? el.scrollHeight : 80;
-    const headerH = (activeUiTag && !followupThinkingPrompt) ? 40 : 0;
-    const controlsH = isControlsVisible ? 90 : 0;
-    const targetH = Math.min(620, Math.max(120, contentH + headerH + controlsH + 40));
+    let pureContentH = 80;
+    if (el && el.children.length > 0) {
+      let total = 0;
+      for (let i = 0; i < el.children.length; i++) {
+        const child = el.children[i] as HTMLElement;
+        total += child.offsetHeight || child.scrollHeight || 0;
+      }
+      if (el.children.length > 1) {
+        total += (el.children.length - 1) * 12;
+      }
+      pureContentH = Math.max(60, total);
+    } else if (el) {
+      pureContentH = Math.max(60, el.scrollHeight);
+    }
 
-    if (Math.abs(targetH - lastReportedHRef.current) >= 6) {
-      lastReportedHRef.current = targetH;
+    const headerH = (activeUiTag && !followupThinkingPrompt) ? 36 : 0;
+    // Base clearance is 36px (top 16 + bottom 16 + 4px breathing)
+    const baseH = pureContentH + headerH + 36;
+    // When controls (close button at top + command bar at bottom) are visible, allocate exactly +90px
+    const targetH = isControlsVisible ? baseH + 90 : baseH;
+    const clampedTargetH = Math.min(620, Math.max(isControlsVisible ? 180 : 120, targetH));
+
+    if (Math.abs(clampedTargetH - lastReportedHRef.current) >= 4) {
+      lastReportedHRef.current = clampedTargetH;
       if (onHeightChange) {
-        onHeightChange(targetH, 220);
+        onHeightChange(clampedTargetH, 220);
       }
     }
   }, [pillMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange]);
@@ -2394,8 +2411,21 @@ export const ChatPillWindow: React.FC = () => {
     } else if (currentMode === "responding") {
       const wrapper = contentRef.current;
       const pillEl = (wrapper?.querySelector(".siri-unified-pill") as HTMLElement) ?? wrapper;
-      const targetH = Math.min(620, Math.max(120, pillEl?.scrollHeight || 180));
-      morphTo(466, targetH, 320);
+      const streamEl = (pillEl?.querySelector(".siri-unified-stream") as HTMLElement) ?? null;
+      let contentH = 80;
+      if (streamEl && streamEl.children.length > 0) {
+        let total = 0;
+        for (let i = 0; i < streamEl.children.length; i++) {
+          const child = streamEl.children[i] as HTMLElement;
+          total += child.offsetHeight || child.scrollHeight || 0;
+        }
+        if (streamEl.children.length > 1) {
+          total += (streamEl.children.length - 1) * 12;
+        }
+        contentH = Math.max(60, total);
+      }
+      const targetH = Math.min(620, Math.max(120, contentH + 36));
+      morphTo(466, targetH, 280);
     }
   }, [currentMode, isAwake, morphTo]);
 

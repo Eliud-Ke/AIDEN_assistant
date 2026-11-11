@@ -3292,7 +3292,6 @@
    Past turns collapse to their natural text height so spacing between replies and bubbles is always clean and consistent! */
 .siri-unified-stream .siri-turn-item.pending-turn,
 .siri-unified-stream .siri-turn-item:not(:first-child):last-child {
-  min-height: 640px;
   box-sizing: border-box;
   flex-shrink: 0;
 }
@@ -3856,7 +3855,7 @@
   right: 0;
   bottom: 0;
   height: 104px;
-  border-radius: 0 0 28px 28px;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
   pointer-events: auto;
   cursor: pointer;
@@ -3898,19 +3897,19 @@
   box-shadow: inset 0 -1px 3px rgba(255, 255, 255, 0.70), inset 0 -6px 20px rgba(56, 189, 248, 0.35);
 }
 
-/* Compact Capsule Variant (Initial Voice Mode) */
+/* Compact Linear Variant (Initial Voice Mode) - matches native window frame */
 .siri-aurora-edge-container.compact {
   inset: 0;
   height: 100%;
-  border-radius: 9999px;
+  border-radius: 10px;
 }
 
 .siri-aurora-edge-container.compact.idle {
-  box-shadow: inset 0 -1px 2px rgba(255, 255, 255, 0.40), inset 0 -4px 14px rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), inset 0 -2px 8px rgba(255, 255, 255, 0.28);
 }
 
 .siri-aurora-edge-container.compact.recording {
-  box-shadow: inset 0 -1px 3px rgba(255, 255, 255, 0.75), inset 0 -6px 22px rgba(56, 189, 248, 0.40);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38), inset 0 -3px 12px rgba(56, 189, 248, 0.45);
 }
 
 
@@ -3963,8 +3962,8 @@
   filter: blur(14px);
   mix-blend-mode: screen;
   pointer-events: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.75) 8%, black 20%, black 80%, rgba(0, 0, 0, 0.75) 92%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.75) 8%, black 20%, black 80%, rgba(0, 0, 0, 0.75) 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.85) 3%, black 8%, black 92%, rgba(0, 0, 0, 0.85) 97%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.85) 3%, black 8%, black 92%, rgba(0, 0, 0, 0.85) 97%, transparent 100%);
 }
 
 .siri-aurora-cloud {
