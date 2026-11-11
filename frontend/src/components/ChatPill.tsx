@@ -929,35 +929,63 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       lastReportedHRef.current = 0;
       return;
     }
+
+    const measure = () => {
+      const el = streamContainerRef.current;
+      let pureContentH = 80;
+      if (el && el.children.length > 0) {
+        let total = 0;
+        for (let i = 0; i < el.children.length; i++) {
+          const child = el.children[i] as HTMLElement;
+          const rect = child.getBoundingClientRect();
+          const childH = Math.max(child.offsetHeight, child.scrollHeight, Math.ceil(rect.height));
+          total += childH;
+        }
+        if (el.children.length > 1) {
+          total += (el.children.length - 1) * 12;
+        }
+        pureContentH = Math.max(60, total);
+      } else if (el) {
+        pureContentH = Math.max(60, el.scrollHeight);
+      }
+
+      const headerH = (activeUiTag && !followupThinkingPrompt) ? 36 : 0;
+      // Exact clearance: pill padding (32px) + stream padding (18px) + breathing room (14px) = 64px
+      const baseH = pureContentH + headerH + 64;
+      // When controls (close button at top + command bar at bottom) are visible, allocate exactly +90px
+      const targetH = isControlsVisible ? baseH + 90 : baseH;
+      const clampedTargetH = Math.min(620, Math.max(isControlsVisible ? 180 : 128, targetH));
+
+      if (Math.abs(clampedTargetH - lastReportedHRef.current) >= 4) {
+        lastReportedHRef.current = clampedTargetH;
+        if (onHeightChange) {
+          onHeightChange(clampedTargetH, 220);
+        }
+      }
+    };
+
+    measure();
+
+    const rafId = requestAnimationFrame(measure);
+
     const el = streamContainerRef.current;
-    let pureContentH = 80;
-    if (el && el.children.length > 0) {
-      let total = 0;
+    let observer: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        measure();
+      });
+      observer.observe(el);
       for (let i = 0; i < el.children.length; i++) {
-        const child = el.children[i] as HTMLElement;
-        total += child.offsetHeight || child.scrollHeight || 0;
-      }
-      if (el.children.length > 1) {
-        total += (el.children.length - 1) * 12;
-      }
-      pureContentH = Math.max(60, total);
-    } else if (el) {
-      pureContentH = Math.max(60, el.scrollHeight);
-    }
-
-    const headerH = (activeUiTag && !followupThinkingPrompt) ? 36 : 0;
-    // Base clearance is 36px (top 16 + bottom 16 + 4px breathing)
-    const baseH = pureContentH + headerH + 36;
-    // When controls (close button at top + command bar at bottom) are visible, allocate exactly +90px
-    const targetH = isControlsVisible ? baseH + 90 : baseH;
-    const clampedTargetH = Math.min(620, Math.max(isControlsVisible ? 180 : 120, targetH));
-
-    if (Math.abs(clampedTargetH - lastReportedHRef.current) >= 4) {
-      lastReportedHRef.current = clampedTargetH;
-      if (onHeightChange) {
-        onHeightChange(clampedTargetH, 220);
+        observer.observe(el.children[i]);
       }
     }
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (observer) {
+        observer.disconnect();
+      }
+    };
   }, [pillMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange]);
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
