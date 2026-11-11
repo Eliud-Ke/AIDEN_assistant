@@ -286,6 +286,25 @@ function splitIntoSpringLines(text: string): string[] {
   return result.length > 0 ? result : [text];
 }
 
+const POLISH_STATUS_TAGS = [
+  "Finishing up",
+  "Pinpointing details",
+  "Last-minute touches",
+  "Polishing answer",
+  "Synthesizing details",
+  "Putting it together",
+  "Wrapping up",
+  "Dotting the i's",
+  "Structuring response",
+  "Gathering insights",
+  "Almost ready",
+];
+
+function getRandomPolishTag(): string {
+  const index = Math.floor(Math.random() * POLISH_STATUS_TAGS.length);
+  return POLISH_STATUS_TAGS[index];
+}
+
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
@@ -2087,6 +2106,8 @@ export const ChatPillWindow: React.FC = () => {
   const streamEndedRef = useRef<boolean>(false);
   const rafIdRef = useRef<number | null>(null);
   const lastLineEmittedTimeRef = useRef<number>(0);
+  const polishStartTimeRef = useRef<number>(0);
+  const polishTimerRef = useRef<number | null>(null);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -2204,6 +2225,11 @@ export const ChatPillWindow: React.FC = () => {
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
+    if (polishTimerRef.current !== null) {
+      window.clearTimeout(polishTimerRef.current);
+      polishTimerRef.current = null;
+    }
+    polishStartTimeRef.current = 0;
     turnsRef.current = [];
     setTurns([]);
     setActiveUiTag(null);
@@ -2404,6 +2430,11 @@ export const ChatPillWindow: React.FC = () => {
               const text = String(data.text || "").trim();
               if (text) {
                 wasOriginVoiceRef.current = true;
+                if (polishTimerRef.current !== null) {
+                  window.clearTimeout(polishTimerRef.current);
+                  polishTimerRef.current = null;
+                }
+                polishStartTimeRef.current = 0;
                 turnsRef.current = [];
                 setTurns([]);
                 followupThinkingPromptRef.current = null;
@@ -2438,6 +2469,12 @@ export const ChatPillWindow: React.FC = () => {
               lastLineEmittedTimeRef.current = 0;
               setIsStreaming(true);
 
+              // Seamless transition into random dynamic polish tag for final synthesis phase
+              const polishTag = getRandomPolishTag();
+              setActiveUiTag(polishTag);
+              setActiveConnector(null);
+              polishStartTimeRef.current = Date.now();
+
               // Tracker: If originated from audio/mic mode, keep expanded UI in mic mode too
               if (wasOriginVoiceRef.current) {
                 setIsVoiceActive(true);
@@ -2445,7 +2482,6 @@ export const ChatPillWindow: React.FC = () => {
                   wsRef.current.send(JSON.stringify({ type: "voice_arm" }));
                 }
               }
-              // In non-streaming mode: preserve activeUiTag in thinking capsule until complete!
             } else if (msgType === "stream_chunk") {
               setIsStreaming(true);
               if (typeof data.fullContent === "string") {
@@ -2491,14 +2527,21 @@ export const ChatPillWindow: React.FC = () => {
                 connectors: turnConnectorsList.length > 0 ? turnConnectorsList : undefined,
               };
 
-              // Clear "Thinking" tag for normal conversational replies so header is clean,
-              // but preserve real tool/connector tags so the user sees the badge!
-              if (activeUiTag === "Thinking") {
-                setActiveUiTag(null);
+              // Ensure natural polish dwell time (~300ms) so the polish tag feels deliberate
+              const MIN_POLISH_DWELL_MS = 300;
+              const elapsed = Date.now() - polishStartTimeRef.current;
+              const delay = Math.max(0, MIN_POLISH_DWELL_MS - elapsed);
+
+              if (polishTimerRef.current !== null) {
+                window.clearTimeout(polishTimerRef.current);
+                polishTimerRef.current = null;
               }
 
-              // Mount the complete response all at once!
-              setTurns([newTurn]);
+              polishTimerRef.current = window.setTimeout(() => {
+                polishTimerRef.current = null;
+                // Default behavior: keep header tag intact without collapsing!
+                setTurns([newTurn]);
+              }, delay);
             } else if (msgType === "error") {
               stopStreamRaf();
     stopAudio();
@@ -2601,6 +2644,11 @@ export const ChatPillWindow: React.FC = () => {
     setIsStreaming(false);
 
     // Every turn starts as a fresh single turn: collapse cleanly into Thinking pill, then show only the new response
+    if (polishTimerRef.current !== null) {
+      window.clearTimeout(polishTimerRef.current);
+      polishTimerRef.current = null;
+    }
+    polishStartTimeRef.current = 0;
     turnsRef.current = [];
     setTurns([]);
     followupThinkingPromptRef.current = null;
