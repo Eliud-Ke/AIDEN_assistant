@@ -16,7 +16,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
   const markedInstance = useMemo(() => {
     const m = new Marked({
       gfm: true,
-      breaks: true,
+      breaks: false,
     });
 
     // Attach KaTeX formula extension

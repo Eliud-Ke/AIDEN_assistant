@@ -3,6 +3,7 @@
    ============================================================================== */
 
 .siri-markdown-root {
+  white-space: normal;
   color: rgba(255, 255, 255, 0.92);
   font-size: 13.5px;
   line-height: 1.55;
@@ -39,11 +40,15 @@
 }
 
 .siri-markdown-root p {
-  margin: 0 0 8px 0;
+  margin: 0 0 7px 0;
 }
 
 .siri-markdown-root p:last-child {
   margin-bottom: 0;
+}
+
+.siri-markdown-root p:empty {
+  display: none;
 }
 
 /* Strong / Emphasis */
@@ -60,8 +65,8 @@
 /* Lists - Standardized Dashes and Numbered Steps */
 .siri-markdown-root ul,
 .siri-markdown-root ol {
-  margin: 6px 0 10px 0;
-  padding-left: 20px;
+  margin: 4px 0 8px 0;
+  padding-left: 18px;
 }
 
 .siri-markdown-root ul {
@@ -73,8 +78,13 @@
 }
 
 .siri-markdown-root li {
-  margin: 4px 0;
+  margin: 2px 0;
   padding-left: 2px;
+}
+
+.siri-markdown-root li > p {
+  margin: 0;
+  display: inline;
 }
 
 .siri-markdown-root li::marker {
