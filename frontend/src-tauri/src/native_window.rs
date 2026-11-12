@@ -151,17 +151,38 @@ impl WindowMorpher {
         }
     }
 
+    pub fn update_rect(&self, rect: RectTarget) {
+        if let Ok(mut cur) = self.current_rect.lock() {
+            *cur = rect;
+        }
+    }
+
     pub fn morph(&self, target_width: f64, target_height: f64, duration_ms: u64) {
-        let cur = if let Ok(c) = self.current_rect.lock() {
-            *c
-        } else {
-            RectTarget {
-                x: 0,
-                y: 0,
-                width: 466,
-                height: 60,
+        let hwnd = HWND(self.hwnd as *mut _);
+        let cur = unsafe {
+            let mut r = windows::Win32::Foundation::RECT::default();
+            if GetWindowRect(hwnd, &mut r).is_ok() {
+                RectTarget {
+                    x: r.left,
+                    y: r.top,
+                    width: r.right - r.left,
+                    height: r.bottom - r.top,
+                }
+            } else if let Ok(c) = self.current_rect.lock() {
+                *c
+            } else {
+                RectTarget {
+                    x: 0,
+                    y: 0,
+                    width: 466,
+                    height: 60,
+                }
             }
         };
+
+        if let Ok(mut c) = self.current_rect.lock() {
+            *c = cur;
+        }
 
         let target_w = target_width.round() as i32;
         let target_h = target_height.round() as i32;

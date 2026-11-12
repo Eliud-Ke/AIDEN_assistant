@@ -13,7 +13,7 @@ mod native_window;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, State,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, State, WebviewWindow,
 };
 
 #[cfg(target_os = "windows")]
@@ -981,6 +981,43 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn center_chat_pill_in_upper_third(app: &AppHandle, pill_win: &WebviewWindow) {
+    let monitor = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| pill_win.primary_monitor().ok().flatten());
+
+    if let Some(monitor) = monitor {
+        let screen_size = monitor.size();
+        let monitor_pos = monitor.position();
+        let scale = monitor.scale_factor();
+
+        let win_width = (466.0 * scale) as i32;
+        let win_height = (60.0 * scale) as i32;
+        let x = monitor_pos.x + ((screen_size.width as i32 - win_width) / 2);
+        // Upper third / top quarter (~15% from top of monitor)
+        let y = monitor_pos.y + ((screen_size.height as f64 * 0.15) as i32);
+
+        let _ = pill_win.set_position(Position::Physical(PhysicalPosition { x, y }));
+
+        #[cfg(target_os = "windows")]
+        {
+            let morph_state = app.state::<MorpherState>();
+            if let Ok(guard) = morph_state.0.lock() {
+                if let Some(morpher) = guard.as_ref() {
+                    morpher.update_rect(native_window::RectTarget {
+                        x,
+                        y,
+                        width: win_width,
+                        height: win_height,
+                    });
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn set_chat_pill_state(
     app: AppHandle,
@@ -1002,6 +1039,7 @@ fn set_chat_pill_state(
         if let Some(awake) = is_awake {
             let _ = pill_win.set_ignore_cursor_events(!awake);
             if awake {
+                center_chat_pill_in_upper_third(&app, &pill_win);
                 let _ = pill_win.show();
                 let _ = pill_win.unminimize();
                 let _ = pill_win.set_always_on_top(true);
@@ -1066,10 +1104,14 @@ pub fn run() {
                 let _ = pill_win.set_ignore_cursor_events(true);
                 let _ = pill_win.hide();
 
+                // 1. Center the pill window in the upper third first
+                center_chat_pill_in_upper_third(&app.handle(), &pill_win);
+
                 #[cfg(target_os = "windows")]
                 {
                     if let Ok(hwnd) = pill_win.hwnd() {
                         let _ = native_window::apply_native_pill_chrome(hwnd, true);
+                        // 2. Initialize Morpher AFTER window is centered so it captures the centered coordinates!
                         let morpher = native_window::WindowMorpher::new(hwnd);
                         let morph_state = app.state::<MorpherState>();
                         if let Ok(mut guard) = morph_state.0.lock() {
@@ -1077,19 +1119,6 @@ pub fn run() {
                         }
                         println!("[DWM] Native Pill Chrome and WindowMorpher attached to chat_pill!");
                     }
-                }
-
-                if let Ok(Some(monitor)) = pill_win.primary_monitor() {
-                    let screen_size = monitor.size();
-                    let monitor_pos = monitor.position();
-                    let scale = monitor.scale_factor();
-
-                    let win_width = (466.0 * scale) as i32;
-                    let x = monitor_pos.x + ((screen_size.width as i32 - win_width) / 2);
-                    // Upper third / top quarter (~15% from top of monitor)
-                    let y = monitor_pos.y + ((screen_size.height as f64 * 0.15) as i32);
-
-                    let _ = pill_win.set_position(Position::Physical(PhysicalPosition { x, y }));
                 }
             }
 
