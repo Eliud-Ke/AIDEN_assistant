@@ -748,6 +748,42 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const cardMeasureRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
+  const updateScrollMask = useCallback(() => {
+    const el = streamContainerRef.current;
+    if (!el) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const maxScroll = scrollHeight - clientHeight;
+
+    if (maxScroll <= 4) {
+      if (el.dataset.currentMask !== "none") {
+        el.dataset.currentMask = "none";
+        el.style.maskImage = "none";
+        el.style.webkitMaskImage = "none";
+      }
+      return;
+    }
+
+    const topFade = scrollTop <= 4 ? 0 : Math.min(32, scrollTop);
+    const bottomRemaining = maxScroll - scrollTop;
+    const bottomFade = bottomRemaining <= 4 ? 0 : Math.min(36, bottomRemaining);
+
+    let mask = "none";
+    if (topFade > 0 && bottomFade > 0) {
+      mask = `linear-gradient(to bottom, transparent 0%, black ${topFade}px, black calc(100% - ${bottomFade}px), transparent 100%)`;
+    } else if (bottomFade > 0) {
+      mask = `linear-gradient(to bottom, black 0%, black calc(100% - ${bottomFade}px), transparent 100%)`;
+    } else if (topFade > 0) {
+      mask = `linear-gradient(to bottom, transparent 0%, black ${topFade}px, black 100%)`;
+    }
+
+    if (el.dataset.currentMask !== mask) {
+      el.dataset.currentMask = mask;
+      el.style.maskImage = mask;
+      el.style.webkitMaskImage = mask;
+    }
+  }, []);
+
   const activeTurns: ChatTurn[] = turns && turns.length > 0
     ? turns
     : responseMessage
@@ -852,6 +888,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           onHeightChange(clampedTargetH, 220);
         }
       }
+      requestAnimationFrame(updateScrollMask);
     };
 
     measure();
@@ -863,6 +900,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     if (el && typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(() => {
         measure();
+        updateScrollMask();
       });
       observer.observe(el);
       for (let i = 0; i < el.children.length; i++) {
@@ -876,7 +914,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         observer.disconnect();
       }
     };
-  }, [pillMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange]);
+  }, [pillMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
 
@@ -925,8 +963,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   useEffect(() => {
     if (userPrompt && streamContainerRef.current) {
       streamContainerRef.current.scrollTop = 0;
+      updateScrollMask();
     }
-  }, [userPrompt]);
+  }, [userPrompt, updateScrollMask]);
 
   // Option A: Single smooth scroll when a follow-up prompt is submitted.
   // Scrolls the container so the newly submitted turn lands near the top of the viewport,
@@ -972,9 +1011,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const el = streamContainerRef.current;
     if (!el) return;
 
-    el.style.maskImage = "none";
-    el.style.webkitMaskImage = "none";
-
     const updateBox = () => {
       const w = el.clientWidth || 430;
       const h = el.clientHeight || 360;
@@ -984,19 +1020,29 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           ? prev
           : { w, h, topOffset }
       );
+      updateScrollMask();
     };
 
     updateBox();
+    updateScrollMask();
+
+    const onScroll = () => {
+      updateScrollMask();
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
 
     const resizeObserver = new ResizeObserver(() => {
       updateBox();
+      updateScrollMask();
     });
     resizeObserver.observe(el, { box: "border-box" });
 
     return () => {
+      el.removeEventListener("scroll", onScroll);
       resizeObserver.disconnect();
     };
-  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag]);
+  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag, updateScrollMask]);
 
   const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
@@ -1413,7 +1459,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 </div>
               )}
 
-              <div ref={streamContainerRef} className="siri-unified-stream">
+              <div
+                ref={streamContainerRef}
+                className="siri-unified-stream"
+                onScroll={updateScrollMask}
+              >
                 {activeTurns.map((turn) => (
                   <div key={turn.id} className="siri-turn-item">
                     {/* Turn 2+ user prompt bubble (Turn 1 has userPrompt === null, so zero bubble!) */}

@@ -642,12 +642,24 @@
   white-space: pre-wrap;
   user-select: text;
   -webkit-user-select: text;
-  animation: replyFade 0.28s ease;
+  animation: siriWaterfallReveal 0.44s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes replyFade {
-  0% { opacity: 0; transform: translateY(4px); }
-  100% { opacity: 1; transform: translateY(0); }
+@keyframes siriWaterfallReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px);
+    filter: blur(4px);
+  }
+  35% {
+    opacity: 0.6;
+    filter: blur(1.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
 }
 
 /* Speaker Action Bar on top of Assistant Reply */
