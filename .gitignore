@@ -48,6 +48,7 @@ token*.json
 # Editor & OS Artifacts
 release_binaries/
 RELEASE_WORKFLOW.md
+scratch/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
