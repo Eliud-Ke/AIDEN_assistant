@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { LocationCard } from "./LocationCard";
 import { GmailCard, GmailEmailItem } from "./GmailCard";
 import { CalendarCard, CalendarEventItem } from "./CalendarCard";
@@ -10,6 +9,7 @@ import { WeatherCard, WeatherCardData } from "./WeatherCard";
 import { SpotifyArtistCard, SpotifyArtistCardData } from "./SpotifyArtistCard";
 import { SpotifyTracksCard, SpotifyTracksCardData, SpotifyTrackItem } from "./SpotifyTracksCard";
 import { SpotifyAlbumsCard, SpotifyAlbumsCardData, SpotifyAlbumItem } from "./SpotifyAlbumsCard";
+import { MarkdownContent } from "./MarkdownContent";
 import "./ChatPill.css";
 
 export interface ChatTurn {
@@ -172,120 +172,6 @@ type MessagePart =
   | { type: "spotify_tracks"; data: SpotifyTracksCardData }
   | { type: "spotify_albums"; data: SpotifyAlbumsCardData };
 
-function renderFormattedText(rawText: string): React.ReactNode {
-  if (!rawText) return null;
-
-  // Clean strip any accidental Markdown heading hashes (#, ##, ###) and triple backticks
-  const cleanedText = rawText
-    .replace(/^[ \t]*#{1,6}[ \t]*/gm, "")
-    .replace(/```[a-zA-Z0-9_-]*/g, "")
-    .replace(/```/g, "");
-
-  // Regex matches markdown links: [Title](https://...)
-  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-  const elements: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = linkRegex.exec(cleanedText)) !== null) {
-    if (match.index > lastIndex) {
-      elements.push(cleanedText.slice(lastIndex, match.index));
-    }
-    const title = match[1];
-    const url = match[2];
-    elements.push(
-      <a
-        key={match.index}
-        href={url}
-        className="siri-markdown-link"
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          try {
-            openUrl(url).catch(() => window.open(url, "_blank"));
-          } catch {
-            window.open(url, "_blank");
-          }
-        }}
-        title={url}
-      >
-        {title}
-        <svg
-          className="siri-link-icon"
-          width="11"
-          height="11"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          <polyline points="15 3 21 3 21 9" />
-          <line x1="10" y1="14" x2="21" y2="3" />
-        </svg>
-      </a>
-    );
-    lastIndex = linkRegex.lastIndex;
-  }
-
-  if (lastIndex < cleanedText.length) {
-    elements.push(cleanedText.slice(lastIndex));
-  }
-
-  return elements.length > 0 ? elements : cleanedText;
-}
-
-const LINE_LENGTH_THRESHOLD = 75;
-
-function splitIntoSpringLines(text: string): string[] {
-  if (!text) return [];
-
-  const rawParagraphs = text.split(/\r?\n/);
-  const result: string[] = [];
-
-  for (const para of rawParagraphs) {
-    const trimmed = para.trim();
-    if (!trimmed) continue;
-
-    // If paragraph is shorter than threshold, keep it intact as a single spring line
-    if (trimmed.length < LINE_LENGTH_THRESHOLD) {
-      result.push(trimmed);
-      continue;
-    }
-
-    // For longer paragraphs exceeding threshold, split on sentence ends (. ! ? :) followed by space
-    const sentenceRegex = /([.!?:]+[\s]+)(?=[A-Z0-9\p{Emoji}]|$)/gu;
-    let lastIdx = 0;
-    let match: RegExpExecArray | null;
-
-    const sentences: string[] = [];
-    while ((match = sentenceRegex.exec(para)) !== null) {
-      const end = match.index + match[1].length;
-      const segment = para.slice(lastIdx, end).trim();
-      if (segment && (segment.length >= 35 || sentences.length > 0)) {
-        sentences.push(segment);
-        lastIdx = end;
-      }
-    }
-    const remainder = para.slice(lastIdx).trim();
-    if (remainder) {
-      sentences.push(remainder);
-    }
-
-    if (sentences.length > 0) {
-      result.push(...sentences);
-    } else {
-      result.push(trimmed);
-    }
-  }
-
-  return result.length > 0 ? result : [text];
-}
-
 const POLISH_STATUS_TAGS = [
   "Finishing up",
   "Pinpointing details",
@@ -300,9 +186,13 @@ const POLISH_STATUS_TAGS = [
   "Almost ready",
 ];
 
-function getRandomPolishTag(): string {
-  const index = Math.floor(Math.random() * POLISH_STATUS_TAGS.length);
-  return POLISH_STATUS_TAGS[index];
+function getRandomPolishTag(excludeTag?: string | null): string {
+  const available = excludeTag
+    ? POLISH_STATUS_TAGS.filter((t) => t.toLowerCase() !== excludeTag.toLowerCase())
+    : POLISH_STATUS_TAGS;
+  const list = available.length > 0 ? available : POLISH_STATUS_TAGS;
+  const index = Math.floor(Math.random() * list.length);
+  return list[index];
 }
 
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
@@ -1459,7 +1349,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
                 )}
               </div>
-              <span className="siri-thinking-text">{formatStatusTag(activeUiTag || "Thinking")}</span>
+              <span key={activeUiTag || "Thinking"} className="siri-thinking-text siri-tag-enter">{formatStatusTag(activeUiTag || "Thinking")}</span>
             </div>
           )}
 
@@ -1584,22 +1474,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                         )}
                         {parseMessageWithGalleries(turn.assistantReply, Boolean(turn.isStreaming)).map((part, idx) => {
                           if (part.type === "text") {
-                            const lines = splitIntoSpringLines(part.text);
                             return (
                               <div key={idx} className="siri-text-block">
-                                {lines.map((line, lineIdx) => {
-                                  return (
-                                    <span
-                                      key={`spring-line-${lineIdx}`}
-                                      className="siri-spring-line"
-                                      style={{
-                                        animationDelay: turn.isStreaming ? "0ms" : `${lineIdx * 40}ms`,
-                                      }}
-                                    >
-                                      {renderFormattedText(line)}
-                                    </span>
-                                  );
-                                })}
+                                <MarkdownContent content={part.text} />
                               </div>
                             );
                           }
@@ -2136,6 +2013,14 @@ export const ChatPillWindow: React.FC = () => {
   const lastLineEmittedTimeRef = useRef<number>(0);
   const polishStartTimeRef = useRef<number>(0);
   const polishTimerRef = useRef<number | null>(null);
+  const polishShuffleIntervalRef = useRef<number | null>(null);
+
+  const stopPolishShuffle = useCallback(() => {
+    if (polishShuffleIntervalRef.current !== null) {
+      window.clearInterval(polishShuffleIntervalRef.current);
+      polishShuffleIntervalRef.current = null;
+    }
+  }, []);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -2253,6 +2138,7 @@ export const ChatPillWindow: React.FC = () => {
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
+    stopPolishShuffle();
     if (polishTimerRef.current !== null) {
       window.clearTimeout(polishTimerRef.current);
       polishTimerRef.current = null;
@@ -2458,6 +2344,7 @@ export const ChatPillWindow: React.FC = () => {
               const text = String(data.text || "").trim();
               if (text) {
                 wasOriginVoiceRef.current = true;
+                stopPolishShuffle();
                 if (polishTimerRef.current !== null) {
                   window.clearTimeout(polishTimerRef.current);
                   polishTimerRef.current = null;
@@ -2491,6 +2378,7 @@ export const ChatPillWindow: React.FC = () => {
             } else if (msgType === "stream_start") {
               stopStreamRaf();
               stopAudio();
+              stopPolishShuffle();
               targetTextRef.current = "";
               displayedLengthRef.current = 0;
               streamEndedRef.current = false;
@@ -2498,10 +2386,18 @@ export const ChatPillWindow: React.FC = () => {
               setIsStreaming(true);
 
               // Seamless transition into random dynamic polish tag for final synthesis phase
-              const polishTag = getRandomPolishTag();
-              setActiveUiTag(polishTag);
+              const initialPolishTag = getRandomPolishTag();
+              setActiveUiTag(initialPolishTag);
               setActiveConnector(null);
               polishStartTimeRef.current = Date.now();
+
+              // Rotate dynamic polish tag every 3 seconds during longer response generations
+              let currentPolishTag = initialPolishTag;
+              polishShuffleIntervalRef.current = window.setInterval(() => {
+                const nextTag = getRandomPolishTag(currentPolishTag);
+                currentPolishTag = nextTag;
+                setActiveUiTag(nextTag);
+              }, 3000);
 
               // Tracker: If originated from audio/mic mode, keep expanded UI in mic mode too
               if (wasOriginVoiceRef.current) {
@@ -2520,6 +2416,7 @@ export const ChatPillWindow: React.FC = () => {
             } else if (msgType === "stream_end") {
               stopStreamRaf();
               stopAudio();
+              stopPolishShuffle();
               streamEndedRef.current = true;
               setIsStreaming(false);
 
@@ -2572,7 +2469,8 @@ export const ChatPillWindow: React.FC = () => {
               }, delay);
             } else if (msgType === "error") {
               stopStreamRaf();
-    stopAudio();
+              stopAudio();
+              stopPolishShuffle();
               setIsStreaming(false);
               setActiveUiTag("Error");
               const errText = String(data.message || "An unexpected error occurred.");
@@ -2637,7 +2535,8 @@ export const ChatPillWindow: React.FC = () => {
     return () => {
       isMounted = false;
       stopStreamRaf();
-    stopAudio();
+      stopAudio();
+      stopPolishShuffle();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) {
         try {
@@ -2672,6 +2571,7 @@ export const ChatPillWindow: React.FC = () => {
     setIsStreaming(false);
 
     // Every turn starts as a fresh single turn: collapse cleanly into Thinking pill, then show only the new response
+    stopPolishShuffle();
     if (polishTimerRef.current !== null) {
       window.clearTimeout(polishTimerRef.current);
       polishTimerRef.current = null;

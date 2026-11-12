@@ -1,0 +1,267 @@
+/* ==============================================================================
+   Aiden Siri-Style Industry-Standard Markdown, KaTeX & Highlight.js Styling
+   ============================================================================== */
+
+.siri-markdown-root {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13.5px;
+  line-height: 1.55;
+  word-break: break-word;
+  user-select: text;
+}
+
+/* Headings */
+.siri-markdown-root h1,
+.siri-markdown-root h2,
+.siri-markdown-root h3,
+.siri-markdown-root h4 {
+  color: #ffffff;
+  font-weight: 600;
+  margin-top: 14px;
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+
+.siri-markdown-root h1 {
+  font-size: 16px;
+}
+
+.siri-markdown-root h2 {
+  font-size: 15px;
+}
+
+.siri-markdown-root h3 {
+  font-size: 14px;
+}
+
+.siri-markdown-root h4 {
+  font-size: 13.5px;
+}
+
+.siri-markdown-root p {
+  margin: 0 0 8px 0;
+}
+
+.siri-markdown-root p:last-child {
+  margin-bottom: 0;
+}
+
+/* Strong / Emphasis */
+.siri-markdown-root strong {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.siri-markdown-root em {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* Lists - Standardized Dashes and Numbered Steps */
+.siri-markdown-root ul,
+.siri-markdown-root ol {
+  margin: 6px 0 10px 0;
+  padding-left: 20px;
+}
+
+.siri-markdown-root ul {
+  list-style-type: disc;
+}
+
+.siri-markdown-root ol {
+  list-style-type: decimal;
+}
+
+.siri-markdown-root li {
+  margin: 4px 0;
+  padding-left: 2px;
+}
+
+.siri-markdown-root li::marker {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* Inline Code */
+.siri-markdown-root :not(pre) > code {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: #7dd3fc;
+  vertical-align: baseline;
+}
+
+/* Code Container & Syntax Highlighting */
+.siri-code-container {
+  background: rgba(13, 17, 23, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  margin: 10px 0;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.siri-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.siri-code-lang {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.siri-code-copy-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 2.5px 7px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.82);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.siri-code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.siri-code-copy-btn.copied {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+.siri-code-container pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.siri-code-container pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+/* GFM Comparison Tables */
+.siri-markdown-root table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 12px 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 12.5px;
+}
+
+.siri-markdown-root th {
+  background: rgba(255, 255, 255, 0.07);
+  font-weight: 600;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.siri-markdown-root td {
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.siri-markdown-root tr:last-child td {
+  border-bottom: none;
+}
+
+.siri-markdown-root tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* KaTeX Math Formulas */
+.siri-markdown-root .katex-display {
+  margin: 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+  scrollbar-width: thin;
+}
+
+.siri-markdown-root .katex {
+  color: #f1f5f9;
+}
+
+/* Links */
+.siri-markdown-link {
+  color: #38bdf8;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+  transition: all 0.15s ease;
+}
+
+.siri-markdown-link:hover {
+  color: #7dd3fc;
+  border-color: #7dd3fc;
+}
+
+.siri-link-icon {
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.siri-markdown-link:hover .siri-link-icon {
+  opacity: 1;
+}
+
+/* Blockquotes */
+.siri-markdown-root blockquote {
+  border-left: 3px solid rgba(56, 189, 248, 0.6);
+  margin: 8px 0;
+  padding: 4px 0 4px 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 0 6px 6px 0;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Dynamic Polish Status Tag Shuffle Animation */
+@keyframes siriTagEnter {
+  0% {
+    opacity: 0.15;
+    transform: translateY(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.siri-tag-enter {
+  display: inline-block;
+  animation: siriTagEnter 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

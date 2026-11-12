@@ -37,41 +37,48 @@ def clean_text_for_speech(raw_text: str) -> str:
     # 0. Remove interactive UI card tags (::spotify-tracks-card[...]::, ::weather-card[...]::, etc.)
     text = re.sub(r"::[a-zA-Z0-9_-]+\[[\s\S]*?\]::", "", text)
 
-    # 1. Remove fenced code blocks (```python ... ```)
+    # 1. Remove LaTeX math blocks ($$...$$) and convert inline math ($x$)
+    text = re.sub(r"\$\$[\s\S]*?\$\$", " Math formula omitted. ", text)
+    text = re.sub(r"\$([^$\n]+)\$", r"\1", text)
+
+    # 2. Remove fenced code blocks (```python ... ```)
     text = re.sub(r"```[\w-]*\n[\s\S]*?```", " Code snippet omitted. ", text)
     # Remove inline code (`code`)
     text = re.sub(r"`([^`]+)`", r"\1", text)
 
-    # 2. Convert markdown links [Label](url) -> Label
+    # 3. Convert markdown links [Label](url) -> Label
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
 
-    # 3. Remove raw URLs
+    # 4. Remove raw URLs
     text = re.sub(r"https?://\S+|www\.\S+", "", text)
 
-    # 4. Remove images ![alt](url)
+    # 5. Remove images ![alt](url)
     text = re.sub(r"!\[[^\]]*\]\([^\)]+\)", "", text)
 
-    # 5. Remove HTML tags
+    # 6. Remove HTML tags
     text = re.sub(r"<[^>]+>", "", text)
 
-    # 6. Remove Markdown headers (#, ##, etc.)
+    # 7. Remove Markdown headers (#, ##, etc.)
     text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.MULTILINE)
 
-    # 7. Remove bold, italic, strikethrough (**, *, __, _, ~~)
+    # 8. Convert ugly em-dashes / en-dashes to gentle pauses
+    text = re.sub(r"[—–]", ", ", text)
+
+    # 9. Remove bold, italic, strikethrough (**, *, __, _, ~~)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
     text = re.sub(r"__([^_]+)__", r"\1", text)
     text = re.sub(r"_([^_]+)_", r"\1", text)
     text = re.sub(r"~~([^~]+)~~", r"\1", text)
 
-    # 8. Remove list markers (-, *, +, bullet, etc.) at the beginning of lines
+    # 10. Remove list markers (-, *, +, bullet, etc.) at the beginning of lines
     text = re.sub(r"^\s*[-*+•–—]\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
 
-    # 9. Remove blockquotes (> )
+    # 11. Remove blockquotes (> )
     text = re.sub(r"^\s*>\s*", "", text, flags=re.MULTILINE)
 
-    # 10. Remove markdown table formatting characters (|)
+    # 12. Remove markdown table formatting characters (|)
     text = re.sub(r"\|", " ", text)
     text = re.sub(r"[-:]{3,}", "", text)
 
