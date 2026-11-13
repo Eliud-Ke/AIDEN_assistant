@@ -4808,7 +4808,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: 15px 18px 16px 18px;
   margin: 8px 0 10px 0;
   user-select: none;
   cursor: pointer;
@@ -4854,26 +4854,30 @@
   transform: scale(1.06);
 }
 
-/* Vignette Gradient */
-.artist-hero-vignette {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.3) 0%,
-    rgba(0, 0, 0, 0.5) 45%,
-    rgba(15, 15, 15, 0.95) 100%
-  );
-  pointer-events: none;
-}
-
+/* Vignette Gradient (shared across dark & light modes on obsidian artist card) */
+.artist-hero-vignette,
 .light-mode .artist-hero-vignette {
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.15) 0%,
-    rgba(255, 255, 255, 0.45) 50%,
-    rgba(255, 255, 255, 0.98) 100%
-  );
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      to right,
+      rgba(12, 12, 12, 0.94) 0%,
+      rgba(12, 12, 12, 0.78) 38%,
+      rgba(12, 12, 12, 0.28) 72%,
+      rgba(12, 12, 12, 0.48) 100%
+    ),
+    linear-gradient(
+      to top,
+      rgba(12, 12, 12, 1) 0%,
+      rgba(12, 12, 12, 0.98) 28%,
+      rgba(12, 12, 12, 0.68) 58%,
+      rgba(12, 12, 12, 0.20) 85%,
+      transparent 100%
+    );
+  pointer-events: none;
 }
 
 /* Top Row */

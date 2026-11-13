@@ -44,16 +44,11 @@ export const SpotifyArtistCard: React.FC<SpotifyArtistCardData> = ({
   const listenersText = monthlyListeners || followers || "Popular on Spotify";
   const displayGenres = genres && genres !== "Music" ? genres : "";
 
-  // Multi-axis compound glass vignette:
-  // 1. Horizontal vignette (left-to-right) protects artist typography & metadata
-  // 2. Vertical vignette (bottom-to-top) cleanly grounds the bottom with 100% solid obsidian to prevent any light bleed
+  // Artist photo backdrop — dual-axis vignette renders on .artist-hero-vignette overlay
+  // so the gradients span edge-to-edge without backgroundSize/Position or subpixel DPI bleed
   const cardStyle: React.CSSProperties = image
     ? {
-        backgroundImage: [
-          `linear-gradient(to right, rgba(12, 12, 12, 0.94) 0%, rgba(12, 12, 12, 0.78) 38%, rgba(12, 12, 12, 0.22) 72%, rgba(12, 12, 12, 0.45) 100%)`,
-          `linear-gradient(to top, rgba(12, 12, 12, 1) 0%, rgba(12, 12, 12, 0.98) 18%, rgba(12, 12, 12, 0.55) 55%, rgba(12, 12, 12, 0.15) 85%, transparent 100%)`,
-          `url("${image}")`,
-        ].join(", "),
+        backgroundImage: `url("${image}")`,
         backgroundSize: "cover",
         backgroundPosition: "center 20%",
         backgroundRepeat: "no-repeat",
@@ -67,6 +62,7 @@ export const SpotifyArtistCard: React.FC<SpotifyArtistCardData> = ({
       onClick={handlePlayArtist}
       title={`Stream ${name} on Spotify`}
     >
+      {image && <div className="artist-hero-vignette" aria-hidden="true" />}
       {/* Top Controls Row */}
       <div className="artist-card-top">
         <div className="spotify-pill-tag">
