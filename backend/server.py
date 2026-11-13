@@ -342,11 +342,18 @@ async def handle_connection(websocket: Any):
                 if spotify_id:
                     def _run_spotify_play(sid: str, itype: str):
                         try:
-                            try:
-                                from tools_spotify import spotify_play_item
-                            except ImportError:
-                                from backend.tools_spotify import spotify_play_item
-                            res_msg = spotify_play_item(sid, itype)
+                            if itype.strip().lower() == "playlist":
+                                try:
+                                    from tools_spotify import spotify_play_playlist
+                                except ImportError:
+                                    from backend.tools_spotify import spotify_play_playlist
+                                res_msg = spotify_play_playlist(sid)
+                            else:
+                                try:
+                                    from tools_spotify import spotify_play_item
+                                except ImportError:
+                                    from backend.tools_spotify import spotify_play_item
+                                res_msg = spotify_play_item(sid, itype)
                             print(f"🎵 [SPOTIFY DIRECT PLAY] {itype}:{sid} -> {res_msg}")
                         except Exception as sp_err:
                             print(f"⚠️ [SPOTIFY DIRECT PLAY] Error: {sp_err}")

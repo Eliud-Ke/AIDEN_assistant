@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
 export interface SpotifyTrackItem {
   id: string;
@@ -19,7 +18,6 @@ export interface SpotifyTracksCardData {
 }
 
 export const SpotifyTracksCard: React.FC<SpotifyTracksCardData> = ({
-  query,
   tracks,
   onPlayItem,
 }) => {
@@ -29,21 +27,6 @@ export const SpotifyTracksCard: React.FC<SpotifyTracksCardData> = ({
 
   const topTrack = tracks[0];
   const otherTracks = tracks.slice(1, 5);
-
-  const handleOpenSpotify = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const url =
-      topTrack.spotifyUrl ||
-      (query
-        ? `https://open.spotify.com/search/${encodeURIComponent(query)}`
-        : `https://open.spotify.com/track/${topTrack.id}`);
-    if (!url) return;
-    try {
-      openUrl(url).catch(() => window.open(url, "_blank"));
-    } catch {
-      window.open(url, "_blank");
-    }
-  };
 
   const handlePlayTrack = (e: React.MouseEvent, track: SpotifyTrackItem) => {
     e.stopPropagation();
@@ -62,17 +45,6 @@ export const SpotifyTracksCard: React.FC<SpotifyTracksCardData> = ({
           </svg>
           <span>Spotify Songs</span>
         </div>
-
-        <button
-          type="button"
-          className="spotify-open-link"
-          title="Open in Spotify"
-          onClick={handleOpenSpotify}
-        >
-          <svg viewBox="0 0 24 24">
-            <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
-          </svg>
-        </button>
       </div>
 
       {/* Top Result (Best Match with Prominent Green Play Button) */}

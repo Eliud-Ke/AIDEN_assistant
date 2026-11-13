@@ -13,6 +13,7 @@ import time
 import subprocess
 import json
 import re
+from difflib import SequenceMatcher
 from typing import Optional, Dict, Any, List
 
 import requests
@@ -588,8 +589,362 @@ def spotify_search_albums(query: str, limit: int = 5) -> str:
         return f"Error executing Spotify album search: {str(e)}"
 
 
+def _format_playlist_item(pl: Dict[str, Any], current_user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Normalizes a Spotify playlist object into AIDEN's card & text payload shape."""
+    p_id = pl.get("id", "")
+    p_name = pl.get("name", "Unknown Playlist")
+    owner_obj = pl.get("owner") or {}
+    owner_id = owner_obj.get("id")
+    owner_name = owner_obj.get("display_name") or owner_id or "Spotify"
+    tracks_obj = pl.get("tracks") or pl.get("items") or {}
+    total_trks = int(tracks_obj.get("total", 0) or 0)
+    imgs = pl.get("images") or []
+    img_url = imgs[0].get("url", "") if imgs else ""
+    spotify_url = (pl.get("external_urls") or {}).get(
+        "spotify", f"https://open.spotify.com/playlist/{p_id}"
+    )
+
+    item: Dict[str, Any] = {
+        "id": p_id,
+        "name": p_name,
+        "owner": owner_name,
+        "totalTracks": total_trks,
+        "image": img_url,
+        "spotifyUrl": spotify_url,
+    }
+    if current_user_id is not None:
+        item["isOwner"] = bool(owner_id and owner_id == current_user_id)
+    return item
+
+
+def _fetch_current_user_id(headers: Dict[str, str]) -> Optional[str]:
+    """Best-effort lookup of the signed-in Spotify user's ID for ownership labeling."""
+    try:
+        res = requests.get(f"{SPOTIFY_API_BASE}/me", headers=headers, timeout=4)
+        if res.status_code == 200:
+            return res.json().get("id")
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_user_library_playlists(
+    headers: Dict[str, str], max_items: int = 100
+) -> tuple[List[Dict[str, Any]], int, Optional[str]]:
+    """
+    Fetches the authenticated user's saved & created playlists via GET /me/playlists.
+    Returns (formatted_items, library_total, error_message).
+    """
+    current_user_id = _fetch_current_user_id(headers)
+    collected: List[Dict[str, Any]] = []
+    offset = 0
+    library_total = 0
+
+    while len(collected) < max_items:
+        page_limit = min(50, max_items - len(collected))
+        res = requests.get(
+            f"{SPOTIFY_API_BASE}/me/playlists",
+            headers=headers,
+            params={"limit": page_limit, "offset": offset},
+            timeout=8,
+        )
+        if res.status_code != 200:
+            return [], 0, f"Spotify library playlists error ({res.status_code}): {res.text}"
+
+        data = res.json()
+        library_total = int(data.get("total", library_total) or 0)
+        raw_items = data.get("items", []) or []
+        valid_page = [p for p in raw_items if isinstance(p, dict) and p.get("id")]
+        for pl in valid_page:
+            collected.append(_format_playlist_item(pl, current_user_id=current_user_id))
+
+        if not data.get("next") or not raw_items:
+            break
+        offset += len(raw_items)
+
+    return collected, max(library_total, len(collected)), None
+
+
+def _score_library_playlist_match(query: str, playlist: Dict[str, Any]) -> float:
+    """Scores how well a library playlist name matches the user's partial or exact query."""
+    q_low = " ".join(query.lower().split())
+    name_low = " ".join(str(playlist.get("name", "")).lower().split())
+    if not q_low or not name_low:
+        return 0.0
+    if name_low == q_low:
+        return 100.0
+    if name_low.startswith(q_low):
+        return 90.0
+    if q_low in name_low:
+        return 80.0
+
+    q_tokens = [t for t in re.findall(r"[a-z0-9]+", q_low) if t]
+    name_tokens = [t for t in re.findall(r"[a-z0-9]+", name_low) if t]
+    token_hits = sum(1 for qt in q_tokens if any(qt in nt or nt in qt for nt in name_tokens))
+    token_score = (token_hits / len(q_tokens)) * 65.0 if q_tokens else 0.0
+    fuzzy_whole = SequenceMatcher(None, q_low, name_low).ratio() * 50.0
+    fuzzy_word = max((SequenceMatcher(None, q_low, nt).ratio() * 55.0 for nt in name_tokens), default=0.0)
+    return max(token_score, fuzzy_whole, fuzzy_word)
+
+
+def spotify_search_playlists(query: str, limit: int = 5) -> str:
+    """
+    Searches Spotify's public catalog for playlists matching the query.
+    Returns up to 5 top matching playlists with title, owner, track count,
+    cover artwork, Spotify ID, and an interactive visual card for immediate 1-tap shuffle playback.
+    """
+    if not query or not query.strip():
+        return "Please specify a playlist name, mood, or vibe to search for."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        limit = max(1, min(5, int(limit)))
+        clean_query = query.strip().strip('"\'')
+
+        # Fetch a small buffer because Spotify frequently injects null entries into playlist search results
+        fetch_limit = min(10, limit + 3)
+        url = f"{SPOTIFY_API_BASE}/search"
+        params = {
+            "q": clean_query,
+            "type": "playlist",
+            "limit": fetch_limit,
+            "market": "from_token",
+        }
+
+        res = requests.get(url, headers=headers, params=params, timeout=8)
+        if res.status_code != 200:
+            return f"Spotify playlist search error ({res.status_code}): {res.text}"
+
+        data = res.json()
+        raw_items = data.get("playlists", {}).get("items", []) or []
+        playlists = [p for p in raw_items if isinstance(p, dict) and p.get("id")][:limit]
+        if not playlists:
+            return f"No playlists found matching '{query}' on Spotify."
+
+        results_lines = []
+        playlist_items = []
+        for idx, pl in enumerate(playlists, 1):
+            item = _format_playlist_item(pl)
+            playlist_items.append(item)
+            results_lines.append(
+                f"{idx}. Playlist: '{item['name']}' by {item['owner']} ({item['totalTracks']} tracks) [ID: {item['id']}]"
+            )
+
+        card_payload = {
+            "query": clean_query,
+            "playlists": playlist_items,
+        }
+        card_tag = f"::spotify-playlists-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
+
+        joined = "\n".join(results_lines)
+        return (
+            f"{card_tag}\n\nSpotify Playlist Results for '{query}':\n{joined}\n\n"
+            "Call `spotify_play_playlist(playlist_id=ID)` to start a playlist (shuffle enabled by default)."
+        )
+
+    except Exception as e:
+        return f"Error executing Spotify playlist search: {str(e)}"
+
+
+def spotify_search_my_playlists(query: str) -> str:
+    """
+    Searches the user's own Spotify library (created & saved playlists) for a playlist name.
+    Promotes the closest match as the primary card hero while keeping the rest of the user's
+    playlists scrollable underneath.
+    """
+    if not query or not query.strip():
+        return "Please specify the playlist name to look for in your Spotify library."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        clean_query = query.strip().strip('"\'')
+
+        items, _, err = _fetch_user_library_playlists(headers, max_items=100)
+        if err:
+            return err
+        if not items:
+            return "You don't have any saved or created playlists in your Spotify library yet."
+
+        # Rank all library playlists so the best match becomes #1 and the remaining library
+        # playlists appear underneath even if their names don't match the query.
+        scored = [
+            (_score_library_playlist_match(clean_query, pl), -idx, pl)
+            for idx, pl in enumerate(items)
+        ]
+        scored.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+        ordered = [entry[2] for entry in scored[:30]]
+        top_score = scored[0][0]
+
+        card_payload = {
+            "mode": "search",
+            "query": clean_query,
+            "playlists": ordered,
+        }
+        card_tag = f"::spotify-library-playlists-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
+
+        results_lines = []
+        for idx, item in enumerate(ordered[:10], 1):
+            role = "Made by you" if item.get("isOwner") else f"Saved • By {item['owner']}"
+            results_lines.append(
+                f"{idx}. '{item['name']}' ({role}, {item['totalTracks']} tracks) [ID: {item['id']}]"
+            )
+
+        match_note = (
+            f"Best library match for '{query}': '{ordered[0]['name']}'"
+            if top_score >= 30.0
+            else f"No close exact name match for '{query}' in your library; closest playlist shown first alongside your library:"
+        )
+        return (
+            f"{card_tag}\n\n{match_note}\n"
+            + "\n".join(results_lines)
+            + "\n\nCall `spotify_play_playlist(playlist_id=ID)` to start playing any of these playlists (shuffle enabled by default)."
+        )
+
+    except Exception as e:
+        return f"Error searching your Spotify playlists: {str(e)}"
+
+
+def spotify_list_my_playlists(limit: int = 50) -> str:
+    """
+    Lists all playlists saved or created in the user's personal Spotify library.
+    Renders a clean scrollable list card without a primary hero highlight.
+    """
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        capped_limit = max(1, min(100, int(limit)))
+
+        items, library_total, err = _fetch_user_library_playlists(headers, max_items=capped_limit)
+        if err:
+            return err
+        if not items:
+            return "You don't have any saved or created playlists in your Spotify library yet."
+
+        card_payload = {
+            "mode": "list",
+            "total": library_total,
+            "playlists": items,
+        }
+        card_tag = f"::spotify-library-playlists-card[{json.dumps(card_payload, ensure_ascii=False)}]::"
+
+        results_lines = []
+        for idx, item in enumerate(items, 1):
+            role = "Made by you" if item.get("isOwner") else f"Saved • By {item['owner']}"
+            results_lines.append(
+                f"{idx}. '{item['name']}' ({role}, {item['totalTracks']} tracks) [ID: {item['id']}]"
+            )
+
+        return (
+            f"{card_tag}\n\nYour Spotify Library Playlists ({library_total} total, showing {len(items)}):\n"
+            + "\n".join(results_lines)
+            + "\n\nCall `spotify_play_playlist(playlist_id=ID)` to start any playlist (shuffle enabled by default)."
+        )
+
+    except Exception as e:
+        return f"Error listing your Spotify playlists: {str(e)}"
+
+
 # 3. Streaming: Play Specific Song, Album, or Playlist
 # ---------------------------------------------------------------------------
+
+def _parse_spotify_id_and_type(raw_id: str, default_type: str) -> tuple[str, str]:
+    """Extracts clean Spotify ID and normalized item type from an ID, URI, or open.spotify.com URL."""
+    clean_id = raw_id.strip()
+    resolved_type = default_type.strip().lower()
+    if "open.spotify.com/" in clean_id:
+        path_part = clean_id.split("open.spotify.com/", 1)[1].split("?", 1)[0].strip("/")
+        segments = [seg for seg in path_part.split("/") if seg]
+        if len(segments) >= 2:
+            resolved_type = segments[-2].lower()
+            clean_id = segments[-1]
+    elif "spotify:" in clean_id:
+        parts = clean_id.split(":")
+        if len(parts) >= 3:
+            resolved_type = parts[1].lower()
+            clean_id = parts[2]
+    return clean_id, resolved_type
+
+
+def _set_spotify_shuffle(headers: dict, state: bool, dev_id: Optional[str] = None) -> bool:
+    """Applies Spotify shuffle mode on the target or active device."""
+    s_val = "true" if state else "false"
+    device_param = f"&device_id={dev_id}" if dev_id else ""
+    try:
+        res = requests.put(
+            f"{SPOTIFY_API_BASE}/me/player/shuffle?state={s_val}{device_param}",
+            headers=headers,
+            timeout=6,
+        )
+        return res.status_code in [200, 204]
+    except Exception:
+        return False
+
+
+def _execute_spotify_play(headers: dict, dev_id: Optional[str], play_payload: dict) -> tuple[bool, Optional[str], str]:
+    """Starts Spotify playback and wakes an inactive device once on 404."""
+    device_param = f"?device_id={dev_id}" if dev_id else ""
+    play_url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
+    res = requests.put(play_url, headers=headers, json=play_payload, timeout=8)
+
+    if res.status_code in [200, 204]:
+        dev_name = _active_device_state.get("device_name", "your device")
+        return True, dev_id, f"Playing on {dev_name}."
+
+    # If device was asleep or disconnected, retry once
+    if res.status_code == 404:
+        res_wake = resolve_or_activate_device(timeout_seconds=6.0)
+        if res_wake.get("ok"):
+            new_id = res_wake.get("device_id")
+            res2 = requests.put(
+                f"{SPOTIFY_API_BASE}/me/player/play?device_id={new_id}",
+                headers=headers,
+                json=play_payload,
+                timeout=8,
+            )
+            if res2.status_code in [200, 204]:
+                return True, new_id, f"Playing on {res_wake.get('device_name', 'your device')}."
+            res = res2
+
+    if res.status_code == 403:
+        return False, dev_id, "Playback restricted on this device or Spotify Premium required for direct queue streaming."
+
+    return False, dev_id, f"Could not start Spotify playback ({res.status_code}): {res.text}"
+
+
+def spotify_play_playlist(playlist_id: str) -> str:
+    """
+    Starts playing a Spotify playlist by its ID, URI, or URL with shuffle enabled by default.
+    """
+    if not playlist_id or not playlist_id.strip():
+        return "Please provide a valid Spotify playlist ID or URI to play."
+
+    try:
+        token = get_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        dev_id = get_or_resolve_device_id()
+
+        clean_id, _ = _parse_spotify_id_and_type(playlist_id, "playlist")
+        play_payload = {"context_uri": f"spotify:playlist:{clean_id}"}
+
+        # Enable shuffle before playback when a device is already awake so track 1 is randomized;
+        # otherwise re-apply immediately after playback wakes the device.
+        shuffle_applied = bool(dev_id) and _set_spotify_shuffle(headers, True, dev_id)
+        ok, used_dev_id, status_msg = _execute_spotify_play(headers, dev_id, play_payload)
+        if not ok:
+            return status_msg
+
+        if not shuffle_applied:
+            shuffle_applied = _set_spotify_shuffle(headers, True, used_dev_id)
+
+        if shuffle_applied:
+            return f"{status_msg} Shuffle is enabled."
+        return f"{status_msg} (Note: could not confirm shuffle state automatically.)"
+
+    except Exception as e:
+        return f"Error playing Spotify playlist: {str(e)}"
+
 
 def spotify_play_item(spotify_id: str, item_type: str = "track") -> str:
     """
@@ -602,17 +957,8 @@ def spotify_play_item(spotify_id: str, item_type: str = "track") -> str:
         token = get_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
         dev_id = get_or_resolve_device_id()
-        device_param = f"?device_id={dev_id}" if dev_id else ""
 
-        # Clean ID
-        clean_id = spotify_id.strip()
-        if "spotify:" in clean_id:
-            parts = clean_id.split(":")
-            if len(parts) >= 3:
-                item_type = parts[1]
-                clean_id = parts[2]
-
-        clean_type = item_type.strip().lower()
+        clean_id, clean_type = _parse_spotify_id_and_type(spotify_id, item_type)
         if clean_type == "track":
             # Spotify Desktop (Win32 standalone) frequently ignores isolated 'uris' arrays
             # when its local queue is idle. Providing its album 'context_uri' with track 'offset'
@@ -639,26 +985,8 @@ def spotify_play_item(spotify_id: str, item_type: str = "track") -> str:
         else:
             play_payload = {"uris": [f"spotify:track:{clean_id}"]}
 
-        play_url = f"{SPOTIFY_API_BASE}/me/player/play{device_param}"
-        res = requests.put(play_url, headers=headers, json=play_payload, timeout=8)
-
-        if res.status_code in [200, 204]:
-            dev_name = _active_device_state.get("device_name", "your device")
-            return f"Playing on {dev_name}."
-
-        # If device was asleep or disconnected, retry once
-        if res.status_code == 404:
-            res_wake = resolve_or_activate_device(timeout_seconds=6.0)
-            if res_wake.get("ok"):
-                new_id = res_wake.get("device_id")
-                res2 = requests.put(f"{SPOTIFY_API_BASE}/me/player/play?device_id={new_id}", headers=headers, json=play_payload, timeout=8)
-                if res2.status_code in [200, 204]:
-                    return f"Playing on {res_wake.get('device_name', 'your device')}."
-
-        if res.status_code == 403:
-            return "Playback restricted on this device or Spotify Premium required for direct queue streaming."
-
-        return f"Could not start Spotify playback ({res.status_code}): {res.text}"
+        _, _, status_msg = _execute_spotify_play(headers, dev_id, play_payload)
+        return status_msg
 
     except Exception as e:
         return f"Error playing Spotify item: {str(e)}"
@@ -680,9 +1008,7 @@ def spotify_set_playback_mode(shuffle: Optional[bool] = None, repeat_mode: Optio
         results = []
 
         if shuffle is not None:
-            s_val = "true" if shuffle else "false"
-            res = requests.put(f"{SPOTIFY_API_BASE}/me/player/shuffle?state={s_val}{device_param}", headers=headers, timeout=6)
-            if res.status_code in [200, 204]:
+            if _set_spotify_shuffle(headers, shuffle, dev_id):
                 results.append(f"Shuffle {'enabled' if shuffle else 'disabled'}")
 
         if repeat_mode is not None:
@@ -777,6 +1103,10 @@ SPOTIFY_TOOLS = {
     "spotify_search_tracks": spotify_search_tracks,
     "spotify_search_artists": spotify_search_artists,
     "spotify_search_albums": spotify_search_albums,
+    "spotify_search_playlists": spotify_search_playlists,
+    "spotify_search_my_playlists": spotify_search_my_playlists,
+    "spotify_list_my_playlists": spotify_list_my_playlists,
+    "spotify_play_playlist": spotify_play_playlist,
     "spotify_play_item": spotify_play_item,
     "spotify_set_playback_mode": spotify_set_playback_mode,
     "spotify_like_track": spotify_like_track,
@@ -891,10 +1221,109 @@ SPOTIFY_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "spotify_search_playlists",
+            "description": (
+                "Searches Spotify's public catalog specifically for playlists matching the query "
+                "(NOT the user's personal saved library). Returns up to 5 top matching playlists with "
+                "an interactive visual playlist card (::spotify-playlists-card[...]::) and Spotify playlist IDs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Clean playlist name, mood, activity, or genre keywords (e.g. 'late night chill', "
+                            "'Today\\'s Top Hits', 'workout hype'). Do NOT include conversational filler like 'search for' or 'on spotify'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of playlists to return (1 to 5). Default is 5.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_search_my_playlists",
+            "description": (
+                "Searches ONLY the user's personal Spotify library (playlists they created or saved) "
+                "for a playlist name they know or partly remember. Returns an interactive visual card "
+                "(::spotify-library-playlists-card[...]::) with the best match featured at the top and "
+                "the rest of their library playlists listed underneath."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Name or partial keywords of the user's saved/created playlist "
+                            "(e.g. 'gym', 'late night drive', 'chill vibes'). Do NOT include filler like 'my playlist' or 'search'."
+                        ),
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_list_my_playlists",
+            "description": (
+                "Lists all saved and created playlists in the user's personal Spotify library when they "
+                "want to browse or don't know the exact playlist name. Returns a scrollable list visual card "
+                "(::spotify-library-playlists-card[...]::)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of playlists to return (1 to 100). Default is 50.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_play_playlist",
+            "description": (
+                "Dedicated tool for starting playback of a Spotify playlist using its ID, URI, or URL "
+                "(obtained from `spotify_search_playlists`, `spotify_search_my_playlists`, `spotify_list_my_playlists`, or direct request). "
+                "Automatically enables shuffle by default. Always prefer this tool over `spotify_play_item` when playing a playlist."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "playlist_id": {
+                        "type": "string",
+                        "description": "The Spotify playlist ID, URI, or URL to start playing.",
+                    },
+                },
+                "required": ["playlist_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "spotify_play_item",
             "description": (
-                "Streams a specific track, album, playlist, or artist on Spotify using its ID or URI "
-                "(obtained from `spotify_search_tracks`, `spotify_search_albums`, or direct request)."
+                "Streams a specific track, album, or artist on Spotify using its ID or URI "
+                "(obtained from `spotify_search_tracks`, `spotify_search_albums`, `spotify_search_artists`, or direct request). "
+                "For playlists, prefer `spotify_play_playlist` (playlist type kept here only as fallback)."
             ),
             "parameters": {
                 "type": "object",

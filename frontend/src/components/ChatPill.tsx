@@ -9,6 +9,8 @@ import { WeatherCard, WeatherCardData } from "./WeatherCard";
 import { SpotifyArtistCard, SpotifyArtistCardData } from "./SpotifyArtistCard";
 import { SpotifyTracksCard, SpotifyTracksCardData, SpotifyTrackItem } from "./SpotifyTracksCard";
 import { SpotifyAlbumsCard, SpotifyAlbumsCardData, SpotifyAlbumItem } from "./SpotifyAlbumsCard";
+import { SpotifyPlaylistsCard, SpotifyPlaylistsCardData, SpotifyPlaylistItem } from "./SpotifyPlaylistsCard";
+import { SpotifyLibraryPlaylistsCard, SpotifyLibraryPlaylistsCardData } from "./SpotifyLibraryPlaylistsCard";
 import { MarkdownContent } from "./MarkdownContent";
 import "./ChatPill.css";
 
@@ -107,7 +109,7 @@ interface ChatPillProps {
   onStartRecording?: () => void;
   onStopRecording?: () => void;
   onHardwareChange?: (action: "volume" | "brightness", level?: number, muted?: boolean) => void;
-  onSpotifyPlay?: (spotifyId: string, itemType: "track" | "album" | "artist") => void;
+  onSpotifyPlay?: (spotifyId: string, itemType: "track" | "album" | "artist" | "playlist") => void;
   onHeightChange?: (targetH: number, durationMs?: number) => void;
 }
 
@@ -170,7 +172,9 @@ type MessagePart =
   | { type: "weather"; data: WeatherCardData }
   | { type: "spotify_artist"; data: SpotifyArtistCardData }
   | { type: "spotify_tracks"; data: SpotifyTracksCardData }
-  | { type: "spotify_albums"; data: SpotifyAlbumsCardData };
+  | { type: "spotify_albums"; data: SpotifyAlbumsCardData }
+  | { type: "spotify_playlists"; data: SpotifyPlaylistsCardData }
+  | { type: "spotify_library_playlists"; data: SpotifyLibraryPlaylistsCardData };
 
 const POLISH_STATUS_TAGS = [
   "Finishing up",
@@ -195,10 +199,26 @@ function getRandomPolishTag(excludeTag?: string | null): string {
   return list[index];
 }
 
+function parseSpotifyPlaylistItems(raw: any, maxCount: number): SpotifyPlaylistItem[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .filter((p: any) => p && typeof p === "object")
+    .slice(0, maxCount)
+    .map((p: any) => ({
+      id: String(p.id || ""),
+      name: String(p.name || "Unknown Playlist"),
+      owner: String(p.owner || "Spotify"),
+      isOwner: typeof p.isOwner === "boolean" ? p.isOwner : undefined,
+      totalTracks: typeof p.totalTracks === "number" ? p.totalTracks : undefined,
+      image: p.image ? String(p.image) : undefined,
+      spotifyUrl: p.spotifyUrl ? String(p.spotifyUrl) : undefined,
+    }));
+}
+
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums)-card)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -448,6 +468,60 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       } catch (err) {
         console.warn("Failed to parse spotify-albums-card JSON:", err);
       }
+    } else if (tagType === "spotify-playlists-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const rawPlaylists = Array.isArray(parsed.playlists)
+          ? parsed.playlists
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
+        const playlists = parseSpotifyPlaylistItems(rawPlaylists, 5);
+        if (playlists.length > 0) {
+          parts.push({
+            type: "spotify_playlists",
+            data: {
+              query: parsed.query ? String(parsed.query) : undefined,
+              playlists,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to parse spotify-playlists-card JSON:", err);
+      }
+    } else if (tagType === "spotify-library-playlists-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const rawPlaylists = Array.isArray(parsed.playlists)
+          ? parsed.playlists
+          : Array.isArray(parsed)
+          ? parsed
+          : [];
+        const playlists = parseSpotifyPlaylistItems(rawPlaylists, 100);
+        if (playlists.length > 0) {
+          parts.push({
+            type: "spotify_library_playlists",
+            data: {
+              mode: parsed.mode === "search" ? "search" : "list",
+              query: parsed.query ? String(parsed.query) : undefined,
+              total: typeof parsed.total === "number" ? parsed.total : undefined,
+              playlists,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to parse spotify-library-playlists-card JSON:", err);
+      }
     } else if (tagType === "weather-card") {
       try {
         let parsed: any;
@@ -561,7 +635,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums)-card)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[[\s\S]*$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -1672,6 +1746,38 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                             );
                           }
 
+                          if (part.type === "spotify_playlists") {
+                            return (
+                              <SpotifyPlaylistsCard
+                                key={idx}
+                                {...part.data}
+                                onPlayItem={(id, type, title) => {
+                                  if (onSpotifyPlay && id) {
+                                    onSpotifyPlay(id, type);
+                                  } else if (onSendMessage) {
+                                    onSendMessage(`play playlist ${title}`, false);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
+                          if (part.type === "spotify_library_playlists") {
+                            return (
+                              <SpotifyLibraryPlaylistsCard
+                                key={idx}
+                                {...part.data}
+                                onPlayItem={(id, type, title) => {
+                                  if (onSpotifyPlay && id) {
+                                    onSpotifyPlay(id, type);
+                                  } else if (onSendMessage) {
+                                    onSendMessage(`play playlist ${title}`, false);
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
                           if (part.type === "weather") {
                             return (
                               <WeatherCard
@@ -2661,7 +2767,7 @@ export const ChatPillWindow: React.FC = () => {
     }
   }, []);
 
-  const handleSpotifyPlay = useCallback((spotifyId: string, itemType: "track" | "album" | "artist") => {
+  const handleSpotifyPlay = useCallback((spotifyId: string, itemType: "track" | "album" | "artist" | "playlist") => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({

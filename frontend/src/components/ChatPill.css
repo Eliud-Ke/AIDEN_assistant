@@ -4807,7 +4807,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 15px 18px 16px 18px;
   margin: 8px 0 10px 0;
   user-select: none;
@@ -5476,4 +5476,84 @@
 @keyframes eqBounce {
   0% { height: 3px; }
   100% { height: 12px; }
+}
+
+.spotify-result-card .top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spotify-result-card .shuffle-default-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(29, 185, 84, 0.14);
+  border: 1px solid rgba(29, 185, 84, 0.28);
+  color: #1ed760;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.spotify-result-card .shuffle-default-chip svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+.spotify-result-card .library-count-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d4d4d4;
+  font-size: 10.5px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.spotify-result-card .playlist-scroll-area {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.spotify-result-card .playlist-scroll-area.search-others {
+  max-height: 204px;
+}
+
+.spotify-result-card .playlist-scroll-area.library-full {
+  max-height: 298px;
+}
+
+.spotify-result-card .playlist-scroll-area .track-row-item {
+  flex-shrink: 0;
+}
+
+.spotify-result-card .playlist-scroll-area::-webkit-scrollbar {
+  width: 5px;
+}
+
+.spotify-result-card .playlist-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.spotify-result-card .playlist-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.spotify-result-card .playlist-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(29, 185, 84, 0.55);
 }
