@@ -7,30 +7,6 @@ CORE_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "get_system_telemetry",
-            "description": "Get current CPU, RAM, and Battery usage of the host PC.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_time_date",
-            "description": "Get exact current local time, date, and day of the week.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "get_live_location",
             "description": "Reads OS GPS/Wi-Fi location and returns the human address, coordinates, and accuracy. When answering the user, state ONLY the clean human place name (e.g. 'Kisii, Kenya') by default. Never recite raw latitude, longitude, or accuracy meters unless the user explicitly asks for technical GPS coordinates.",
             "parameters": {

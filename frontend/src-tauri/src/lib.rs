@@ -170,9 +170,15 @@ fn stop_all_aiden_processes(state: &BackendState) {
 
 fn spawn_aiden_backend(state: &BackendState) -> Result<u32, String> {
     let mut cmd = build_backend_command("main.py")?;
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    cmd.stdin(Stdio::null());
+
+    if cfg!(debug_assertions) {
+        cmd.stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+    } else {
+        cmd.stdout(Stdio::null())
+            .stderr(Stdio::null());
+    }
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);

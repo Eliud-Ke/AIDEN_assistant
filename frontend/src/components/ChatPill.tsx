@@ -97,9 +97,6 @@ interface ChatPillProps {
   isStreaming?: boolean;
   onClearResponse?: () => void;
   contentRef?: React.Ref<HTMLDivElement>;
-  activeAudioTurnId?: string | null;
-  isAudioPlaying?: boolean;
-  onToggleTts?: (turnId: string, text: string) => void;
   isVoiceActive?: boolean;
   onToggleVoice?: (active: boolean) => void;
   isExitingVoice?: boolean;
@@ -682,9 +679,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   isStreaming = false,
   onClearResponse,
   contentRef,
-  activeAudioTurnId = null,
-  isAudioPlaying = false,
-  onToggleTts,
   isVoiceActive,
   onToggleVoice,
   isExitingVoice,
@@ -1550,52 +1544,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     {/* Assistant Reply for this turn */}
                     {turn.assistantReply && (
                       <div className="siri-assistant-reply">
-                        {!turn.isStreaming && onToggleTts && (
-                          <div className="siri-reply-header-bar">
-                            <button
-                              type="button"
-                              className={`siri-reply-speaker-btn ${
-                                activeAudioTurnId === turn.id
-                                  ? isAudioPlaying
-                                    ? "is-active"
-                                    : "is-loading"
-                                  : ""
-                              }`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleTts(turn.id, turn.assistantReply);
-                              }}
-                              title={
-                                activeAudioTurnId === turn.id
-                                  ? isAudioPlaying
-                                    ? "Stop speaking"
-                                    : "Loading audio..."
-                                  : "Read aloud"
-                              }
-                              aria-label="Read aloud"
-                            >
-                              {activeAudioTurnId === turn.id && !isAudioPlaying ? (
-                                <span className="siri-speaker-spinner" />
-                              ) : (
-                                <svg
-                                  className="siri-speaker-icon"
-                                  width="13"
-                                  height="13"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2.3"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" fillOpacity="0.25" />
-                                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                                </svg>
-                              )}
-                            </button>
-                          </div>
-                        )}
                         {parseMessageWithGalleries(turn.assistantReply, Boolean(turn.isStreaming)).map((part, idx) => {
                           if (part.type === "text") {
                             return (
@@ -2181,95 +2129,6 @@ export const ChatPillWindow: React.FC = () => {
   const contentRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
 
-  // In-RAM TTS Audio State & Playback Engine
-  const [activeAudioTurnId, setActiveAudioTurnId] = useState<string | null>(null);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
-  const activeAudioTurnIdRef = useRef<string | null>(null);
-  activeAudioTurnIdRef.current = activeAudioTurnId;
-  const isAudioPlayingRef = useRef<boolean>(false);
-  isAudioPlayingRef.current = isAudioPlaying;
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const audioCacheRef = useRef<Map<string, string>>(new Map());
-
-  const stopAudio = () => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-      audioPlayerRef.current = null;
-    }
-    setIsAudioPlaying(false);
-    setActiveAudioTurnId(null);
-  };
-
-  const playBase64Audio = (turnId: string, base64Data: string) => {
-    try {
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current = null;
-      }
-      const audioUrl = `data:audio/mp3;base64,${base64Data}`;
-      const audio = new Audio(audioUrl);
-      audioPlayerRef.current = audio;
-      setActiveAudioTurnId(turnId);
-      setIsAudioPlaying(true);
-
-      audio.onended = () => {
-        setIsAudioPlaying(false);
-        setActiveAudioTurnId(null);
-        audioPlayerRef.current = null;
-      };
-
-      audio.onerror = (e) => {
-        console.error("Audio playback error:", e);
-        setIsAudioPlaying(false);
-        setActiveAudioTurnId(null);
-        audioPlayerRef.current = null;
-      };
-
-      audio.play().catch((err) => {
-        console.warn("Audio play prevented:", err);
-        setIsAudioPlaying(false);
-        setActiveAudioTurnId(null);
-      });
-    } catch (err) {
-      console.error("Failed to play audio:", err);
-      setIsAudioPlaying(false);
-      setActiveAudioTurnId(null);
-    }
-  };
-
-  const handleToggleTts = (turnId: string, text: string) => {
-    // 1. If currently playing this exact turn, click stops it
-    if (activeAudioTurnIdRef.current === turnId && isAudioPlayingRef.current) {
-      stopAudio();
-      return;
-    }
-
-    // 2. Stop any other audio before switching
-    stopAudio();
-
-    // 3. Play from RAM cache if already downloaded
-    const cached = audioCacheRef.current.get(turnId);
-    if (cached) {
-      playBase64Audio(turnId, cached);
-      return;
-    }
-
-    // 4. Request TTS synthesis from backend over WebSocket
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      setActiveAudioTurnId(turnId);
-      setIsAudioPlaying(false); // Indicates loading state
-      wsRef.current.send(
-        JSON.stringify({
-          type: "tts_request",
-          turnId,
-          text,
-          voice: "nova",
-        })
-      );
-    }
-  };
-
   const stopStreamRaf = () => {
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
@@ -2279,7 +2138,6 @@ export const ChatPillWindow: React.FC = () => {
 
   const resetReplyState = () => {
     stopStreamRaf();
-    stopAudio();
     setIsVoiceActive(false);
     setIsExitingVoice(false);
     if (exitingVoiceTimerRef.current !== null) {
@@ -2533,7 +2391,6 @@ export const ChatPillWindow: React.FC = () => {
               }
             } else if (msgType === "stream_start") {
               stopStreamRaf();
-              stopAudio();
               stopPolishShuffle();
               targetTextRef.current = "";
               displayedLengthRef.current = 0;
@@ -2571,7 +2428,6 @@ export const ChatPillWindow: React.FC = () => {
               }
             } else if (msgType === "stream_end") {
               stopStreamRaf();
-              stopAudio();
               stopPolishShuffle();
               streamEndedRef.current = true;
               setIsStreaming(false);
@@ -2625,7 +2481,6 @@ export const ChatPillWindow: React.FC = () => {
               }, delay);
             } else if (msgType === "error") {
               stopStreamRaf();
-              stopAudio();
               stopPolishShuffle();
               setIsStreaming(false);
               setActiveUiTag("Error");
@@ -2643,22 +2498,6 @@ export const ChatPillWindow: React.FC = () => {
                   isStreaming: false,
                 },
               ]);
-            } else if (msgType === "tts_response") {
-              const turnId = String(data.turnId || "");
-              const base64Audio = String(data.audioBase64 || "");
-              if (turnId && base64Audio) {
-                audioCacheRef.current.set(turnId, base64Audio);
-                if (activeAudioTurnIdRef.current === turnId) {
-                  playBase64Audio(turnId, base64Audio);
-                }
-              }
-            } else if (msgType === "tts_error") {
-              const turnId = String(data.turnId || "");
-              console.error("TTS error for turn", turnId, data.error);
-              if (activeAudioTurnIdRef.current === turnId) {
-                setActiveAudioTurnId(null);
-                setIsAudioPlaying(false);
-              }
             }
           } catch {
             // Ignore malformed frames
@@ -2691,7 +2530,6 @@ export const ChatPillWindow: React.FC = () => {
     return () => {
       isMounted = false;
       stopStreamRaf();
-      stopAudio();
       stopPolishShuffle();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) {
@@ -2706,7 +2544,6 @@ export const ChatPillWindow: React.FC = () => {
 
   const handleSendMessage = (msg: string, _isFollowup?: boolean) => {
     stopStreamRaf();
-    stopAudio();
     setIsVoiceActive(false);
     currentTurnConnectorsRef.current.clear();
     setActiveConnector(null);
@@ -2802,9 +2639,6 @@ export const ChatPillWindow: React.FC = () => {
         onSendMessage={handleSendMessage}
         onHardwareChange={handleHardwareChange}
         onSpotifyPlay={handleSpotifyPlay}
-        activeAudioTurnId={activeAudioTurnId}
-        isAudioPlaying={isAudioPlaying}
-        onToggleTts={handleToggleTts}
         isVoiceActive={isVoiceActive}
         onToggleVoice={handleToggleVoice}
         isExitingVoice={isExitingVoice}

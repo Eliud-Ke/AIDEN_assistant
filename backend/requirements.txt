@@ -64,7 +64,11 @@ typing_extensions==4.16.0
 urllib3==2.8.0
 websockets==17.3
 winrt-runtime==3.2.1
+winrt-Windows.ApplicationModel==3.2.1
 winrt-Windows.Devices.Geolocation==3.2.1
 winrt-Windows.Foundation==3.2.1
+winrt-Windows.Foundation.Collections==3.2.1
 winrt-Windows.Media.Control==3.2.1
+winrt-Windows.UI.Notifications==3.2.1
+winrt-Windows.UI.Notifications.Management==3.2.1
 WMI==1.5.1

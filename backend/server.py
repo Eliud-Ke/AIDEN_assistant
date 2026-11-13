@@ -14,11 +14,6 @@ if sys.platform == "win32":
         pass
 
 try:
-    from tts_engine import synthesize_speech_base64
-except ImportError:
-    from backend.tts_engine import synthesize_speech_base64
-
-try:
     from voice_engine import init_voice_engine, get_voice_engine
 except ImportError:
     from backend.voice_engine import init_voice_engine, get_voice_engine
@@ -430,27 +425,6 @@ async def handle_connection(websocket: Any):
                     "isAwake": _current_state["isAwake"],
                     "backendOnline": True,
                 }))
-
-            elif msg_type == "tts_request":
-                text_to_speak = str(data.get("text", "")).strip()
-                turn_id = str(data.get("turnId", ""))
-                voice = str(data.get("voice", "nova"))
-                if text_to_speak:
-                    try:
-                        b64_audio = await synthesize_speech_base64(text_to_speak, voice=voice)
-                        await websocket.send(json.dumps({
-                            "type": "tts_response",
-                            "turnId": turn_id,
-                            "audioBase64": b64_audio,
-                            "format": "mp3",
-                        }))
-                    except Exception as e:
-                        print(f"⚠️ [TTS] Synthesis error: {e}")
-                        await websocket.send(json.dumps({
-                            "type": "tts_error",
-                            "turnId": turn_id,
-                            "error": str(e),
-                        }))
 
     except websockets.exceptions.ConnectionClosed:
         pass

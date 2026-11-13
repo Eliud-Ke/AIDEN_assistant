@@ -1,7 +1,5 @@
 """
 AVAILABLE SYSTEM TOOLS:
-- get_system_telemetry
-- get_current_time_date
 - get_live_location
 - manage_system_power
 - set_system_brightness
@@ -68,36 +66,15 @@ try:
 except ImportError:
     app_registry = None
 
+try:
+    from ans import get_visible_desktop_windows
+except ImportError:
+    from backend.ans import get_visible_desktop_windows
+
 
 # ---------------------------------------------------------
-# 1. HARDWARE TELEMETRY & CLOCK
+# 1. LOCATION
 # ---------------------------------------------------------
-
-def get_system_telemetry():
-    """Returns CPU, RAM, and Battery usage as a string."""
-    try:
-        cpu = psutil.cpu_percent(interval=0.5)
-        ram = psutil.virtual_memory().percent
-        battery = psutil.sensors_battery()
-
-        if battery:
-            bat_str = f"Battery is at {battery.percent}% {'(Plugged In)' if battery.power_plugged else '(Discharging)'}."
-        else:
-            bat_str = "No battery detected (Desktop mode)."
-
-        return f"CPU Usage: {cpu}%. RAM Usage: {ram}%. {bat_str}"
-    except Exception as e:
-        return f"Error retrieving telemetry: {str(e)}"
-
-
-def get_current_time_date():
-    """Returns the current date and time as a string."""
-    try:
-        now = datetime.now()
-        return now.strftime("Today is %A, %B %d, %Y. The current time is %I:%M %p.")
-    except Exception as e:
-        return f"Error fetching time: {str(e)}"
-
 
 def get_live_location() -> str:
     """Uses Windows Native Wi-Fi Triangulation (WinRT) with OpenStreetMap Nominatim reverse geocoding."""
@@ -551,72 +528,10 @@ def media_restart_track() -> str:
 # ---------------------------------------------------------
 
 def get_active_windows(**kwargs):
-    """Scans the OS and returns a list of all visible desktop windows."""
-    visible_windows = []
-    raw_active_hwnd = win32gui.GetForegroundWindow()
-
-    ignored_processes = [
-        "nxdock.exe", "nexus.exe", "winstep.exe", "powertoys.exe",
-        "powertoys.peek.ui.exe", "hpaudiocontrol.exe", "raycast.exe",
-        "applicationframehost.exe", "textinputhost.exe", "searchhost.exe"
-    ]
-
-    ignored_titles = [
-        "program manager", "settings", "microsoft text input application",
-        "powertoys quick access", "windows input experience", "nxdock", "hp audio control"
-    ]
-
-    def enum_win_callback(hwnd, ctx):
-        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
-            title = win32gui.GetWindowText(hwnd)
-            title_lower = title.lower()
-            if any(ext in title_lower for ext in ignored_titles):
-                return
-
-            rect = win32gui.GetWindowRect(hwnd)
-            w = rect[2] - rect[0]
-            h = rect[3] - rect[1]
-
-            if w > 10 and h > 10:
-                try:
-                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                    proc = psutil.Process(pid)
-                    app_name = proc.name().lower()
-                except Exception:
-                    app_name = "unknown.exe"
-
-                if app_name in ignored_processes:
-                    return
-
-                visible_windows.append({
-                    "hwnd": hwnd, "title": title, "app": app_name, "is_active": False
-                })
-
-    win32gui.EnumWindows(enum_win_callback, None)
-
+    """Scans the OS and returns a list of all visible desktop windows (excluding AIDEN's overlay)."""
+    visible_windows = get_visible_desktop_windows()
     if not visible_windows:
         return "No visible windows found on the desktop."
-
-    try:
-        _, active_pid = win32process.GetWindowThreadProcessId(raw_active_hwnd)
-        active_proc_name = psutil.Process(active_pid).name().lower()
-    except Exception:
-        active_proc_name = ""
-
-    true_focus_index = 0
-    if "python" in active_proc_name:
-        for idx, w in enumerate(visible_windows):
-            if "python" not in w["app"]:
-                true_focus_index = idx
-                break
-    else:
-        for idx, w in enumerate(visible_windows):
-            if w["hwnd"] == raw_active_hwnd:
-                true_focus_index = idx
-                break
-
-    if visible_windows:
-        visible_windows[true_focus_index]["is_active"] = True
 
     output = "--- CURRENTLY OPEN WINDOWS ON SCREEN ---\n"
     for w in visible_windows:
@@ -1041,8 +956,6 @@ def grounded_web_search(query: str, search_context: str = "low") -> str:
 
 SYSTEM_TOOLS = {
     "grounded_web_search": grounded_web_search,
-    "get_system_telemetry": get_system_telemetry,
-    "get_current_time_date": get_current_time_date,
     "get_live_location": get_live_location,
     "manage_system_power": manage_system_power,
     "set_system_brightness": set_system_brightness,

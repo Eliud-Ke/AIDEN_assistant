@@ -93,7 +93,6 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
 # ⚡ THE STATUS DICTIONARY (Minimalist Text Only)
 TOOL_STATUS_MAP = {
     # System Hardware & Settings
-    "get_system_telemetry": "Checking system vitals",
     "get_active_windows": "Scanning active windows",
     "set_system_brightness": "Adjusting screen brightness",
     "manage_system_power": "Applying power settings",
@@ -101,7 +100,6 @@ TOOL_STATUS_MAP = {
     "manage_recycle_bin": "Emptying the recycle bin",
 
     # Utilities & OS Apps
-    "get_current_time_date": "Checking the time and date",
     "get_live_location": "Acquiring your location",
     "get_weather_forecast": "Checking the weather",
     "get_bible_passage": "Fetching Bible scripture",
