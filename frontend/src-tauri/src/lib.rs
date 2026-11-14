@@ -911,10 +911,14 @@ fn morph_pill(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        let scale = app
+            .get_webview_window("chat_pill")
+            .and_then(|w| w.scale_factor().ok())
+            .unwrap_or(1.0);
         let morph_state = app.state::<MorpherState>();
         if let Ok(guard) = morph_state.0.lock() {
             if let Some(morpher) = guard.as_ref() {
-                morpher.morph(target_width, target_height, duration_ms.unwrap_or(280));
+                morpher.morph(target_width * scale, target_height * scale, duration_ms.unwrap_or(240));
                 return Ok(());
             }
         }

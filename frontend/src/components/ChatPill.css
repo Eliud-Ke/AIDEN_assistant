@@ -153,7 +153,7 @@
   overflow: visible;
 }
 
-.siri-pill-capsule.multiline .siri-pill-input-wrap {
+.siri-unified-pill.mode-idle.multiline .siri-pill-input-wrap {
   align-items: flex-start;
   padding-top: 1px;
 }
@@ -221,7 +221,7 @@
 .siri-pill-input {
   width: 100%;
   min-height: 24px;
-  max-height: 70px; /* Strictly capped at 3 lines max */
+  max-height: 162px; /* ~7 lines max height before internal scrolling activates */
   background: transparent;
   border: none;
   outline: none;
@@ -247,6 +247,10 @@
 
 .siri-pill-input.multiline {
   caret-color: #ffffff !important;
+}
+
+.siri-unified-pill.light-mode .siri-pill-input.multiline {
+  caret-color: #111215 !important;
 }
 
 .siri-pill-input::placeholder {
@@ -2751,6 +2755,11 @@
   padding: 0 24px;
 }
 
+.siri-unified-pill.mode-idle.multiline {
+  align-items: flex-end;
+  padding: 16px 24px;
+}
+
 /* Minimalist Bare Mic Icon in Initial Idle Pill (No Circle, Just Icon) */
 .siri-idle-bare-mic-btn {
   position: relative;
@@ -3124,14 +3133,18 @@
   padding: 8px 4px 10px 3px;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* Springy padding transition: pushes text down on hover, pulls back up on unhover */
-  transition: padding 0.42s cubic-bezier(0.18, 1.25, 0.32, 1);
+  /* Springy padding transition on hover/unhover, snappy bottom tracking as follow-up capsule grows inward */
+  transition: padding-top 0.42s cubic-bezier(0.18, 1.25, 0.32, 1),
+              padding-bottom 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar;
-   applies colourless lens blur inside the exact 4 button shapes while keeping outside text razor-sharp */
+/* Hover state: 52px top clearance pushes text block down springily; 76px bottom clearance accommodates command bar */
 .siri-unified-pill.controls-visible .siri-unified-stream {
   padding: 52px 3px 76px 3px;
+}
+
+/* Colourless refractive lens blur synced frame-by-frame to the 4 controls' enter/exit animations */
+.siri-unified-pill.lens-blur-active:not(.expanded-voice-active) .siri-unified-stream {
   filter: url(#aiden-stream-lens-blur);
 }
 
@@ -3527,7 +3540,7 @@
 /* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
 .siri-apple-command-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 12px;
   width: 100%;
   padding: 0;
@@ -3541,7 +3554,7 @@
   height: 48px;
   min-width: 48px;
   border-radius: 50%;
-  /* Pure colourless clear glass — zero black tint */
+  /* Pure colourless clear glass — zero dark/black tint */
   background: rgba(255, 255, 255, 0.04);
   border: none !important;
   color: #ffffff;
@@ -3604,9 +3617,10 @@
 /* Center Colourless Clear Glass Capsule Field ("Ask Aiden") */
 .siri-command-capsule {
   flex: 1;
-  height: 48px;
+  min-width: 0;
   min-height: 48px;
-  border-radius: 9999px;
+  height: auto;
+  border-radius: 24px;
   /* Pure colourless clear glass — zero black tint */
   background: rgba(255, 255, 255, 0.04);
   border: none !important;
@@ -3616,7 +3630,7 @@
     0 6px 16px rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 13px 18px;
   box-sizing: border-box;
 }
 
@@ -3653,8 +3667,11 @@
 }
 
 .siri-command-input {
+  display: block;
   width: 100%;
-  height: 100%;
+  box-sizing: border-box;
+  min-height: 22px;
+  max-height: 132px; /* 6 lines max (6 * 22px) before internal scrolling */
   background: transparent;
   border: none;
   outline: none;
@@ -3662,10 +3679,22 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 15.5px;
   font-weight: 400;
-  line-height: 48px;
+  line-height: 22px;
   padding: 0;
   margin: 0;
   caret-color: #ffffff;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-width: none;
+}
+
+.siri-command-input::-webkit-scrollbar {
+  display: none;
 }
 
 .siri-command-input::placeholder {

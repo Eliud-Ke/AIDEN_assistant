@@ -14,7 +14,7 @@ use windows::{
         UI::Controls::MARGINS,
         UI::WindowsAndMessaging::{
             CallWindowProcW, DefWindowProcW, GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW,
-            SetWindowPos, GWLP_WNDPROC, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOZORDER,
+            SetWindowPos, GWLP_WNDPROC, SWP_NOACTIVATE, SWP_NOZORDER,
             WM_NCACTIVATE, WNDPROC,
         },
     },
@@ -190,6 +190,10 @@ impl WindowMorpher {
         let target_x = cur_center_x - target_w / 2;
         let target_y = cur.y;
 
+        if cur.x == target_x && cur.y == target_y && cur.width == target_w && cur.height == target_h {
+            return;
+        }
+
         self.animate_to(
             RectTarget {
                 x: target_x,
@@ -213,7 +217,7 @@ impl WindowMorpher {
                     target.y,
                     target.width,
                     target.height,
-                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS,
+                    SWP_NOACTIVATE | SWP_NOZORDER,
                 );
             }
             if let Ok(mut cur) = self.current_rect.lock() {
@@ -271,20 +275,18 @@ impl WindowMorpher {
                         let elapsed = start_time.elapsed();
                         let progress = (elapsed.as_secs_f64() / duration.as_secs_f64()).min(1.0);
 
-                        // Apple Siri-style spring curve: cubic-bezier(0.18, 1.25, 0.35, 1.0)
+                        // Monotonic quartic ease-out (zero overshoot/rubber-band on DWM Acrylic)
                         let eased = if progress >= 1.0 {
                             1.0
                         } else {
-                            // Approximated cubic-bezier ease-out with slight overshoot
-                            let p = progress;
-                            let inv = 1.0 - p;
-                            3.0 * inv * inv * p * 1.25 + 3.0 * inv * p * p * 1.0 + p * p * p
+                            let inv = 1.0 - progress;
+                            1.0 - inv * inv * inv * inv
                         };
 
-                        let cur_x = start_rect.x + ((target.x - start_rect.x) as f64 * eased) as i32;
-                        let cur_y = start_rect.y + ((target.y - start_rect.y) as f64 * eased) as i32;
-                        let cur_w = start_rect.width + ((target.width - start_rect.width) as f64 * eased) as i32;
-                        let cur_h = start_rect.height + ((target.height - start_rect.height) as f64 * eased) as i32;
+                        let cur_x = start_rect.x + ((target.x - start_rect.x) as f64 * eased).round() as i32;
+                        let cur_y = start_rect.y + ((target.y - start_rect.y) as f64 * eased).round() as i32;
+                        let cur_w = start_rect.width + ((target.width - start_rect.width) as f64 * eased).round() as i32;
+                        let cur_h = start_rect.height + ((target.height - start_rect.height) as f64 * eased).round() as i32;
 
                         unsafe {
                             let _ = SetWindowPos(
@@ -294,7 +296,7 @@ impl WindowMorpher {
                                 cur_y,
                                 cur_w,
                                 cur_h,
-                                SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS,
+                                SWP_NOACTIVATE | SWP_NOZORDER,
                             );
                             // Pace frame timing with Desktop Window Manager compositor vsync
                             let _ = DwmFlush();
@@ -317,7 +319,7 @@ impl WindowMorpher {
                                     target.y,
                                     target.width,
                                     target.height,
-                                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS,
+                                    SWP_NOACTIVATE | SWP_NOZORDER,
                                 );
                             }
                             if let Ok(mut cur) = current_arc.lock() {

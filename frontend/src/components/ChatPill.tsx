@@ -809,12 +809,24 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const followupInputRef = useRef<HTMLInputElement>(null);
+  const followupInputRef = useRef<HTMLTextAreaElement>(null);
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
-  const cardInputRef = useRef<HTMLTextAreaElement>(null);
+  const lastIdleReportedHRef = useRef<number>(60);
+  const [followupExtraH, setFollowupExtraH] = useState<number>(0);
   const pillMeasureRef = useRef<HTMLSpanElement>(null);
   const cardMeasureRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const plusBtnRef = useRef<HTMLButtonElement>(null);
+  const capsuleRef = useRef<HTMLDivElement>(null);
+  const micBtnRef = useRef<HTMLButtonElement>(null);
+  const lensFilterRef = useRef<SVGFilterElement>(null);
+  const lensMaskImgRef = useRef<SVGFEImageElement>(null);
+  const lensRafIdRef = useRef<number | null>(null);
+  const lensSyncUntilRef = useRef<number>(0);
+  const lensHideTimerRef = useRef<number | null>(null);
+  const lastLensSigRef = useRef<string>("");
+  const [isLensBlurActive, setIsLensBlurActive] = useState(false);
 
   const updateScrollMask = useCallback(() => {
     const el = streamContainerRef.current;
@@ -886,22 +898,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   // Controls (minimize button and command bar) are visible on hover or when input is focused/typed (text mode only)
   const isControlsVisible = Boolean(
-    !voiceActive && (isHovered || isInputFocused || inputText.trim().length > 0)
+    !voiceActive && (isHovered || isInputFocused || inputText.length > 0)
   );
-
-  // Delayed lens blur for minimize button: appears only after button finishes spring descent (420ms), vanishes immediately on unhover (0ms)
-  const [showMinimizeLens, setShowMinimizeLens] = useState(false);
-
-  useEffect(() => {
-    if (isControlsVisible) {
-      const timer = window.setTimeout(() => {
-        setShowMinimizeLens(true);
-      }, 420);
-      return () => window.clearTimeout(timer);
-    } else {
-      setShowMinimizeLens(false);
-    }
-  }, [isControlsVisible]);
 
   const respondingMountedAtRef = useRef<number>(0);
 
@@ -944,6 +942,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       }
 
       const headerH = (activeUiTag && !followupThinkingPrompt) ? 36 : 0;
+      // Keep outer window height locked to conversation content (follow-up capsule grows upward inwards inside the window)
       // Exact clearance: pill padding (32px) + stream padding (18px) + breathing room (14px) = 64px
       const baseH = pureContentH + headerH + 64;
       // When controls (close button at top + command bar at bottom) are visible, allocate exactly +90px
@@ -1067,32 +1066,128 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     });
   }, [followupThinkingPrompt]);
 
-  // Track exact pixel dimensions of .siri-unified-stream so the SVG button-lens filter
-  // blurs text ONLY inside the 4 clear-glass buttons while keeping text razor-sharp outside them
-  const [streamBox, setStreamBox] = useState<{ w: number; h: number; topOffset: number }>({
-    w: 430,
-    h: 360,
-    topOffset: 0,
-  });
+  // Synchronize SVG #aiden-stream-lens-blur cutout shapes frame-by-frame with the 4 controls'
+  // real live bounding boxes and opacities (zero React re-renders during transitions)
+  const syncLensMaskToDom = useCallback(() => {
+    const streamEl = streamContainerRef.current;
+    const filterEl = lensFilterRef.current;
+    const imgEl = lensMaskImgRef.current;
+    if (!streamEl || !filterEl || !imgEl) return;
 
+    const elRect = streamEl.getBoundingClientRect();
+    const w = streamEl.clientWidth || 430;
+    const h = streamEl.clientHeight || 360;
+    if (w <= 0 || h <= 0 || elRect.width <= 0 || elRect.height <= 0) return;
+
+    const sx = w / elRect.width;
+    const sy = h / elRect.height;
+
+    const shapeFor = (node: HTMLElement | null, rxBase: number | "circle"): string => {
+      if (!node) return "";
+      const op = parseFloat(window.getComputedStyle(node).opacity || "0");
+      if (!Number.isFinite(op) || op <= 0.01) return "";
+      const r = node.getBoundingClientRect();
+      const x = (r.left - elRect.left) * sx;
+      const y = (r.top - elRect.top) * sy;
+      const bw = r.width * sx;
+      const bh = r.height * sy;
+      if (bw <= 0 || bh <= 0) return "";
+      const rx = rxBase === "circle" ? bw / 2 : Math.min(rxBase, bw / 2, bh / 2);
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${rx.toFixed(1)}" fill="white" fill-opacity="${Math.min(1, op).toFixed(3)}"/>`;
+    };
+
+    const shapes =
+      shapeFor(closeBtnRef.current, "circle") +
+      shapeFor(plusBtnRef.current, "circle") +
+      shapeFor(capsuleRef.current, 24) +
+      shapeFor(micBtnRef.current, "circle");
+
+    const sig = `${w}x${h}:${shapes}`;
+    if (sig === lastLensSigRef.current) return;
+    lastLensSigRef.current = sig;
+
+    const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${shapes}</svg>`;
+    const maskUri = `data:image/svg+xml;utf8,${encodeURIComponent(maskSvg)}`;
+
+    filterEl.setAttribute("width", String(w));
+    filterEl.setAttribute("height", String(h));
+    imgEl.setAttribute("width", String(w));
+    imgEl.setAttribute("height", String(h));
+    imgEl.setAttribute("href", maskUri);
+  }, []);
+
+  const runLensSyncFor = useCallback((durationMs: number) => {
+    const deadline = performance.now() + durationMs;
+    if (deadline > lensSyncUntilRef.current) {
+      lensSyncUntilRef.current = deadline;
+    }
+    syncLensMaskToDom();
+    if (lensRafIdRef.current !== null) return;
+
+    const tick = (now: number) => {
+      syncLensMaskToDom();
+      if (now < lensSyncUntilRef.current) {
+        lensRafIdRef.current = requestAnimationFrame(tick);
+      } else {
+        lensRafIdRef.current = null;
+      }
+    };
+    lensRafIdRef.current = requestAnimationFrame(tick);
+  }, [syncLensMaskToDom]);
+
+  const stopLensSync = useCallback(() => {
+    lensSyncUntilRef.current = 0;
+    if (lensRafIdRef.current !== null) {
+      cancelAnimationFrame(lensRafIdRef.current);
+      lensRafIdRef.current = null;
+    }
+    if (lensHideTimerRef.current !== null) {
+      window.clearTimeout(lensHideTimerRef.current);
+      lensHideTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => stopLensSync(), [stopLensSync]);
+
+  // Drive SVG lens filter activation & frame-synced motion when controls show/hide
+  const wasLensControlsVisibleRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!showReplyWindow || voiceActive) {
+      wasLensControlsVisibleRef.current = false;
+      stopLensSync();
+      setIsLensBlurActive(false);
+      return;
+    }
+
+    if (isControlsVisible) {
+      wasLensControlsVisibleRef.current = true;
+      if (lensHideTimerRef.current !== null) {
+        window.clearTimeout(lensHideTimerRef.current);
+        lensHideTimerRef.current = null;
+      }
+      setIsLensBlurActive(true);
+      runLensSyncFor(620);
+    } else if (wasLensControlsVisibleRef.current) {
+      wasLensControlsVisibleRef.current = false;
+      setIsLensBlurActive(true);
+      runLensSyncFor(260);
+      if (lensHideTimerRef.current !== null) {
+        window.clearTimeout(lensHideTimerRef.current);
+      }
+      lensHideTimerRef.current = window.setTimeout(() => {
+        lensHideTimerRef.current = null;
+        setIsLensBlurActive(false);
+      }, 260);
+    }
+  }, [showReplyWindow, voiceActive, isControlsVisible, runLensSyncFor, stopLensSync]);
+
+  // Keep stream top/bottom scroll-fade mask & SVG lens filter synchronized with container resizes and scrolling
   useLayoutEffect(() => {
     const el = streamContainerRef.current;
     if (!el) return;
 
-    const updateBox = () => {
-      const w = el.clientWidth || 430;
-      const h = el.clientHeight || 360;
-      const topOffset = 16 - el.offsetTop;
-      setStreamBox((prev) =>
-        prev.w === w && prev.h === h && prev.topOffset === topOffset
-          ? prev
-          : { w, h, topOffset }
-      );
-      updateScrollMask();
-    };
-
-    updateBox();
     updateScrollMask();
+    syncLensMaskToDom();
 
     const onScroll = () => {
       updateScrollMask();
@@ -1101,8 +1196,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     el.addEventListener("scroll", onScroll, { passive: true });
 
     const resizeObserver = new ResizeObserver(() => {
-      updateBox();
       updateScrollMask();
+      syncLensMaskToDom();
     });
     resizeObserver.observe(el, { box: "border-box" });
 
@@ -1110,7 +1205,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       el.removeEventListener("scroll", onScroll);
       resizeObserver.disconnect();
     };
-  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag, updateScrollMask]);
+  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag, followupExtraH, updateScrollMask, syncLensMaskToDom]);
 
   const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
@@ -1120,47 +1215,72 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const resetTextarea = () => {
     setIsMultiline(false);
+    setFollowupExtraH(0);
     if (pillInputRef.current) {
       pillInputRef.current.style.height = "";
       pillInputRef.current.scrollTop = 0;
     }
-    if (cardInputRef.current) {
-      cardInputRef.current.style.height = "";
-      cardInputRef.current.scrollTop = 0;
+    if (followupInputRef.current) {
+      followupInputRef.current.style.height = "";
+      followupInputRef.current.scrollTop = 0;
+    }
+    if (lastIdleReportedHRef.current !== 60) {
+      lastIdleReportedHRef.current = 60;
+      if (pillMode === "idle" && !voiceActive && onHeightChange) {
+        onHeightChange(60, 160);
+      }
     }
   };
 
   const adjustTextareaHeight = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
     const val = el.value || "";
-    if (!val.trim()) {
+    if (val.length === 0) {
       resetTextarea();
       return;
     }
 
     el.style.height = "auto";
-    const minH = showReplyWindow ? 21 : 24;
-    // Exactly 3 lines maximum height before internal scrolling activates
-    const maxH = showReplyWindow ? 64 : 70;
+    const minH = showReplyWindow ? 22 : 24;
+    // Idle pill: ~7 lines (162px); Expanded follow-up capsule: strictly 6 lines (132px) before internal scrolling
+    const maxH = showReplyWindow ? 132 : 162;
     const scrollH = el.scrollHeight;
-    const isMulti = scrollH > (minH + 6) || val.includes("\r\n");
+    const isMulti = scrollH > (minH + 6) || val.includes("\n");
     setIsMultiline(isMulti);
 
     const targetH = Math.min(Math.max(scrollH, minH), maxH);
     el.style.height = `${targetH}px`;
+    if (scrollH <= maxH + 1) {
+      el.scrollTop = 0;
+    }
+
+    if (showReplyWindow) {
+      const nextExtra = Math.max(0, Math.min(110, Math.round(targetH - minH)));
+      setFollowupExtraH(nextExtra);
+      requestAnimationFrame(updateScrollMask);
+    } else {
+      setFollowupExtraH(0);
+      if (pillMode === "idle" && !voiceActive && onHeightChange) {
+        const nextPillH = isMulti ? Math.min(198, Math.max(60, Math.ceil(targetH + 34))) : 60;
+        if (Math.abs(nextPillH - lastIdleReportedHRef.current) >= 4) {
+          lastIdleReportedHRef.current = nextPillH;
+          onHeightChange(nextPillH, 160);
+        }
+      }
+    }
   };
 
   // Reset input expansion and sizing whenever a turn starts, input clears, speech arrives, or awake state toggles
   useEffect(() => {
-    if (!inputText || !inputText.trim()) {
+    if (!inputText || inputText.length === 0) {
       resetTextarea();
     } else {
-      const activeEl = showReplyWindow ? cardInputRef.current : pillInputRef.current;
+      const activeEl = showReplyWindow ? followupInputRef.current : pillInputRef.current;
       if (activeEl) {
         adjustTextareaHeight(activeEl);
       }
     }
-  }, [inputText, showReplyWindow, isAwake, userPrompt]);
+  }, [inputText, showReplyWindow, isAwake, userPrompt, pillMode, voiceActive]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1209,17 +1329,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
-  const lensMaskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${streamBox.w}" height="${streamBox.h}" viewBox="0 0 ${streamBox.w} ${streamBox.h}">${
-    showMinimizeLens
-      ? `<circle cx="${streamBox.w - 24}" cy="${streamBox.topOffset + 24}" r="24" fill="white"/>`
-      : ""
-  }${
-    !voiceActive
-      ? `<circle cx="24" cy="${streamBox.h - 24}" r="24" fill="white"/><rect x="60" y="${streamBox.h - 48}" width="${Math.max(0, streamBox.w - 120)}" height="48" rx="24" ry="24" fill="white"/><circle cx="${streamBox.w - 24}" cy="${streamBox.h - 24}" r="24" fill="white"/>`
-      : ""
-  }</svg>`;
-  const lensMaskDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(lensMaskSvg)}`;
-
   return (
     <div className="chat-pill-anchor">
       {/* Colourless Clear Glass Button-Lens Filter:
@@ -1232,26 +1341,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       >
         <defs>
           <filter
+            ref={lensFilterRef}
             id="aiden-stream-lens-blur"
             filterUnits="userSpaceOnUse"
             x="0"
             y="0"
-            width={streamBox.w}
-            height={streamBox.h}
+            width={430}
+            height={360}
             colorInterpolationFilters="sRGB"
           >
-            {/* 1. Exact pixel mask of the 4 rounded buttons ([Minimize], [+], [Ask Aiden], [Mic]) */}
+            {/* 1. Live pixel mask of the 4 controls ([Minimize], [+], [Ask Aiden], [Mic]) updated on rAF */}
             <feImage
-              href={lensMaskDataUri}
+              ref={lensMaskImgRef}
+              href="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22430%22%20height%3D%22360%22%3E%3C%2Fsvg%3E"
               x="0"
               y="0"
-              width={streamBox.w}
-              height={streamBox.h}
+              width={430}
+              height={360}
               preserveAspectRatio="none"
               result="buttonMask"
             />
 
-            {/* 2. Refract + heavily blur the stream text/entities on its native 100% transparent background (zero black fill!) */}
+            {/* 2. Refract + heavily blur the stream text/entities on its native 100% transparent background */}
             <feTurbulence
               type="fractalNoise"
               baseFrequency="0.05"
@@ -1282,7 +1393,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               result="blurredInButtons"
             />
 
-            {/* 4. Keep sharp text ONLY outside the 4 button shapes (100% erases sharp text behind the buttons!) */}
+            {/* 4. Keep sharp text ONLY outside the 4 button shapes */}
             <feComposite
               in="SourceGraphic"
               in2="buttonMask"
@@ -1313,10 +1424,25 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           } ${
             isControlsVisible ? "controls-visible" : ""
           } ${
-            isHovered || isInputFocused || inputText.trim().length > 0 ? "hover-active" : ""
+            isLensBlurActive ? "lens-blur-active" : ""
+          } ${
+            isHovered || isInputFocused || inputText.length > 0 ? "hover-active" : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
             isDarkMode ? "dark-mode" : "light-mode"
           }`}
+          onTransitionRun={(e) => {
+            if (!showReplyWindow || voiceActive) return;
+            const target = e.target as HTMLElement | null;
+            if (
+              target &&
+              (target.classList.contains("siri-floating-close-btn") ||
+                target.classList.contains("siri-command-glass-btn") ||
+                target.classList.contains("siri-command-capsule") ||
+                target.classList.contains("siri-unified-stream"))
+            ) {
+              runLensSyncFor(450);
+            }
+          }}
           onMouseEnter={() => {
             if (Date.now() - respondingMountedAtRef.current >= 100) {
               setIsHovered(true);
@@ -1473,6 +1599,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               {/* Floating Circular Glass Minimize Button (Top-Right) */}
               {onClearResponse && (
                 <button
+                  ref={closeBtnRef}
                   type="button"
                   className="siri-floating-close-btn"
                   onClick={(e) => {
@@ -1530,6 +1657,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               <div
                 ref={streamContainerRef}
                 className="siri-unified-stream"
+                style={isControlsVisible && followupExtraH > 0 ? { paddingBottom: `${76 + followupExtraH}px` } : undefined}
                 onScroll={updateScrollMask}
               >
                 {activeTurns.map((turn) => (
@@ -1877,6 +2005,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 <div className="siri-apple-command-bar">
                   {/* Left: Circular Frosted Glass Plus Button */}
                   <button
+                    ref={plusBtnRef}
                     type="button"
                     className="siri-command-glass-btn plus-btn"
                     title="Add attachment or action"
@@ -1900,18 +2029,21 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </button>
 
                   {/* Center: Frosted Capsule Input with "Ask Aiden" placeholder */}
-                  <div className="siri-command-capsule">
-                    <input
+                  <div ref={capsuleRef} className="siri-command-capsule">
+                    <textarea
                       ref={followupInputRef}
-                      type="text"
+                      rows={1}
                       className="siri-command-input"
                       placeholder="Ask Aiden"
                       value={inputText}
-                      onChange={(e) => setInputText(e.target.value)}
+                      onChange={(e) => {
+                        setInputText(e.target.value);
+                        adjustTextareaHeight(e.target);
+                      }}
                       onFocus={() => setIsInputFocused(true)}
                       onBlur={() => setIsInputFocused(false)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
                           handleSend();
                         } else if (e.key === "Escape") {
@@ -1928,6 +2060,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
                   {/* Right: Circular Frosted Glass Mic Button */}
                   <button
+                    ref={micBtnRef}
                     type="button"
                     className="siri-command-glass-btn mic-btn"
                     title="Dictate with Siri (Press Space to cancel)"
@@ -2242,13 +2375,18 @@ export const ChatPillWindow: React.FC = () => {
   );
 
   // Sync mode changes with native HWND geometry
+  const idleTargetHeightRef = useRef<number>(60);
   useEffect(() => {
     if (!isAwake) return;
     if (currentMode === "listening") {
-      morphTo(280, 80, 320);
-    } else if (currentMode === "idle" || currentMode === "thinking") {
-      morphTo(466, 60, 280);
+      morphTo(280, 80, 260);
+    } else if (currentMode === "idle") {
+      morphTo(466, idleTargetHeightRef.current, 200);
+    } else if (currentMode === "thinking") {
+      idleTargetHeightRef.current = 60;
+      morphTo(466, 60, 200);
     } else if (currentMode === "responding") {
+      idleTargetHeightRef.current = 60;
       // ChatPill's layout effect computes exact content clearance and invokes handlePillHeightChange
     }
   }, [currentMode, isAwake, morphTo]);
@@ -2260,8 +2398,13 @@ export const ChatPillWindow: React.FC = () => {
 
   const handlePillHeightChange = useCallback(
     (targetH: number, durationMs = 220) => {
-      if (!isAwake || currentMode !== "responding") return;
-      morphTo(466, targetH, durationMs);
+      if (!isAwake) return;
+      if (currentMode === "idle") {
+        idleTargetHeightRef.current = targetH;
+        morphTo(466, targetH, durationMs);
+      } else if (currentMode === "responding") {
+        morphTo(466, targetH, durationMs);
+      }
     },
     [isAwake, currentMode, morphTo]
   );
