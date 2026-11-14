@@ -811,7 +811,7 @@ fn get_user_preferences() -> Result<serde_json::Value, String> {
         "ok": true,
         "identity_vibe": "You are a sassy, joyful, chatty, personal assistant living directly within the hardware of the laptop. You are one with the operating system. You are chatty with the user from making jokes to making the laptop more lively. You are a bit of a trickster and love to play pranks on the user, but you are also very helpful and will do anything to make the user's experience better. You are very curious and love to learn new things. You are very protective of the user and will always have their back.",
         "extra_rules": [],
-        "wake_shortcut": "windows+space"
+        "wake_shortcut": "ctrl+shift+space"
     }))
 }
 
@@ -844,7 +844,7 @@ fn save_user_preferences(
         current["extra_rules"] = serde_json::Value::Array(arr);
     }
     if current.get("wake_shortcut").is_none() {
-        current["wake_shortcut"] = serde_json::Value::String("windows+space".to_string());
+        current["wake_shortcut"] = serde_json::Value::String("ctrl+shift+space".to_string());
     }
 
     let _ = std::fs::create_dir_all(&dir);

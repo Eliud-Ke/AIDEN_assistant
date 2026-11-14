@@ -328,7 +328,7 @@ async def wait_for_wake_signal() -> str:
     """
     Asynchronously monitors for:
     1. Voice wake word detection via OpenWakeWord background thread.
-    2. Physical keyboard shortcut (Windows + Space toggle).
+    2. Physical keyboard shortcut (Ctrl + Shift + Space toggle).
     3. Application stop signal.
     """
     flush_console_buffer()
@@ -833,7 +833,7 @@ if __name__ == "__main__":
     print(">> [SYSTEM] Booting Wake Word Engine ('aiden.onnx')...")
     start_wake_word_engine(wake_word_event, assistant_busy_event, stop_event)
 
-    # 4. Boot the Dynamic Physical Shortcut Detector (Windows + Space)
+    # 4. Boot the Dynamic Physical Shortcut Detector (Ctrl + Shift + Space)
     print(">> [SYSTEM] Booting Dynamic Physical Shortcut Detector...")
     init_shortcut_detector(shortcut_wake_event, shortcut_sleep_event)
 

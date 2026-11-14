@@ -77,7 +77,7 @@ class UserPreferences:
     """Holds the active user configuration in fast RAM."""
     identity_vibe: str = DEFAULT_IDENTITY_VIBE
     extra_rules: list = field(default_factory=list)
-    wake_shortcut: str = "windows+space"
+    wake_shortcut: str = "ctrl+shift+space"
 
 
 # ---------------------------------------------------------
@@ -97,7 +97,12 @@ class ConfigurationManager:
                     raw_vibe = data.get("identity_vibe", self.prefs.identity_vibe)
                     self.prefs.identity_vibe = _strip_locked_name_prefix(raw_vibe)
                     self.prefs.extra_rules = data.get("extra_rules", self.prefs.extra_rules)
-                    self.prefs.wake_shortcut = data.get("wake_shortcut", self.prefs.wake_shortcut)
+                    loaded_shortcut = str(data.get("wake_shortcut", self.prefs.wake_shortcut)).strip().lower()
+                    if loaded_shortcut in ("", "windows+space", "win+space"):
+                        self.prefs.wake_shortcut = "ctrl+shift+space"
+                        self.save_user_preferences()
+                    else:
+                        self.prefs.wake_shortcut = loaded_shortcut
             except Exception as e:
                 print(f"[CONFIG] Error reading user preferences: {e}")
         else:
