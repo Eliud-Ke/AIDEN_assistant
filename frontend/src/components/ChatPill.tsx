@@ -664,6 +664,194 @@ export const AppleConstellationSpinner: React.FC = () => (
   </svg>
 );
 
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const smoothstep = (x: number) => {
+  const c = clamp01(x);
+  return c * c * (3 - 2 * c);
+};
+const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const easeLaunchGlide = (x: number) => easeInOutCubic(Math.pow(clamp01(x), 0.88));
+
+function animateStreamScroll(
+  container: HTMLElement,
+  targetTop: number,
+  durationMs: number,
+  rafRef: React.MutableRefObject<number | null>,
+  cancelled: { current: boolean },
+  onTick: () => void,
+  onDone?: () => void
+) {
+  if (rafRef.current !== null) {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+  }
+  const startTop = container.scrollTop;
+  const delta = targetTop - startTop;
+  if (Math.abs(delta) < 2) {
+    container.scrollTop = targetTop;
+    onTick();
+    if (onDone) onDone();
+    return;
+  }
+  const startTs = performance.now();
+  const step = (now: number) => {
+    if (cancelled.current || !container.isConnected) {
+      rafRef.current = null;
+      return;
+    }
+    const u = Math.min(1, (now - startTs) / durationMs);
+    const eased = 1 - Math.pow(1 - u, 3.6);
+    container.scrollTop = startTop + delta * eased;
+    onTick();
+    if (u < 1) {
+      rafRef.current = requestAnimationFrame(step);
+    } else {
+      rafRef.current = null;
+      if (onDone) onDone();
+    }
+  };
+  rafRef.current = requestAnimationFrame(step);
+}
+
+interface FollowupBubbleFlightOpts {
+  wrapEl: HTMLElement;
+  bubble: HTMLElement;
+  labelEl: HTMLElement | null;
+  statusEl: HTMLElement | null;
+  barEl: HTMLElement | null;
+  streamEl: HTMLElement;
+  rafIdsRef: React.MutableRefObject<number[]>;
+  cancelled: { current: boolean };
+}
+
+function animateFollowupBubbleFlight({
+  wrapEl,
+  bubble,
+  labelEl,
+  statusEl,
+  barEl,
+  streamEl,
+  rafIdsRef,
+  cancelled,
+}: FollowupBubbleFlightOpts) {
+  if (cancelled.current || !bubble.isConnected || !wrapEl.isConnected) return;
+
+  const fallbackEl = streamEl.parentElement ?? streamEl;
+  const barRect = barEl ? barEl.getBoundingClientRect() : fallbackEl.getBoundingClientRect();
+  const wrapRect0 = wrapEl.getBoundingClientRect();
+  const width = bubble.offsetWidth || 180;
+  const height = bubble.offsetHeight || 38;
+  const dotBase = Math.min(28, Math.max(18, height - 6));
+  const dotTop = Math.max(0, height - dotBase);
+  const dotLeft = Math.max(0, width - dotBase);
+  const isLight = Boolean(bubble.closest(".light-mode"));
+  const spawnScreenY = barEl ? barRect.bottom - 12 : barRect.bottom - 26;
+  const restBottomY0 = wrapRect0.top + height;
+  const initialDy = Math.max(160, Math.round(spawnScreenY - restBottomY0));
+
+  // Synchronously initialize dot state before removing .bubble-awaiting to avoid any 1-frame flash
+  bubble.style.opacity = "0";
+  bubble.style.setProperty("--tail-op", "0");
+  bubble.style.setProperty("--tail-scale", "0.35");
+  bubble.style.clipPath = `inset(${dotTop.toFixed(1)}px 0px 0px ${dotLeft.toFixed(1)}px round 999px)`;
+  bubble.style.transform = `translate3d(0, ${initialDy.toFixed(2)}px, 0) scale(0.44, 0.44)`;
+  if (labelEl) labelEl.style.opacity = "0";
+  bubble.classList.remove("bubble-awaiting");
+  bubble.classList.add("bubble-spawning");
+
+  let statusShown = false;
+  const startTs = performance.now();
+  const TOTAL_SEC = 1.42;
+
+  const runFrame = (now: number) => {
+    if (cancelled.current || !bubble.isConnected || !wrapEl.isConnected) return;
+    const t = (now - startTs) / 1000;
+
+    // Live resting slot tracks concurrent auto-scroll cleanly frame-by-frame
+    const liveRestBottomY = wrapEl.getBoundingClientRect().top + height;
+    const liveDy = Math.max(0, spawnScreenY - liveRestBottomY);
+
+    // 1. Dot fades in cleanly right under command bar (0..120ms)
+    const fadeP = easeOutCubic(Math.min(1, t / 0.12));
+
+    // 2. Smooth vertical ascent along right edge -> feeds continuously into damped spring bounce
+    const tauLift = Math.max(0, t - 0.02);
+    const liftU = Math.min(1, tauLift / 0.56);
+    const carrierY = liveDy * (1 - easeLaunchGlide(liftU));
+
+    const tb = Math.max(0, t - 0.40);
+    const ramp = tb < 0.14 ? Math.sin((tb / 0.14) * (Math.PI / 2)) : 1;
+    const tailFade = t > 1.22 ? 1 - smoothstep((t - 1.22) / 0.2) : 1;
+    const bounceY = -18 * ramp * tailFade * Math.exp(-2.85 * tb) * Math.sin(10.2 * tb);
+    const curY = carrierY + bounceY;
+
+    // 3. Smooth dot-to-pill clip-path unfolding along right edge
+    const expU = Math.max(0, Math.min(1, (t - 0.08) / 0.44));
+    const expP = easeInOutCubic(expU);
+    const padOpen = smoothstep((t - 0.50) / 0.16);
+
+    const clipT = dotTop * (1 - expP) - 8 * padOpen;
+    const clipR = -8 * padOpen;
+    const clipB = -12 * padOpen;
+    const clipL = dotLeft * (1 - expP) - 8 * padOpen;
+    const clipRad = 999 - (999 - 22) * Math.pow(expP, 0.35);
+
+    const baseScale = 0.44 + 0.56 * easeOutCubic(Math.min(1, t / 0.48));
+    const elasticY = 1 - 0.0022 * bounceY;
+    const elasticX = 1 + 0.0012 * bounceY;
+
+    bubble.style.opacity = fadeP.toFixed(3);
+    bubble.style.transform = `translate3d(0, ${curY.toFixed(2)}px, 0) scale(${(baseScale * elasticX).toFixed(4)}, ${(baseScale * elasticY).toFixed(4)})`;
+    bubble.style.clipPath = `inset(${clipT.toFixed(1)}px ${clipR.toFixed(1)}px ${clipB.toFixed(1)}px ${clipL.toFixed(1)}px round ${clipRad.toFixed(1)}px)`;
+
+    if (!isLight) {
+      const sheen = smoothstep((t - 0.12) / 0.36);
+      const r = Math.round(70 + (47 - 70) * sheen);
+      const g = Math.round(69 + (46 - 69) * sheen);
+      const b = Math.round(88 + (58 - 88) * sheen);
+      bubble.style.background = `rgb(${r}, ${g}, ${b})`;
+    }
+
+    if (labelEl) {
+      labelEl.style.opacity = smoothstep((t - 0.22) / 0.24).toFixed(3);
+    }
+    const tailP = smoothstep((t - 0.50) / 0.18);
+    bubble.style.setProperty("--tail-op", tailP.toFixed(3));
+    bubble.style.setProperty("--tail-scale", (0.35 + 0.65 * tailP).toFixed(3));
+
+    // Phase 3: Reveal left-aligned status tag cleanly as bubble starts springing into position
+    if (!statusShown && t >= 0.56) {
+      statusShown = true;
+      if (statusEl) {
+        statusEl.classList.remove("status-awaiting");
+        statusEl.classList.add("status-reveal");
+      }
+    }
+
+    if (t < TOTAL_SEC) {
+      const rid = requestAnimationFrame(runFrame);
+      rafIdsRef.current.push(rid);
+    } else {
+      bubble.classList.remove("bubble-spawning");
+      bubble.style.opacity = "";
+      bubble.style.transform = "";
+      bubble.style.clipPath = "";
+      bubble.style.background = "";
+      bubble.style.removeProperty("--tail-op");
+      bubble.style.removeProperty("--tail-scale");
+      if (labelEl) labelEl.style.opacity = "";
+      if (!statusShown && statusEl) {
+        statusEl.classList.remove("status-awaiting");
+        statusEl.classList.add("status-reveal");
+      }
+    }
+  };
+
+  const rid0 = requestAnimationFrame(runFrame);
+  rafIdsRef.current.push(rid0);
+}
+
 export const ChatPill: React.FC<ChatPillProps> = ({
   isAwake,
   isDarkMode,
@@ -816,6 +1004,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const pillMeasureRef = useRef<HTMLSpanElement>(null);
   const cardMeasureRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
+  const followupBarRef = useRef<HTMLDivElement>(null);
+  const pendingWrapRef = useRef<HTMLDivElement>(null);
+  const pendingBubbleRef = useRef<HTMLDivElement>(null);
+  const pendingLabelRef = useRef<HTMLSpanElement>(null);
+  const pendingStatusRef = useRef<HTMLDivElement>(null);
+  const scrollAnimRafRef = useRef<number | null>(null);
+  const bubbleAnimRafIdsRef = useRef<number[]>([]);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
   const capsuleRef = useRef<HTMLDivElement>(null);
@@ -844,9 +1039,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       return;
     }
 
-    const topFade = scrollTop <= 4 ? 0 : Math.min(32, scrollTop);
+    const topFade = scrollTop <= 4 ? 0 : Math.min(20, scrollTop);
     const bottomRemaining = maxScroll - scrollTop;
-    const bottomFade = bottomRemaining <= 4 ? 0 : Math.min(36, bottomRemaining);
+    const bottomFade = bottomRemaining <= 4 ? 0 : Math.min(34, bottomRemaining);
 
     let mask = "none";
     if (topFade > 0 && bottomFade > 0) {
@@ -915,7 +1110,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const lastReportedHRef = useRef<number>(0);
 
-  // Synchronize responding height (pure content + controls) with the native HWND pill
+  const isMultiTurnMode = Boolean(
+    isMaxHeight || activeTurns.length > 1 || followupThinkingPrompt
+  );
+  const stagePadTop = isControlsVisible ? 56 : 28;
+  const stagePadBot = isControlsVisible ? 76 + followupExtraH : 16;
+  const stageMinH = Math.max(240, 620 - 32 - stagePadTop - stagePadBot);
+
+  // Synchronize responding height (pure content + controls, or max 620px canvas on Turn 2+) with the native HWND pill
   useLayoutEffect(() => {
     if (pillMode !== "responding") {
       lastReportedHRef.current = 0;
@@ -923,6 +1125,17 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
 
     const measure = () => {
+      if (isMultiTurnMode) {
+        if (lastReportedHRef.current !== 620) {
+          lastReportedHRef.current = 620;
+          if (onHeightChange) {
+            onHeightChange(620, 240);
+          }
+        }
+        requestAnimationFrame(updateScrollMask);
+        return;
+      }
+
       const el = streamContainerRef.current;
       let pureContentH = 80;
       if (el && el.children.length > 0) {
@@ -941,10 +1154,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         pureContentH = Math.max(60, el.scrollHeight);
       }
 
-      const headerH = (activeUiTag && !followupThinkingPrompt) ? 36 : 0;
-      // Keep outer window height locked to conversation content (follow-up capsule grows upward inwards inside the window)
-      // Exact clearance: pill padding (32px) + stream padding (18px) + breathing room (14px) = 64px
-      const baseH = pureContentH + headerH + 64;
+      const headerH = activeUiTag ? 36 : 0;
+      // Exact chrome clearance: pill vertical padding (32px) + unhovered stream padding (28 + 16 = 44px) + 2px buffer
+      const baseH = pureContentH + headerH + 78;
       // When controls (close button at top + command bar at bottom) are visible, allocate exactly +90px
       const targetH = isControlsVisible ? baseH + 90 : baseH;
       const clampedTargetH = Math.min(620, Math.max(isControlsVisible ? 180 : 128, targetH));
@@ -981,7 +1193,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         observer.disconnect();
       }
     };
-  }, [pillMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
+  }, [pillMode, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
 
@@ -1034,37 +1246,79 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [userPrompt, updateScrollMask]);
 
-  // Option A: Single smooth scroll when a follow-up prompt is submitted.
-  // Scrolls the container so the newly submitted turn lands near the top of the viewport,
-  // sliding the previous turn upward. Token streaming NEVER touches or hijacks the scroll!
-  const lastScrolledFollowupRef = useRef<string | null>(null);
-
+  // Concurrent Staggered Turn 2+ Choreography:
+  // T=0ms: Auto-scroll begins immediately alongside window expansion to open blank space below.
+  // T=+110ms: After a brief beat (nearly simultaneous!), dot fades in right under the command bar,
+  //           tracks live scroll position while unfolding up the right edge, and settles with an ease-out spring.
+  // Phase 3: Left-aligned status tag reveals cleanly underneath the bubble.
   useLayoutEffect(() => {
-    if (!followupThinkingPrompt || !streamContainerRef.current) {
-      if (!followupThinkingPrompt) {
-        lastScrolledFollowupRef.current = null;
+    const cancelAll = () => {
+      if (scrollAnimRafRef.current !== null) {
+        cancelAnimationFrame(scrollAnimRafRef.current);
+        scrollAnimRafRef.current = null;
       }
+      bubbleAnimRafIdsRef.current.forEach((id) => cancelAnimationFrame(id));
+      bubbleAnimRafIdsRef.current = [];
+    };
+
+    if (pillMode !== "responding" || !followupThinkingPrompt || !streamContainerRef.current) {
+      cancelAll();
       return;
     }
-    if (lastScrolledFollowupRef.current === followupThinkingPrompt) return;
-    lastScrolledFollowupRef.current = followupThinkingPrompt;
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    const cancelled = { current: false };
+    let initRaf1: number | null = null;
+    let initRaf2: number | null = null;
+    let launchTimerId: number | null = null;
+
+    initRaf1 = requestAnimationFrame(() => {
+      if (cancelled.current) return;
+      initRaf2 = requestAnimationFrame(() => {
+        if (cancelled.current) return;
         const container = streamContainerRef.current;
         if (!container) return;
         const pendingEl = container.querySelector(".siri-turn-item.pending-turn") as HTMLElement | null;
-        if (pendingEl) {
-          // Land cleanly at the top of the new turn stage, sliding the past turn off the viewport
-          const targetTop = pendingEl.offsetTop - 4;
-          container.scrollTo({
-            top: Math.max(0, targetTop),
-            behavior: "smooth",
+        if (!pendingEl) return;
+
+        const padTop = container.parentElement?.classList.contains("controls-visible") ? 56 : 28;
+        const targetTop = Math.max(0, pendingEl.offsetTop - padTop);
+
+        animateStreamScroll(container, targetTop, 420, scrollAnimRafRef, cancelled, updateScrollMask);
+
+        launchTimerId = window.setTimeout(() => {
+          launchTimerId = null;
+          if (cancelled.current) return;
+          const bubble = pendingBubbleRef.current;
+          const wrapEl = pendingWrapRef.current;
+          if (!bubble || !bubble.isConnected || !wrapEl || !wrapEl.isConnected) {
+            if (pendingStatusRef.current) {
+              pendingStatusRef.current.classList.remove("status-awaiting");
+              pendingStatusRef.current.classList.add("status-reveal");
+            }
+            return;
+          }
+          animateFollowupBubbleFlight({
+            wrapEl,
+            bubble,
+            labelEl: pendingLabelRef.current,
+            statusEl: pendingStatusRef.current,
+            barEl: followupBarRef.current,
+            streamEl: container,
+            rafIdsRef: bubbleAnimRafIdsRef,
+            cancelled,
           });
-        }
+        }, 110);
       });
     });
-  }, [followupThinkingPrompt]);
+
+    return () => {
+      cancelled.current = true;
+      if (initRaf1 !== null) cancelAnimationFrame(initRaf1);
+      if (initRaf2 !== null) cancelAnimationFrame(initRaf2);
+      if (launchTimerId !== null) window.clearTimeout(launchTimerId);
+      cancelAll();
+    };
+  }, [pillMode, followupThinkingPrompt, activeTurns.length, updateScrollMask]);
 
   // Synchronize SVG #aiden-stream-lens-blur cutout shapes frame-by-frame with the 4 controls'
   // real live bounding boxes and opacities (zero React re-renders during transitions)
@@ -1180,6 +1434,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       }, 260);
     }
   }, [showReplyWindow, voiceActive, isControlsVisible, runLensSyncFor, stopLensSync]);
+
+  // Keep SVG lens filter cutouts tracking smooth height morph when expanding to 620px on Turn 2+
+  useLayoutEffect(() => {
+    if (showReplyWindow && isControlsVisible && !voiceActive && isMultiTurnMode) {
+      runLensSyncFor(320);
+    }
+  }, [isMultiTurnMode, showReplyWindow, isControlsVisible, voiceActive, runLensSyncFor]);
 
   // Keep stream top/bottom scroll-fade mask & SVG lens filter synchronized with container resizes and scrolling
   useLayoutEffect(() => {
@@ -1627,7 +1888,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 </button>
               )}
 
-              {activeUiTag && !followupThinkingPrompt && (
+              {activeUiTag && !isMultiTurnMode && (
                 <div className="siri-responding-header">
                   <div className="siri-responding-header-left">
                     <div className="siri-card-status-tag" key={activeUiTag}>
@@ -1657,15 +1918,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               <div
                 ref={streamContainerRef}
                 className="siri-unified-stream"
-                style={isControlsVisible && followupExtraH > 0 ? { paddingBottom: `${76 + followupExtraH}px` } : undefined}
+                style={{
+                  ...(isControlsVisible && followupExtraH > 0 ? { paddingBottom: `${76 + followupExtraH}px` } : {}),
+                  "--stage-min-h": `${stageMinH}px`,
+                } as React.CSSProperties}
                 onScroll={updateScrollMask}
               >
-                {activeTurns.map((turn) => (
-                  <div key={turn.id} className="siri-turn-item">
+                {activeTurns.map((turn, turnIdx) => {
+                  const isActiveTurnStage =
+                    activeTurns.length > 1 &&
+                    turnIdx === activeTurns.length - 1 &&
+                    !followupThinkingPrompt;
+                  return (
+                  <div
+                    key={turn.id}
+                    className={`siri-turn-item ${isActiveTurnStage ? "active-turn-stage" : ""}`}
+                  >
                     {/* Turn 2+ user prompt bubble (Turn 1 has userPrompt === null, so zero bubble!) */}
                     {turn.userPrompt && (
                       <div className="siri-user-followup-wrap">
-                        <div className="siri-user-followup-bubble">{turn.userPrompt}</div>
+                        <div className="siri-user-followup-bubble">
+                          <span className="siri-bubble-label">{turn.userPrompt}</span>
+                        </div>
                       </div>
                     )}
 
@@ -1920,17 +2194,20 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* In-Flight Follow-up Prompt Bubble + Constellation Spinner (Shown while Turn 2+ is thinking) */}
                 {followupThinkingPrompt && (
                   <div className="siri-turn-item pending-turn">
-                    <div className="siri-user-followup-wrap">
-                      <div className="siri-user-followup-bubble animated-spawn">
-                        {followupThinkingPrompt}
+                    <div ref={pendingWrapRef} className="siri-user-followup-wrap">
+                      <div ref={pendingBubbleRef} className="siri-user-followup-bubble bubble-awaiting">
+                        <span ref={pendingLabelRef} className="siri-bubble-label">
+                          {followupThinkingPrompt}
+                        </span>
                       </div>
                     </div>
-                    <div className="siri-instream-thinking">
+                    <div ref={pendingStatusRef} className="siri-instream-thinking status-awaiting">
                       <div className="siri-icon-morph-anchor">
                         <span
                           className={`siri-apple-constellation ${isConnecting ? "is-imploded" : ""}`}
@@ -2000,6 +2277,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
               {/* Apple-style Persistent Follow-up Command Bar */}
               <div
+                ref={followupBarRef}
                 className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
               >
                 <div className="siri-apple-command-bar">
@@ -2202,13 +2480,7 @@ export const ChatPillWindow: React.FC = () => {
     }
     isRecordingRef.current = false;
     setIsRecording(false);
-    // Instant 0ms visual feedback: clear previous turn and transition immediately into compact Thinking mode!
-    turnsRef.current = [];
-    setTurns([]);
-    followupThinkingPromptRef.current = null;
-    setFollowupThinkingPrompt(null);
-    setIsMaxHeight(false);
-    setActiveUiTag("Thinking");
+    enterTurnPending(null, turnsRef.current.length > 0, false);
   }, []);
 
   // Global Push-to-Talk Shift key listener when in Voice Mode
@@ -2305,6 +2577,40 @@ export const ChatPillWindow: React.FC = () => {
       wsRef.current.send(JSON.stringify({ type: "clear_response" }));
     }
   };
+
+  function enterTurnPending(prompt: string | null, isFollowup: boolean, resetTimers = true) {
+    if (resetTimers) {
+      stopPolishShuffle();
+      if (polishTimerRef.current !== null) {
+        window.clearTimeout(polishTimerRef.current);
+        polishTimerRef.current = null;
+      }
+      polishStartTimeRef.current = 0;
+    }
+    setActiveUiTag("Thinking");
+    if (isFollowup) {
+      if (prompt !== null) {
+        followupThinkingPromptRef.current = prompt;
+        setFollowupThinkingPrompt(prompt);
+      }
+      setIsMaxHeight(true);
+    } else {
+      turnsRef.current = [];
+      setTurns([]);
+      followupThinkingPromptRef.current = null;
+      setFollowupThinkingPrompt(null);
+      setIsMaxHeight(false);
+    }
+  }
+
+  function finalizeChatTurn(turn: ChatTurn, appendToExisting: boolean, nextUiTag: string | null) {
+    followupThinkingPromptRef.current = null;
+    setFollowupThinkingPrompt(null);
+    setActiveUiTag(nextUiTag);
+    const nextTurns = appendToExisting ? [...turnsRef.current, turn] : [turn];
+    turnsRef.current = nextTurns;
+    setTurns(nextTurns);
+  }
 
   const hasReplyText = turns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt)) || Boolean(followupThinkingPrompt);
   const isThinking = Boolean(!hasReplyText && activeUiTag);
@@ -2473,13 +2779,7 @@ export const ChatPillWindow: React.FC = () => {
               if (rec) {
                 setActiveUiTag(null);
               } else if (wasRecording) {
-                // Only show Thinking if we were actively recording audio and just released Shift
-                turnsRef.current = [];
-                setTurns([]);
-                followupThinkingPromptRef.current = null;
-                setFollowupThinkingPrompt(null);
-                setIsMaxHeight(false);
-                setActiveUiTag("Thinking");
+                enterTurnPending(null, turnsRef.current.length > 0, false);
               } else {
                 // Not recording and wasn't recording (e.g. idle arming) -> stay in listening mode
                 setActiveUiTag(null);
@@ -2501,18 +2801,11 @@ export const ChatPillWindow: React.FC = () => {
               const text = String(data.text || "").trim();
               if (text) {
                 wasOriginVoiceRef.current = true;
-                stopPolishShuffle();
-                if (polishTimerRef.current !== null) {
-                  window.clearTimeout(polishTimerRef.current);
-                  polishTimerRef.current = null;
-                }
-                polishStartTimeRef.current = 0;
-                turnsRef.current = [];
-                setTurns([]);
-                followupThinkingPromptRef.current = null;
-                setFollowupThinkingPrompt(null);
-                setActiveUiTag("Thinking");
-                setIsMaxHeight(false);
+                enterTurnPending(
+                  turnsRef.current.length > 0 ? text : null,
+                  turnsRef.current.length > 0,
+                  true
+                );
               }
             } else if (msgType === "state" || msgType === "state_change") {
               const nextAwake = Boolean(data.isAwake);
@@ -2596,18 +2889,18 @@ export const ChatPillWindow: React.FC = () => {
 
               const newTurnId = "turn-" + Date.now();
               currentTurnIdRef.current = newTurnId;
-              followupThinkingPromptRef.current = null;
-              setFollowupThinkingPrompt(null);
+              const pendingPrompt = followupThinkingPromptRef.current;
 
               const newTurn: ChatTurn = {
                 id: newTurnId,
-                userPrompt: null,
+                userPrompt: pendingPrompt,
                 assistantReply: finalContent,
                 isStreaming: false,
                 connectors: turnConnectorsList.length > 0 ? turnConnectorsList : undefined,
               };
 
-              // Ensure natural polish dwell time (~300ms) so the polish tag feels deliberate
+              // Ensure natural polish dwell time (~300ms) while keeping follow-up bubble & in-stream
+              // Polish tag visible beneath it until the completed reply swaps seamlessly in place
               const MIN_POLISH_DWELL_MS = 300;
               const elapsed = Date.now() - polishStartTimeRef.current;
               const delay = Math.max(0, MIN_POLISH_DWELL_MS - elapsed);
@@ -2619,28 +2912,31 @@ export const ChatPillWindow: React.FC = () => {
 
               polishTimerRef.current = window.setTimeout(() => {
                 polishTimerRef.current = null;
-                setActiveUiTag(null);
-                setTurns([newTurn]);
+                finalizeChatTurn(newTurn, Boolean(pendingPrompt), null);
               }, delay);
             } else if (msgType === "error") {
               stopStreamRaf();
               stopPolishShuffle();
+              if (polishTimerRef.current !== null) {
+                window.clearTimeout(polishTimerRef.current);
+                polishTimerRef.current = null;
+              }
               setIsStreaming(false);
-              setActiveUiTag("Error");
               const errText = String(data.message || "An unexpected error occurred.");
-              followupThinkingPromptRef.current = null;
-              setFollowupThinkingPrompt(null);
+              const pendingPrompt = followupThinkingPromptRef.current;
 
               const errorTurnId = "error-" + Date.now();
               currentTurnIdRef.current = null;
-              setTurns([
+              finalizeChatTurn(
                 {
                   id: errorTurnId,
-                  userPrompt: null,
+                  userPrompt: pendingPrompt,
                   assistantReply: errText,
                   isStreaming: false,
                 },
-              ]);
+                Boolean(pendingPrompt),
+                pendingPrompt ? null : "Error"
+              );
             }
           } catch {
             // Ignore malformed frames
@@ -2706,19 +3002,8 @@ export const ChatPillWindow: React.FC = () => {
     lastLineEmittedTimeRef.current = 0;
     setIsStreaming(false);
 
-    // Every turn starts as a fresh single turn: collapse cleanly into Thinking pill, then show only the new response
-    stopPolishShuffle();
-    if (polishTimerRef.current !== null) {
-      window.clearTimeout(polishTimerRef.current);
-      polishTimerRef.current = null;
-    }
-    polishStartTimeRef.current = 0;
-    turnsRef.current = [];
-    setTurns([]);
-    followupThinkingPromptRef.current = null;
-    setFollowupThinkingPrompt(null);
-    setActiveUiTag("Thinking");
-    setIsMaxHeight(false);
+    const isFollowup = Boolean(_isFollowup || turnsRef.current.length > 0);
+    enterTurnPending(isFollowup ? msg : null, isFollowup, true);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
@@ -2728,9 +3013,17 @@ export const ChatPillWindow: React.FC = () => {
         })
       );
     } else {
-      setActiveUiTag("Offline");
       const offlineMsg = "Aiden's backend is not running. Boot up Aiden from the Control Panel first.";
-      setTurns([{ id: "offline", userPrompt: null, assistantReply: offlineMsg, isStreaming: false }]);
+      finalizeChatTurn(
+        {
+          id: "offline-" + Date.now(),
+          userPrompt: isFollowup ? msg : null,
+          assistantReply: offlineMsg,
+          isStreaming: false,
+        },
+        isFollowup,
+        isFollowup ? null : "Offline"
+      );
     }
   };
 
