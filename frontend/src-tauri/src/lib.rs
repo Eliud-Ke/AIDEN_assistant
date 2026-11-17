@@ -2,7 +2,10 @@ use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use std::time::Duration;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -20,6 +23,11 @@ use tauri::{
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct BackendState(Mutex<Option<Child>>);
+
+struct PipWatchState {
+    generation: Arc<AtomicU64>,
+    is_dragging: Arc<AtomicBool>,
+}
 
 #[cfg(target_os = "windows")]
 pub struct MorpherState(pub std::sync::Mutex<Option<native_window::WindowMorpher>>);
@@ -983,6 +991,19 @@ fn resize_chat_pill(app: AppHandle, expanded: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
+    stop_pip_cursor_watcher(&app);
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                // Guard against race if user re-woke AIDEN just before React's safety fallback fired
+                if morpher.is_awake() {
+                    return Ok(());
+                }
+            }
+        }
+    }
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_ignore_cursor_events(true);
         let _ = pill_win.hide();
@@ -991,7 +1012,7 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn center_chat_pill_in_upper_third(app: &AppHandle, pill_win: &WebviewWindow) {
+fn compute_upper_third_pill_rect(app: &AppHandle, pill_win: &WebviewWindow) -> Option<(i32, i32, i32, i32, f64)> {
     let monitor = app
         .primary_monitor()
         .ok()
@@ -1008,7 +1029,13 @@ fn center_chat_pill_in_upper_third(app: &AppHandle, pill_win: &WebviewWindow) {
         let x = monitor_pos.x + ((screen_size.width as i32 - win_width) / 2);
         // Upper third / top quarter (~15% from top of monitor)
         let y = monitor_pos.y + ((screen_size.height as f64 * 0.15) as i32);
+        return Some((x, y, win_width, win_height, scale));
+    }
+    None
+}
 
+fn center_chat_pill_in_upper_third(app: &AppHandle, pill_win: &WebviewWindow) {
+    if let Some((x, y, win_width, win_height, _)) = compute_upper_third_pill_rect(app, pill_win) {
         let _ = pill_win.set_position(Position::Physical(PhysicalPosition { x, y }));
 
         #[cfg(target_os = "windows")]
@@ -1028,6 +1055,303 @@ fn center_chat_pill_in_upper_third(app: &AppHandle, pill_win: &WebviewWindow) {
     }
 }
 
+fn stop_pip_cursor_watcher(app: &AppHandle) {
+    let pip_watch = app.state::<PipWatchState>();
+    pip_watch.generation.fetch_add(1, Ordering::SeqCst);
+    pip_watch.is_dragging.store(false, Ordering::Release);
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                morpher.set_pip_active(false);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_pip_cursor_watcher(app: AppHandle, hwnd_raw: isize, scale: f64) {
+    let pip_watch = app.state::<PipWatchState>();
+    let gen_id = pip_watch.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let gen_arc = Arc::clone(&pip_watch.generation);
+    let dragging_arc = Arc::clone(&pip_watch.is_dragging);
+
+    std::thread::spawn(move || {
+        let mut last_dx = f64::NAN;
+        let mut last_dy = f64::NAN;
+        let mut was_near = false;
+
+        while gen_arc.load(Ordering::Acquire) == gen_id {
+            if !dragging_arc.load(Ordering::Acquire) {
+                if let Some((dx, dy, dist)) = native_window::cursor_delta_for_hwnd(hwnd_raw, scale) {
+                    let near = dist <= 560.0;
+                    let moved = last_dx.is_nan()
+                        || (dx - last_dx).abs() >= 0.45
+                        || (dy - last_dy).abs() >= 0.45;
+                    if (near && moved) || (!near && was_near) {
+                        last_dx = dx;
+                        last_dy = dy;
+                        was_near = near;
+                        let _ = app.emit_to(
+                            "chat_pill",
+                            "pip-cursor-update",
+                            serde_json::json!({ "dx": dx, "dy": dy, "dist": dist }),
+                        );
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(22));
+        }
+    });
+}
+
+#[tauri::command]
+fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
+    let pill_win = app
+        .get_webview_window("chat_pill")
+        .ok_or_else(|| "chat_pill window not found".to_string())?;
+
+    let scale = pill_win.scale_factor().unwrap_or(1.0);
+    let pip_w = (pip_logical * scale).round() as i32;
+    let pip_h = pip_w;
+
+    let monitor = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| pill_win.primary_monitor().ok().flatten());
+
+    let (default_x, default_y) = if let Some(mon) = monitor {
+        let wa = mon.work_area();
+        let margin_r = (40.0 * scale).round() as i32;
+        let margin_b = (44.0 * scale).round() as i32;
+        (
+            wa.position.x + wa.size.width as i32 - pip_w - margin_r,
+            wa.position.y + wa.size.height as i32 - pip_h - margin_b,
+        )
+    } else {
+        (900, 700)
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let bounds = native_window::get_virtual_screen_bounds();
+        let pad = (8.0 * scale).round() as i32;
+        let morph_state = app.state::<MorpherState>();
+        let mut target_xy = (default_x, default_y);
+        let mut hwnd_raw: isize = 0;
+
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                if let Some((sx, sy)) = morpher.get_saved_pip_pos() {
+                    target_xy = native_window::clamp_origin_to_bounds(sx, sy, pip_w, pip_h, bounds, pad);
+                }
+                morpher.set_pip_active(true);
+                morpher.morph_to_rect(
+                    native_window::RectTarget {
+                        x: target_xy.0,
+                        y: target_xy.1,
+                        width: pip_w,
+                        height: pip_h,
+                    },
+                    310,
+                    native_window::MorphEasing::QuarticOut,
+                );
+                hwnd_raw = morpher.hwnd_raw();
+            }
+        }
+
+        if hwnd_raw != 0 {
+            spawn_pip_cursor_watcher(app.clone(), hwnd_raw, scale);
+        }
+
+        return Ok(serde_json::json!({
+            "x": target_xy.0,
+            "y": target_xy.1,
+            "width": pip_logical,
+            "height": pip_logical,
+        }));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = pill_win.set_size(LogicalSize::new(pip_logical, pip_logical));
+        let _ = pill_win.set_position(Position::Physical(PhysicalPosition {
+            x: default_x,
+            y: default_y,
+        }));
+        Ok(serde_json::json!({
+            "x": default_x,
+            "y": default_y,
+            "width": pip_logical,
+            "height": pip_logical,
+        }))
+    }
+}
+
+#[tauri::command]
+fn maximize_from_pip(app: AppHandle, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
+    stop_pip_cursor_watcher(&app);
+
+    let pill_win = app
+        .get_webview_window("chat_pill")
+        .ok_or_else(|| "chat_pill window not found".to_string())?;
+
+    let scale = pill_win.scale_factor().unwrap_or(1.0);
+    let target_w_log = width.unwrap_or(466.0);
+    let target_h_log = height.unwrap_or(320.0).clamp(60.0, 640.0);
+
+    let monitor = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| pill_win.primary_monitor().ok().flatten());
+
+    let (rest_x, rest_y, rest_w, rest_h) = if let Some(mon) = monitor {
+        let screen_size = mon.size();
+        let monitor_pos = mon.position();
+        let wa = mon.work_area();
+        let m_scale = mon.scale_factor();
+        let s = if m_scale > 0.1 { m_scale } else { scale };
+        let w = (target_w_log * s).round() as i32;
+        let max_h = (wa.size.height as i32 - (40.0 * s).round() as i32).max(120);
+        let h = ((target_h_log * s).round() as i32).min(max_h);
+        let x = monitor_pos.x + ((screen_size.width as i32 - w) / 2);
+        let raw_y = monitor_pos.y + ((screen_size.height as f64 * 0.15) as i32);
+        let wa_bottom = wa.position.y + wa.size.height as i32;
+        let y = raw_y.min((wa_bottom - h - (16.0 * s).round() as i32).max(wa.position.y + 12));
+        (x, y, w, h)
+    } else {
+        let w = (target_w_log * scale).round() as i32;
+        let h = (target_h_log * scale).round() as i32;
+        (480, 140, w, h)
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                morpher.set_resting_y(rest_y);
+                morpher.morph_to_rect(
+                    native_window::RectTarget {
+                        x: rest_x,
+                        y: rest_y,
+                        width: rest_w,
+                        height: rest_h,
+                    },
+                    340,
+                    native_window::MorphEasing::DynamicSpring,
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    let _ = pill_win.set_position(Position::Physical(PhysicalPosition {
+        x: rest_x,
+        y: rest_y,
+    }));
+    let _ = pill_win.set_size(LogicalSize::new(target_w_log, target_h_log));
+    Ok(())
+}
+
+#[tauri::command]
+fn begin_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
+    let pip_watch = app.state::<PipWatchState>();
+    pip_watch.is_dragging.store(true, Ordering::Release);
+
+    #[cfg(target_os = "windows")]
+    {
+        let scale = app
+            .get_webview_window("chat_pill")
+            .and_then(|w| w.scale_factor().ok())
+            .unwrap_or(1.0);
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                if let Some((ox, oy, cx, cy)) = morpher.begin_pip_drag() {
+                    return Ok(serde_json::json!({
+                        "originX": ox,
+                        "originY": oy,
+                        "cursorX": cx,
+                        "cursorY": cy,
+                        "scale": scale,
+                    }));
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({ "ok": false }))
+}
+
+#[tauri::command]
+fn step_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let scale = app
+            .get_webview_window("chat_pill")
+            .and_then(|w| w.scale_factor().ok())
+            .unwrap_or(1.0);
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                if let Some((x, y, cx, cy)) = morpher.step_pip_drag() {
+                    return Ok(serde_json::json!({
+                        "x": x,
+                        "y": y,
+                        "cursorX": cx,
+                        "cursorY": cy,
+                        "scale": scale,
+                    }));
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({ "ok": false }))
+}
+
+#[tauri::command]
+fn end_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
+    let pip_watch = app.state::<PipWatchState>();
+    pip_watch.is_dragging.store(false, Ordering::Release);
+
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                if let Some((x, y)) = morpher.end_pip_drag() {
+                    return Ok(serde_json::json!({ "x": x, "y": y }));
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+fn get_pip_cursor_delta(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let scale = app
+            .get_webview_window("chat_pill")
+            .and_then(|w| w.scale_factor().ok())
+            .unwrap_or(1.0);
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                if let Some((dx, dy, dist)) = morpher.cursor_delta_logical(scale) {
+                    return Ok(serde_json::json!({ "dx": dx, "dy": dy, "dist": dist }));
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({ "dx": -9999.0, "dy": -9999.0, "dist": 9999.0 }))
+}
+
 #[tauri::command]
 fn set_chat_pill_state(
     app: AppHandle,
@@ -1036,6 +1360,9 @@ fn set_chat_pill_state(
     reply: Option<String>,
     expanded: Option<bool>,
 ) -> Result<(), String> {
+    if is_awake.is_some() {
+        stop_pip_cursor_watcher(&app);
+    }
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_always_on_top(true);
         if let Some(is_dark) = is_dark_mode {
@@ -1048,14 +1375,57 @@ fn set_chat_pill_state(
         }
         if let Some(awake) = is_awake {
             let _ = pill_win.set_ignore_cursor_events(!awake);
+            let rect_info = compute_upper_third_pill_rect(&app, &pill_win);
             if awake {
+                #[cfg(target_os = "windows")]
+                {
+                    if let Some((rx, ry, rw, rh, scale)) = rect_info {
+                        let morph_state = app.state::<MorpherState>();
+                        if let Ok(guard) = morph_state.0.lock() {
+                            if let Some(morpher) = guard.as_ref() {
+                                morpher.prepare_wake_orb(rx, ry, rw, rh, scale);
+                            }
+                        }
+                    } else {
+                        center_chat_pill_in_upper_third(&app, &pill_win);
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
                 center_chat_pill_in_upper_third(&app, &pill_win);
+
                 let _ = pill_win.show();
                 let _ = pill_win.unminimize();
                 let _ = pill_win.set_always_on_top(true);
                 let _ = pill_win.set_focus();
+
+                #[cfg(target_os = "windows")]
+                if let Some((rx, ry, rw, rh, _)) = rect_info {
+                    let morph_state = app.state::<MorpherState>();
+                    if let Ok(guard) = morph_state.0.lock() {
+                        if let Some(morpher) = guard.as_ref() {
+                            morpher.start_wake_bloom(rx, ry, rw, rh);
+                        }
+                    }
+                }
             } else {
                 let _ = pill_win.set_ignore_cursor_events(true);
+                #[cfg(target_os = "windows")]
+                {
+                    let mut handled = false;
+                    if let Some((rx, ry, rw, rh, scale)) = rect_info {
+                        let morph_state = app.state::<MorpherState>();
+                        if let Ok(guard) = morph_state.0.lock() {
+                            if let Some(morpher) = guard.as_ref() {
+                                morpher.collapse_and_hide(rx, ry, rw, rh, scale);
+                                handled = true;
+                            }
+                        }
+                    }
+                    if !handled {
+                        let _ = pill_win.hide();
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
                 let _ = pill_win.hide();
             }
         }
@@ -1093,6 +1463,10 @@ pub fn run() {
     tauri::Builder::default()
         .manage(BackendState(Mutex::new(None)))
         .manage(MorpherState(std::sync::Mutex::new(None)))
+        .manage(PipWatchState {
+            generation: Arc::new(AtomicU64::new(0)),
+            is_dragging: Arc::new(AtomicBool::new(false)),
+        })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Auto-boot Aiden backend automatically on app launch
@@ -1217,6 +1591,12 @@ pub fn run() {
             resize_chat_pill,
             set_chat_pill_size,
             animate_chat_pill_shape,
+            minimize_to_pip,
+            maximize_from_pip,
+            begin_pip_drag,
+            step_pip_drag,
+            end_pip_drag,
+            get_pip_cursor_delta,
             boot_aiden,
             shutdown_aiden,
             restart_aiden,

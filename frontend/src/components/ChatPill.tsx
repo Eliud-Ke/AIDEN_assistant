@@ -12,7 +12,10 @@ import { SpotifyAlbumsCard, SpotifyAlbumsCardData, SpotifyAlbumItem } from "./Sp
 import { SpotifyPlaylistsCard, SpotifyPlaylistsCardData, SpotifyPlaylistItem } from "./SpotifyPlaylistsCard";
 import { SpotifyLibraryPlaylistsCard, SpotifyLibraryPlaylistsCardData } from "./SpotifyLibraryPlaylistsCard";
 import { MarkdownContent } from "./MarkdownContent";
+import { PipSquareEyes } from "./PipSquareEyes";
 import "./ChatPill.css";
+
+export type PipPhase = "max" | "to-pip" | "pip" | "to-max";
 
 export interface ChatTurn {
   id: string;
@@ -108,6 +111,9 @@ interface ChatPillProps {
   onHardwareChange?: (action: "volume" | "brightness", level?: number, muted?: boolean) => void;
   onSpotifyPlay?: (spotifyId: string, itemType: "track" | "album" | "artist" | "playlist") => void;
   onHeightChange?: (targetH: number, durationMs?: number) => void;
+  pipPhase?: PipPhase;
+  onMinimizeToPip?: (restoreH: number) => void;
+  onMaximizeFromPip?: () => void;
 }
 
 interface MediaGalleryItem {
@@ -664,6 +670,85 @@ export const AppleConstellationSpinner: React.FC = () => (
   </svg>
 );
 
+interface RackStatusLayer {
+  key: number;
+  text: string;
+  animate: boolean;
+}
+
+/**
+ * Transitions status labels via an optical rack-focus bloom instead of hard-swapping DOM text.
+ */
+const MorphingStatusText: React.FC<{
+  text: string;
+  className: string;
+}> = React.memo(({ text, className }) => {
+  const seqRef = useRef(0);
+  const currentTextRef = useRef(text);
+  const exitTimerRef = useRef<number | null>(null);
+  const [layers, setLayers] = useState<{
+    exiting: RackStatusLayer | null;
+    current: RackStatusLayer;
+  }>(() => ({
+    exiting: null,
+    current: { key: 0, text, animate: false },
+  }));
+
+  useLayoutEffect(() => {
+    if (text === currentTextRef.current) return;
+    const prevText = currentTextRef.current;
+    currentTextRef.current = text;
+
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+
+    const exitKey = ++seqRef.current;
+    const enterKey = ++seqRef.current;
+
+    setLayers({
+      exiting: prevText ? { key: exitKey, text: prevText, animate: true } : null,
+      current: { key: enterKey, text, animate: true },
+    });
+
+    // Exit animation runs 200ms; retain briefly to avoid popping before final frame.
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null;
+      setLayers((prev) => (prev.exiting ? { ...prev, exiting: null } : prev));
+    }, 240);
+  }, [text]);
+
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  return (
+    <span className="siri-status-rack-slot">
+      {layers.exiting && (
+        <span
+          key={layers.exiting.key}
+          className={`siri-status-rack-layer ${className} is-rack-exiting`}
+          aria-hidden="true"
+        >
+          {layers.exiting.text}
+        </span>
+      )}
+      <span
+        key={layers.current.key}
+        className={`siri-status-rack-layer ${className}${layers.current.animate ? " is-rack-entering" : ""}`}
+      >
+        {layers.current.text}
+      </span>
+    </span>
+  );
+});
+
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const smoothstep = (x: number) => {
   const c = clamp01(x);
@@ -865,7 +950,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   activeUiTag = null,
   activeConnector = null,
   isStreaming = false,
-  onClearResponse,
+  onClearResponse: _onClearResponse,
   contentRef,
   isVoiceActive,
   onToggleVoice,
@@ -878,7 +963,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onHardwareChange,
   onSpotifyPlay,
   onHeightChange,
+  pipPhase = "max",
+  onMinimizeToPip,
+  onMaximizeFromPip,
 }) => {
+  void _onClearResponse;
   void _onStartRecording;
   void _onStopRecording;
   const isConnecting = Boolean(
@@ -997,6 +1086,20 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isPipDragging, setIsPipDragging] = useState(false);
+  const [isPipDimmed, setIsPipDimmed] = useState(false);
+
+  const handleDragVisualChange = useCallback((dragging: boolean, dimmed: boolean) => {
+    setIsPipDragging((prev) => (prev !== dragging ? dragging : prev));
+    setIsPipDimmed((prev) => (prev !== dimmed ? dimmed : prev));
+  }, []);
+
+  useEffect(() => {
+    if (pipPhase === "max") {
+      setIsPipDragging(false);
+      setIsPipDimmed(false);
+    }
+  }, [pipPhase]);
   const followupInputRef = useRef<HTMLTextAreaElement>(null);
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
   const lastIdleReportedHRef = useRef<number>(60);
@@ -1011,6 +1114,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const pendingStatusRef = useRef<HTMLDivElement>(null);
   const scrollAnimRafRef = useRef<number | null>(null);
   const bubbleAnimRafIdsRef = useRef<number[]>([]);
+  const sleepBtnRef = useRef<HTMLButtonElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
   const capsuleRef = useRef<HTMLDivElement>(null);
@@ -1022,6 +1126,44 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const lensHideTimerRef = useRef<number | null>(null);
   const lastLensSigRef = useRef<string>("");
   const [isLensBlurActive, setIsLensBlurActive] = useState(false);
+
+  // Dynamic Island wake/hide choreography phase for inner content stagger
+  const wasAwakeForBloomRef = useRef<boolean>(isAwake);
+  const wakePhaseTimerRef = useRef<number | null>(null);
+  const [wakePhase, setWakePhase] = useState<"idle" | "waking" | "hiding">("idle");
+
+  useEffect(() => {
+    const prev = wasAwakeForBloomRef.current;
+    wasAwakeForBloomRef.current = isAwake;
+    if (prev === isAwake) return;
+
+    if (wakePhaseTimerRef.current !== null) {
+      window.clearTimeout(wakePhaseTimerRef.current);
+      wakePhaseTimerRef.current = null;
+    }
+
+    if (isAwake) {
+      setWakePhase("waking");
+      wakePhaseTimerRef.current = window.setTimeout(() => {
+        setWakePhase("idle");
+        wakePhaseTimerRef.current = null;
+      }, 360);
+    } else {
+      setWakePhase("hiding");
+      wakePhaseTimerRef.current = window.setTimeout(() => {
+        setWakePhase("idle");
+        wakePhaseTimerRef.current = null;
+      }, 280);
+    }
+  }, [isAwake]);
+
+  useEffect(() => {
+    return () => {
+      if (wakePhaseTimerRef.current !== null) {
+        window.clearTimeout(wakePhaseTimerRef.current);
+      }
+    };
+  }, []);
 
   const updateScrollMask = useCallback(() => {
     const el = streamContainerRef.current;
@@ -1091,9 +1233,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const activeScaleY = 1 + voiceIntensity * 0.48;
   const activeScaleX = 1 + voiceIntensity * 0.09;
 
-  // Controls (minimize button and command bar) are visible on hover or when input is focused/typed (text mode only)
+  // Controls (minimize button and command bar) are visible on hover or when input is focused/typed (text mode only, never during PiP)
   const isControlsVisible = Boolean(
-    !voiceActive && (isHovered || isInputFocused || inputText.length > 0)
+    !voiceActive && pipPhase === "max" && (isHovered || isInputFocused || inputText.length > 0)
   );
 
   const respondingMountedAtRef = useRef<number>(0);
@@ -1121,6 +1263,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   useLayoutEffect(() => {
     if (pillMode !== "responding") {
       lastReportedHRef.current = 0;
+      return;
+    }
+    if (pipPhase !== "max") {
       return;
     }
 
@@ -1193,7 +1338,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         observer.disconnect();
       }
     };
-  }, [pillMode, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
+  }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
 
   const cursorPrefix = inputText.slice(0, selectionIndex);
 
@@ -1216,7 +1361,17 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isAwake, pillMode]);
 
-  // Global key listener: Space to exit voice in responding mode, Escape to collapse
+  const sleepUi = useCallback(() => {
+    setIsHovered(false);
+    setIsInputFocused(false);
+    pillInputRef.current?.blur();
+    followupInputRef.current?.blur();
+    if (isAwake && onToggleSleep) {
+      onToggleSleep();
+    }
+  }, [isAwake, onToggleSleep]);
+
+  // Global key listener: Space to exit voice in responding mode, Escape to sleep UI
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === " " || e.code === "Space") {
@@ -1227,16 +1382,17 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         }
       }
       if (e.key === "Escape") {
+        e.preventDefault();
         if (voiceActive) {
           toggleVoiceMode(false);
-        } else if (pillMode === "responding" && onClearResponse) {
-          onClearResponse();
+        } else {
+          sleepUi();
         }
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [voiceActive, pillMode, onClearResponse]);
+  }, [voiceActive, pillMode, sleepUi]);
 
   // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
@@ -1351,6 +1507,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
 
     const shapes =
+      shapeFor(sleepBtnRef.current, "circle") +
       shapeFor(closeBtnRef.current, "circle") +
       shapeFor(plusBtnRef.current, "circle") +
       shapeFor(capsuleRef.current, 24) +
@@ -1406,7 +1563,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   // Drive SVG lens filter activation & frame-synced motion when controls show/hide
   const wasLensControlsVisibleRef = useRef(false);
   useLayoutEffect(() => {
-    if (!showReplyWindow || voiceActive) {
+    if (!showReplyWindow || voiceActive || pipPhase !== "max") {
       wasLensControlsVisibleRef.current = false;
       stopLensSync();
       setIsLensBlurActive(false);
@@ -1466,7 +1623,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       el.removeEventListener("scroll", onScroll);
       resizeObserver.disconnect();
     };
-  }, [showReplyWindow, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag, followupExtraH, updateScrollMask, syncLensMaskToDom]);
+  }, [showReplyWindow, pipPhase, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag, followupExtraH, updateScrollMask, syncLensMaskToDom]);
 
   const updateSelection = (el: HTMLTextAreaElement | null) => {
     if (el) {
@@ -1549,11 +1706,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       handleSend();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (showReplyWindow && onClearResponse) {
-        onClearResponse();
-      } else if (onToggleSleep) {
-        onToggleSleep();
-      }
+      e.stopPropagation();
+      sleepUi();
     }
   };
 
@@ -1670,7 +1824,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           </filter>
         </defs>
       </svg>
-      <div ref={contentRef} className={`chat-pill-wrapper ${isAwake ? "awake" : ""}`}>
+      <div
+        ref={contentRef}
+        className={`chat-pill-wrapper ${isAwake ? "awake" : ""} ${
+          wakePhase === "waking" ? "waking-bloom" : wakePhase === "hiding" ? "hiding-bloom" : ""
+        }`}
+      >
         <div
           className={`siri-unified-pill siri-glass mode-${pillMode} ${
             effectiveExitingVoice && pillMode === "idle" ? "exiting-voice" : ""
@@ -1690,9 +1849,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             isHovered || isInputFocused || inputText.length > 0 ? "hover-active" : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
             isDarkMode ? "dark-mode" : "light-mode"
-          }`}
+          } ${pipPhase === "pip" ? "is-pip" : ""} ${
+            pipPhase === "to-pip" ? "is-morphing-to-pip" : ""
+          } ${pipPhase === "to-max" ? "is-morphing-to-max" : ""} ${
+            pipPhase === "pip" && isPipDragging ? "is-dragging" : ""
+          } ${pipPhase === "pip" && isPipDimmed ? "is-dimmed" : ""}`}
           onTransitionRun={(e) => {
-            if (!showReplyWindow || voiceActive) return;
+            if (!showReplyWindow || voiceActive || pipPhase !== "max") return;
             const target = e.target as HTMLElement | null;
             if (
               target &&
@@ -1705,17 +1868,26 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             }
           }}
           onMouseEnter={() => {
+            if (pipPhase !== "max") return;
             if (Date.now() - respondingMountedAtRef.current >= 100) {
               setIsHovered(true);
             }
           }}
           onMouseMove={() => {
+            if (pipPhase !== "max") return;
             if (Date.now() - respondingMountedAtRef.current >= 100) {
               if (!isHovered) setIsHovered(true);
             }
           }}
           onMouseLeave={() => setIsHovered(false)}
         >
+          {pipPhase !== "max" && onMaximizeFromPip && (
+            <PipSquareEyes
+              active={pipPhase === "pip"}
+              onMaximize={onMaximizeFromPip}
+              onDragVisualChange={handleDragVisualChange}
+            />
+          )}
           {/* 1. IDLE / INPUT STATE */}
           {(pillMode === "idle" || (effectiveEnteringVoice && pillMode !== "responding")) && (
             <>
@@ -1850,26 +2022,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
                 )}
               </div>
-              <span key={activeUiTag || "Thinking"} className="siri-thinking-text siri-tag-enter">{formatStatusTag(activeUiTag || "Thinking")}</span>
+              <MorphingStatusText
+                text={formatStatusTag(activeUiTag || "Thinking")}
+                className="siri-thinking-text"
+              />
             </div>
           )}
 
           {/* 3. RESPONDING STATE (Expands back to full length and vertically into glass window) */}
           {pillMode === "responding" && (
             <>
-              {/* Floating Circular Glass Minimize Button (Top-Right) */}
-              {onClearResponse && (
+              {/* Floating Circular Clear Glass Close / Sleep Button (Top-Left) */}
+              {onToggleSleep && (
                 <button
-                  ref={closeBtnRef}
+                  ref={sleepBtnRef}
                   type="button"
-                  className="siri-floating-close-btn"
+                  className="siri-floating-close-btn left-sleep-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsHovered(false);
-                    onClearResponse();
+                    sleepUi();
                   }}
-                  title="Minimize (Esc)"
-                  aria-label="Minimize"
+                  title="Close (Esc)"
+                  aria-label="Close"
                   tabIndex={isControlsVisible ? 0 : -1}
                 >
                   <svg
@@ -1882,16 +2056,59 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
-                    <path d="M4 14V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
-                    <rect x="8" y="8" width="13" height="12" rx="2.5" fill="currentColor" fillOpacity="0.2" />
+                    <path d="M18 6L6 18" />
+                    <path d="M6 6l12 12" />
                   </svg>
                 </button>
               )}
 
+              {/* Floating Circular Colourless Clear Glass Minimize Button (Top-Right) */}
+              <button
+                ref={closeBtnRef}
+                type="button"
+                className="siri-floating-close-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!onMinimizeToPip) return;
+                  const stillControls = isInputFocused || inputText.length > 0;
+                  const fallbackH = lastReportedHRef.current || 280;
+                  const restoreH = isMultiTurnMode
+                    ? 620
+                    : Math.min(
+                        620,
+                        Math.max(
+                          stillControls ? 180 : 128,
+                          stillControls || !isControlsVisible ? fallbackH : fallbackH - 90
+                        )
+                      );
+                  setIsHovered(false);
+                  setIsInputFocused(false);
+                  followupInputRef.current?.blur();
+                  onMinimizeToPip(restoreH);
+                }}
+                title="Minimize"
+                aria-label="Minimize"
+                tabIndex={isControlsVisible ? 0 : -1}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.1"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M4 14V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
+                  <rect x="8" y="8" width="13" height="12" rx="2.5" fill="currentColor" fillOpacity="0.2" />
+                </svg>
+              </button>
+
               {activeUiTag && !isMultiTurnMode && (
                 <div className="siri-responding-header">
                   <div className="siri-responding-header-left">
-                    <div className="siri-card-status-tag" key={activeUiTag}>
+                    <div className="siri-card-status-tag">
                       <div className="siri-icon-morph-anchor small">
                         <span
                           className={`siri-apple-constellation small ${isConnecting ? "is-imploded" : ""}`}
@@ -1909,7 +2126,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                           </div>
                         )}
                       </div>
-                      <span className="siri-status-text">{formatStatusTag(activeUiTag)}</span>
+                      <MorphingStatusText
+                        text={formatStatusTag(activeUiTag)}
+                        className="siri-status-text"
+                      />
                     </div>
                   </div>
                 </div>
@@ -2225,7 +2445,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                           </div>
                         )}
                       </div>
-                      <span className="siri-instream-thinking-text">{formatStatusTag(activeUiTag || "Thinking")}</span>
+                      <MorphingStatusText
+                        text={formatStatusTag(activeUiTag || "Thinking")}
+                        className="siri-instream-thinking-text"
+                      />
                     </div>
                   </div>
                 )}
@@ -2326,10 +2549,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                           handleSend();
                         } else if (e.key === "Escape") {
                           e.preventDefault();
-                          if (onClearResponse) {
-                            setIsHovered(false);
-                            onClearResponse();
-                          }
+                          e.stopPropagation();
+                          sleepUi();
                         }
                       }}
                       spellCheck={false}
@@ -2622,36 +2843,6 @@ export const ChatPillWindow: React.FC = () => {
     ? "listening"
     : "idle";
 
-  // Manage sleep exit animation & native window hide timing
-  useEffect(() => {
-    if (isAwake) {
-      if (hideTimerRef.current !== null) {
-        window.clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = null;
-      }
-      resetReplyState();
-      invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
-    } else {
-      // Immediately pass cursor events through so background clicks work while fading out
-      invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
-
-      // Immediately clear reply state so sleeping pill never retains old turns
-      resetReplyState();
-
-      // Wait 300ms for the smooth glide-up & fade-out animation to complete before hiding the native Win32 window
-      hideTimerRef.current = window.setTimeout(() => {
-        invoke("hide_chat_pill").catch(() => {});
-        hideTimerRef.current = null;
-      }, 300);
-    }
-
-    return () => {
-      if (hideTimerRef.current !== null) {
-        window.clearTimeout(hideTimerRef.current);
-      }
-    };
-  }, [isAwake]);
-
   // Maintain latest mode ref for stable shape identity
   const currentModeRef = useRef(currentMode);
   currentModeRef.current = currentMode;
@@ -2659,10 +2850,102 @@ export const ChatPillWindow: React.FC = () => {
   // Native Window Morpher: The HWND itself is the pill
   const lastSyncWidthRef = useRef<number>(466);
   const lastSyncHeightRef = useRef<number>(60);
+  const idleTargetHeightRef = useRef<number>(60);
+  const hasOpenedOnceRef = useRef<boolean>(false);
+
+  const [pipPhase, setPipPhase] = useState<PipPhase>("max");
+  const pipPhaseRef = useRef<PipPhase>("max");
+  pipPhaseRef.current = pipPhase;
+  const pipPhaseTimerRef = useRef<number | null>(null);
+  const pipRestoreHeightRef = useRef<number>(300);
+
+  const clearPipTimer = () => {
+    if (pipPhaseTimerRef.current !== null) {
+      window.clearTimeout(pipPhaseTimerRef.current);
+      pipPhaseTimerRef.current = null;
+    }
+  };
+
+  // Manage sleep exit animation & native Dynamic Island wake/hide timing
+  useEffect(() => {
+    clearPipTimer();
+    pipPhaseRef.current = "max";
+    setPipPhase("max");
+
+    if (isAwake) {
+      hasOpenedOnceRef.current = true;
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      resetReplyState();
+      lastSyncWidthRef.current = 466;
+      lastSyncHeightRef.current = 60;
+      idleTargetHeightRef.current = 60;
+      invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
+    } else if (hasOpenedOnceRef.current) {
+      // Pass cursor events through immediately and collapse inward via WindowMorpher (230ms)
+      invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
+
+      // Defer clearing reply state & safety hide fallback until after the 230ms collapse finishes
+      hideTimerRef.current = window.setTimeout(() => {
+        resetReplyState();
+        lastSyncWidthRef.current = 466;
+        lastSyncHeightRef.current = 60;
+        idleTargetHeightRef.current = 60;
+        invoke("hide_chat_pill").catch(() => {});
+        hideTimerRef.current = null;
+      }, 280);
+    }
+
+    return () => {
+      clearPipTimer();
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+      }
+    };
+  }, [isAwake]);
+
+  const handleMinimizeToPip = useCallback(
+    (restoreH: number) => {
+      if (!isAwake || (pipPhaseRef.current !== "max" && pipPhaseRef.current !== "to-max")) {
+        return;
+      }
+      clearPipTimer();
+      pipRestoreHeightRef.current = restoreH;
+      pipPhaseRef.current = "to-pip";
+      setPipPhase("to-pip");
+      invoke("minimize_to_pip", { size: 68 }).catch(() => {});
+      pipPhaseTimerRef.current = window.setTimeout(() => {
+        pipPhaseTimerRef.current = null;
+        pipPhaseRef.current = "pip";
+        setPipPhase("pip");
+      }, 310);
+    },
+    [isAwake]
+  );
+
+  const handleMaximizeFromPip = useCallback(() => {
+    if (!isAwake || (pipPhaseRef.current !== "pip" && pipPhaseRef.current !== "to-pip")) {
+      return;
+    }
+    clearPipTimer();
+    const targetH = pipRestoreHeightRef.current || 300;
+    lastSyncWidthRef.current = 466;
+    lastSyncHeightRef.current = targetH;
+    pipPhaseRef.current = "to-max";
+    setPipPhase("to-max");
+    invoke("maximize_from_pip", { width: 466, height: targetH }).catch(() => {});
+    pipPhaseTimerRef.current = window.setTimeout(() => {
+      pipPhaseTimerRef.current = null;
+      pipPhaseRef.current = "max";
+      setPipPhase("max");
+    }, 340);
+  }, [isAwake]);
 
   const morphTo = useCallback(
     (targetWidth: number, targetHeight: number, durationMs = 280) => {
-      if (!isAwake) return;
+      if (!isAwake || pipPhaseRef.current !== "max") return;
       if (
         Math.abs(targetWidth - lastSyncWidthRef.current) < 2 &&
         Math.abs(targetHeight - lastSyncHeightRef.current) < 4
@@ -2681,11 +2964,10 @@ export const ChatPillWindow: React.FC = () => {
   );
 
   // Sync mode changes with native HWND geometry
-  const idleTargetHeightRef = useRef<number>(60);
   useEffect(() => {
-    if (!isAwake) return;
+    if (!isAwake || pipPhaseRef.current !== "max") return;
     if (currentMode === "listening") {
-      morphTo(280, 80, 260);
+      morphTo(280, idleTargetHeightRef.current, 260);
     } else if (currentMode === "idle") {
       morphTo(466, idleTargetHeightRef.current, 200);
     } else if (currentMode === "thinking") {
@@ -2704,7 +2986,7 @@ export const ChatPillWindow: React.FC = () => {
 
   const handlePillHeightChange = useCallback(
     (targetH: number, durationMs = 220) => {
-      if (!isAwake) return;
+      if (!isAwake || pipPhaseRef.current !== "max") return;
       if (currentMode === "idle") {
         idleTargetHeightRef.current = targetH;
         morphTo(466, targetH, durationMs);
@@ -3084,6 +3366,9 @@ export const ChatPillWindow: React.FC = () => {
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
         onHeightChange={handlePillHeightChange}
+        pipPhase={pipPhase}
+        onMinimizeToPip={handleMinimizeToPip}
+        onMaximizeFromPip={handleMaximizeFromPip}
       />
     </div>
   );

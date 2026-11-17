@@ -34,7 +34,7 @@
   overflow: hidden;
 }
 
-/* Slide Down Spring Animation Wrapper (Spotlight / Siri style from upper screen) */
+/* Dynamic Island Bloom Wake & Collapse Wrapper */
 .chat-pill-wrapper {
   display: flex;
   flex-direction: column;
@@ -43,21 +43,58 @@
   height: 100%;
   max-width: 100%;
   opacity: 0;
-  transform: scale(0.97);
   pointer-events: none;
-  transition: transform 0.24s cubic-bezier(0.32, 0, 0.2, 1),
-              opacity 0.20s ease-out;
-  will-change: transform, opacity;
+  will-change: opacity;
   box-sizing: border-box;
 }
 
-/* Awake State: Blooms smoothly into view */
+/* Awake State: Brings up the Dynamic Island orb cleanly as WindowMorpher blooms 68px -> 466px */
 .chat-pill-wrapper.awake {
-  transform: scale(1);
   opacity: 1;
   pointer-events: auto;
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.085s ease-out;
+}
+
+/* Hide State: Holds dark glass wrapper until native LWA_ALPHA fades the window out */
+.chat-pill-wrapper.hiding-bloom {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.13s ease-in 0.105s;
+}
+
+/* Staggered inner UI arrival during Dynamic Island Wake Bloom */
+@keyframes aidenIslandContentIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+}
+
+.chat-pill-wrapper.awake.waking-bloom .siri-pill-input-wrap,
+.chat-pill-wrapper.awake.waking-bloom .siri-idle-bare-mic-btn {
+  animation: aidenIslandContentIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) 0.085s both;
+}
+
+/* Clean fast inner UI blur-dissolve on Hide so content never squishes as pill collapses to 64px */
+.chat-pill-wrapper.hiding-bloom .siri-pill-input-wrap,
+.chat-pill-wrapper.hiding-bloom .siri-idle-bare-mic-btn,
+.chat-pill-wrapper.hiding-bloom .siri-unified-stream,
+.chat-pill-wrapper.hiding-bloom .siri-thinking-content,
+.chat-pill-wrapper.hiding-bloom .siri-listening-content,
+.chat-pill-wrapper.hiding-bloom .siri-floating-close-btn,
+.chat-pill-wrapper.hiding-bloom .siri-hover-followup-bar {
+  opacity: 0 !important;
+  transform: scale(0.90) !important;
+  filter: blur(4px);
+  transition: opacity 0.095s ease-out,
+              transform 0.10s ease-out,
+              filter 0.10s ease-out !important;
 }
 
 /* ==========================================================================
@@ -548,17 +585,74 @@
   50% { opacity: 0.45; transform: scale(0.72); }
 }
 
+/* Optical Focus Rack transition slot shared across thinking pill, header card, and follow-up loader */
+.siri-status-rack-slot {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+  justify-items: start;
+}
+
+.siri-status-rack-layer {
+  --rack-shimmer: thinkingShimmer 2.2s infinite linear;
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  will-change: opacity, filter, letter-spacing;
+}
+
+.siri-status-rack-layer.is-rack-exiting {
+  pointer-events: none;
+  user-select: none;
+  animation:
+    var(--rack-shimmer),
+    statusFocusRackExit 0.20s ease-in forwards;
+}
+
+.siri-status-rack-layer.is-rack-entering {
+  animation:
+    var(--rack-shimmer),
+    statusFocusRackEnter 0.34s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+@keyframes statusFocusRackExit {
+  0% {
+    opacity: 1;
+    filter: blur(0px) brightness(1);
+    letter-spacing: var(--rack-tracking, 0.22px);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(7px) brightness(1.45);
+    letter-spacing: 0.55px;
+  }
+}
+
+@keyframes statusFocusRackEnter {
+  0% {
+    opacity: 0;
+    filter: blur(8px) brightness(1.45);
+    letter-spacing: 0.55px;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0px) brightness(1);
+    letter-spacing: var(--rack-tracking, 0.22px);
+  }
+}
+
 .siri-status-text {
+  --rack-tracking: 0.2px;
+  --rack-shimmer: tagTextShimmer 2s infinite linear;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 13px;
   font-weight: 520;
-  letter-spacing: 0.2px;
+  letter-spacing: var(--rack-tracking);
   -webkit-font-smoothing: antialiased;
   background-size: 220% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: tagTextShimmer 2s infinite linear;
+  animation: var(--rack-shimmer);
   background-image: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.68) 0%,
@@ -2818,7 +2912,7 @@
   color: #007AFF;
 }
 
-/* MODE 1.5: LISTENING / VOICE MODE (WindowMorpher sizes window to 280x80) */
+/* MODE 1.5: LISTENING / VOICE MODE (WindowMorpher keeps current height, narrows width to 280px) */
 .siri-unified-pill.mode-listening {
   width: 100%;
   height: 100%;
@@ -2959,10 +3053,11 @@
 }
 
 .siri-thinking-text {
+  --rack-tracking: 0.3px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 14px;
   font-weight: 550;
-  letter-spacing: 0.3px;
+  letter-spacing: var(--rack-tracking);
   color: #ffffff;
   background: linear-gradient(
     90deg,
@@ -2974,7 +3069,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: thinkingShimmer 2.2s infinite linear;
+  animation: var(--rack-shimmer);
 }
 
 @keyframes thinkingShimmer {
@@ -3017,9 +3112,8 @@
   background: rgba(255, 255, 255, 0.04);
   border: none !important;
   color: #ffffff;
-  /* Subtle top white glass highlight rim + bottom depth + soft drop shadow */
+  /* Subtle bottom depth + soft drop shadow (dual top/bottom specular arcs live in ::before) */
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.35),
     inset 0 -1px 1px rgba(0, 0, 0, 0.25),
     0 6px 16px rgba(0, 0, 0, 0.28);
   cursor: pointer;
@@ -3077,7 +3171,6 @@
   border: none !important;
   color: #ffffff;
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.34),
     inset 0 -1px 1px rgba(0, 0, 0, 0.32),
     0 8px 20px rgba(0, 0, 0, 0.34);
   transition-delay: 0ms !important;
@@ -3089,7 +3182,6 @@
   border: none !important;
   color: #1a1a1a;
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.80),
     inset 0 -1px 1px rgba(0, 0, 0, 0.08),
     0 6px 16px rgba(0, 0, 0, 0.10);
 }
@@ -3101,7 +3193,6 @@
   border: none !important;
   color: #1a1a1a;
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.88),
     inset 0 -1px 1px rgba(0, 0, 0, 0.10),
     0 8px 20px rgba(0, 0, 0, 0.14);
 }
@@ -3110,6 +3201,12 @@
 .siri-unified-pill.hover-active .siri-floating-close-btn:active {
   transform: translateY(0) scale(0.88) !important;
   transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Top-Left Floating Sleep / Close (×) Button (Exact mirror copy of Minimize) */
+.siri-floating-close-btn.left-sleep-btn {
+  left: 18px;
+  right: auto;
 }
 
 .siri-responding-header {
@@ -3121,8 +3218,18 @@
   width: 100%;
   height: 24px;
   margin-bottom: 4px;
+  padding-left: 0px;
   padding-right: 56px; /* Clearance for 48px floating minimize button */
   box-sizing: border-box;
+  transition: padding-left 0.36s cubic-bezier(0.22, 1.12, 0.36, 1),
+              margin-top 0.32s cubic-bezier(0.22, 1, 0.3, 1);
+}
+
+/* Push top-left status tag clear of the left × button whenever controls spring down */
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-responding-header,
+.siri-unified-pill.hover-active:not(.expanded-voice-active) .siri-responding-header {
+  padding-left: 58px;
+  margin-top: 10px;
 }
 
 .siri-responding-header-left {
@@ -3355,10 +3462,11 @@
 }
 
 .siri-instream-thinking-text {
+  --rack-tracking: 0.2px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 14px;
   font-weight: 520;
-  letter-spacing: 0.2px;
+  letter-spacing: var(--rack-tracking);
   -webkit-font-smoothing: antialiased;
   color: #ffffff;
   background: linear-gradient(
@@ -3371,7 +3479,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: thinkingShimmer 2.2s infinite linear;
+  animation: var(--rack-shimmer);
 }
 
 /* ==========================================================================
@@ -3574,6 +3682,7 @@
 
 /* Circular Colourless Clear Glass Action Buttons (+ and Mic) */
 .siri-command-glass-btn {
+  position: relative;
   width: 48px;
   height: 48px;
   min-width: 48px;
@@ -3582,9 +3691,8 @@
   background: rgba(255, 255, 255, 0.04);
   border: none !important;
   color: #ffffff;
-  /* Subtle top white glass highlight rim + bottom depth + soft drop shadow */
+  /* Subtle bottom depth + soft drop shadow (dual top/bottom specular arcs live in ::before) */
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.35),
     inset 0 -1px 1px rgba(0, 0, 0, 0.25),
     0 6px 16px rgba(0, 0, 0, 0.28);
   display: flex;
@@ -3604,7 +3712,6 @@
   border: none !important;
   color: #ffffff;
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.34),
     inset 0 -1px 1px rgba(0, 0, 0, 0.32),
     0 8px 20px rgba(0, 0, 0, 0.34);
   transition-delay: 0ms !important;
@@ -3621,7 +3728,6 @@
   border: none !important;
   color: #1a1a1a;
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.80),
     inset 0 -1px 1px rgba(0, 0, 0, 0.08),
     0 6px 16px rgba(0, 0, 0, 0.10);
 }
@@ -3632,10 +3738,69 @@
   border: none !important;
   color: #1a1a1a;
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.88),
     inset 0 -1px 1px rgba(0, 0, 0, 0.10),
     0 8px 20px rgba(0, 0, 0, 0.14);
   transition-delay: 0ms !important;
+}
+
+/* Shared Dual Specular Rim Arcs for All 4 Circular Glass Buttons (×, Minimize, +, Mic) */
+.siri-floating-close-btn,
+.siri-command-glass-btn {
+  --arc-top-peak: 0.56;
+  --arc-top-mid: 0.24;
+  --arc-bot-peak: 0.25;
+}
+
+.siri-floating-close-btn::before,
+.siri-command-glass-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 1.15px;
+  pointer-events: none;
+  /* Dual arcs only (116deg top white highlight + tinier 48deg bottom bounce; left/right sides open) */
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    rgba(255, 255, 255, var(--arc-top-peak)) 0deg,
+    rgba(255, 255, 255, var(--arc-top-mid)) 34deg,
+    rgba(255, 255, 255, 0) 58deg,
+    rgba(255, 255, 255, 0) 156deg,
+    rgba(255, 255, 255, var(--arc-bot-peak)) 180deg,
+    rgba(255, 255, 255, 0) 204deg,
+    rgba(255, 255, 255, 0) 302deg,
+    rgba(255, 255, 255, var(--arc-top-mid)) 326deg,
+    rgba(255, 255, 255, var(--arc-top-peak)) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: opacity 0.2s ease;
+}
+
+.siri-unified-pill.controls-visible .siri-floating-close-btn:hover,
+.siri-unified-pill.hover-active .siri-floating-close-btn:hover,
+.siri-unified-pill.controls-visible .siri-command-glass-btn:hover {
+  --arc-top-peak: 0.70;
+  --arc-top-mid: 0.32;
+  --arc-bot-peak: 0.33;
+}
+
+.siri-unified-pill.light-mode .siri-floating-close-btn,
+.siri-unified-pill.light-mode .siri-command-glass-btn {
+  --arc-top-peak: 0.94;
+  --arc-top-mid: 0.44;
+  --arc-bot-peak: 0.50;
+}
+
+.siri-unified-pill.light-mode.controls-visible .siri-floating-close-btn:hover,
+.siri-unified-pill.light-mode.hover-active .siri-floating-close-btn:hover,
+.siri-unified-pill.light-mode.controls-visible .siri-command-glass-btn:hover {
+  --arc-top-peak: 0.98;
+  --arc-top-mid: 0.52;
+  --arc-bot-peak: 0.56;
 }
 
 /* Center Colourless Clear Glass Capsule Field ("Ask Aiden") */
@@ -3829,6 +3994,16 @@
 .siri-aurora-edge-container.compact.recording {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38), inset 0 -3px 12px rgba(56, 189, 248, 0.45);
 }
+
+/* Scale cloud heights proportionally for 60px compact listening pill so hills crest without top-edge clipping */
+.siri-aurora-edge-container.compact .idle-cloud-1 { height: 42px; }
+.siri-aurora-edge-container.compact .idle-cloud-2 { height: 40px; }
+.siri-aurora-edge-container.compact .idle-cloud-3 { height: 54px; }
+.siri-aurora-edge-container.compact .idle-cloud-crest { height: 46px; }
+.siri-aurora-edge-container.compact .active-cloud-cyan { height: 50px; }
+.siri-aurora-edge-container.compact .active-cloud-blue { height: 48px; }
+.siri-aurora-edge-container.compact .active-cloud-white { height: 46px; }
+.siri-aurora-edge-container.compact .active-cloud-amber { height: 38px; }
 
 
 @keyframes siriAuroraFadeIn {
@@ -5468,4 +5643,213 @@
 
 .spotify-result-card .playlist-scroll-area::-webkit-scrollbar-thumb:hover {
   background: rgba(29, 185, 84, 0.55);
+}
+
+/* ==========================================================================
+   MINIMIZED FLOATING SQUARE (68x68 PURE GLASS + LIVING CARTOONY EYES)
+   ========================================================================== */
+.siri-unified-pill.is-pip,
+.siri-unified-pill.is-morphing-to-pip {
+  padding: 0 !important;
+}
+
+.siri-unified-pill.is-pip {
+  cursor: grab;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.94) 0%,
+    rgba(10, 10, 10, 0.82) 44%,
+    rgba(20, 20, 20, 0.70) 70%,
+    rgba(24, 24, 24, 0.24) 86%,
+    rgba(26, 26, 26, 0.0) 100%
+  ) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+  transition: filter 0.16s ease, box-shadow 0.20s ease, background 0.30s ease;
+}
+
+.siri-unified-pill.light-mode.is-pip {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(245, 246, 250, 0.80) 44%,
+    rgba(236, 238, 244, 0.70) 70%,
+    rgba(228, 230, 238, 0.24) 86%,
+    rgba(225, 225, 232, 0.0) 100%
+  ) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
+}
+
+.siri-unified-pill.is-pip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  z-index: 5;
+  transition: background 0.16s ease;
+}
+
+.siri-unified-pill.is-pip:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48) !important;
+}
+
+.siri-unified-pill.is-pip.is-dragging {
+  cursor: grabbing;
+}
+
+.siri-unified-pill.is-pip.is-dimmed {
+  filter: brightness(0.76) saturate(0.88);
+}
+
+.siri-unified-pill.is-pip.is-dimmed::after {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.siri-unified-pill.light-mode.is-pip.is-dimmed::after {
+  background: rgba(110, 118, 136, 0.16);
+}
+
+/* Dissolve maximized UI cleanly before shrinking to 68x68; re-bloom in once flying back */
+.siri-unified-pill.is-morphing-to-pip .siri-pill-input-wrap,
+.siri-unified-pill.is-morphing-to-pip .siri-idle-bare-mic-btn,
+.siri-unified-pill.is-morphing-to-pip .siri-listening-content,
+.siri-unified-pill.is-morphing-to-pip .siri-thinking-content,
+.siri-unified-pill.is-morphing-to-pip .siri-floating-close-btn,
+.siri-unified-pill.is-morphing-to-pip .siri-responding-header,
+.siri-unified-pill.is-morphing-to-pip .siri-unified-stream,
+.siri-unified-pill.is-morphing-to-pip .siri-bottom-dissolve-shroud,
+.siri-unified-pill.is-morphing-to-pip .siri-aurora-edge-container,
+.siri-unified-pill.is-morphing-to-pip .siri-hover-followup-bar {
+  opacity: 0 !important;
+  transform: scale(0.92) !important;
+  filter: blur(5px);
+  pointer-events: none !important;
+  transition: opacity 0.095s ease-out, transform 0.11s ease-out, filter 0.10s ease-out !important;
+}
+
+.siri-unified-pill.is-pip .siri-pill-input-wrap,
+.siri-unified-pill.is-pip .siri-idle-bare-mic-btn,
+.siri-unified-pill.is-pip .siri-listening-content,
+.siri-unified-pill.is-pip .siri-thinking-content,
+.siri-unified-pill.is-pip .siri-floating-close-btn,
+.siri-unified-pill.is-pip .siri-responding-header,
+.siri-unified-pill.is-pip .siri-unified-stream,
+.siri-unified-pill.is-pip .siri-bottom-dissolve-shroud,
+.siri-unified-pill.is-pip .siri-aurora-edge-container,
+.siri-unified-pill.is-pip .siri-hover-followup-bar {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
+@keyframes aidenPipContentRestore {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+}
+
+.siri-unified-pill.is-morphing-to-max .siri-responding-header,
+.siri-unified-pill.is-morphing-to-max .siri-unified-stream,
+.siri-unified-pill.is-morphing-to-max .siri-bottom-dissolve-shroud,
+.siri-unified-pill.is-morphing-to-max .siri-aurora-edge-container {
+  visibility: visible;
+  animation: aidenPipContentRestore 0.22s cubic-bezier(0.16, 1, 0.3, 1) 0.11s both;
+}
+
+/* Pure-glass PiP eyes overlay */
+.siri-pip-content {
+  position: absolute;
+  inset: 0;
+  padding-bottom: 10%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  opacity: 0;
+  transform: scale(0.76);
+  filter: blur(4px);
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 0.14s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), filter 0.16s ease;
+}
+
+.siri-unified-pill.is-pip .siri-pip-content {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0px);
+  pointer-events: auto;
+  transition: opacity 0.22s ease 0.05s,
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.05s,
+              filter 0.22s ease 0.05s;
+}
+
+.siri-unified-pill.is-morphing-to-max .siri-pip-content {
+  opacity: 0;
+  transform: scale(0.84);
+  filter: blur(4px);
+  pointer-events: none;
+  transition: opacity 0.08s ease, transform 0.09s ease, filter 0.09s ease;
+}
+
+.siri-pip-eyes {
+  --gx: 0px;
+  --gy: 0px;
+  --gaze-ms: 120ms;
+  --gaze-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  transform: translate3d(var(--gx), var(--gy), 0);
+  transition: transform var(--gaze-ms) var(--gaze-ease);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.siri-pip-eye-slot {
+  --dx: 0px;
+  --dy: 0px;
+  --dsx: 1;
+  --dsy: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate3d(var(--dx), var(--dy), 0) scale(var(--dsx), var(--dsy));
+  will-change: transform;
+}
+
+.siri-pip-eye {
+  width: 7px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  opacity: var(--eye-op, 1);
+  box-shadow:
+    0 0 10px rgba(255, 255, 255, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+  transform-origin: center center;
+  will-change: transform, opacity;
+  transition: opacity 0.15s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.siri-unified-pill.is-pip:hover .siri-pip-eye {
+  box-shadow:
+    0 0 13px rgba(255, 255, 255, 0.44),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.siri-unified-pill.light-mode .siri-pip-eye {
+  background: rgba(16, 18, 24, 0.90);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+
+.siri-unified-pill.light-mode.is-pip:hover .siri-pip-eye {
+  box-shadow: 0 0 10px rgba(16, 18, 24, 0.28);
 }
