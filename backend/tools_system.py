@@ -21,9 +21,12 @@ AVAILABLE SYSTEM TOOLS:
 import os
 import io
 import json
+import base64
 import ctypes
+from ctypes import wintypes
 import asyncio
 import subprocess
+import time
 import urllib.parse
 import webbrowser
 from datetime import datetime
@@ -31,6 +34,17 @@ import psutil
 import requests
 import win32gui
 import win32process
+import win32ui
+
+try:
+    import mss
+except ImportError:
+    mss = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 try:
     from winrt.windows.devices.geolocation import Geolocator, GeolocationAccessStatus
@@ -67,9 +81,9 @@ except ImportError:
     app_registry = None
 
 try:
-    from ans import get_visible_desktop_windows
+    from ans import find_aiden_overlay_hwnds, get_visible_desktop_windows
 except ImportError:
-    from backend.ans import get_visible_desktop_windows
+    from backend.ans import find_aiden_overlay_hwnds, get_visible_desktop_windows
 
 
 # ---------------------------------------------------------
@@ -537,11 +551,386 @@ def get_active_windows(**kwargs):
     for w in visible_windows:
         if "python" in w["app"] and not w["is_active"]:
             continue
-        status = "[🟢 ACTIVE FOCUS]" if w["is_active"] else "[Background]"
+        if w["is_active"]:
+            status = "[🟢 ACTIVE FOCUS]"
+        elif w.get("is_minimized"):
+            status = "[Minimized]"
+        else:
+            status = "[Background]"
         output += f"{status} {w['title']} (Process: {w['app']})\n"
 
     output += "\nSYSTEM NOTE: The [🟢 ACTIVE FOCUS] tag bypasses overlay windows to identify the application in active use."
     return output
+
+
+def _get_extended_window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Returns exact DWM visible frame bounds (excluding drop shadow margin), falling back to GetWindowRect."""
+    rect = wintypes.RECT()
+    try:
+        DWMWA_EXTENDED_FRAME_BOUNDS = 9
+        hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd),
+            ctypes.c_uint(DWMWA_EXTENDED_FRAME_BOUNDS),
+            ctypes.byref(rect),
+            ctypes.sizeof(rect),
+        )
+        if hr == 0 and rect.right > rect.left and rect.bottom > rect.top:
+            return (rect.left, rect.top, rect.right, rect.bottom)
+    except Exception:
+        pass
+    try:
+        l, t, r, b = win32gui.GetWindowRect(hwnd)
+        if r > l and b > t:
+            return (l, t, r, b)
+    except Exception:
+        pass
+    return None
+
+
+def _find_monitor_for_hwnd(sct, hwnd: int | None) -> dict:
+    """Selects the mss monitor containing the target window center, defaulting to primary."""
+    monitors = sct.monitors
+    fallback = monitors[1] if len(monitors) > 1 else monitors[0]
+    if not hwnd:
+        return fallback
+    rect = _get_extended_window_rect(hwnd)
+    if not rect:
+        return fallback
+    cx = (rect[0] + rect[2]) // 2
+    cy = (rect[1] + rect[3]) // 2
+    for mon in monitors[1:]:
+        if (
+            mon["left"] <= cx < mon["left"] + mon["width"]
+            and mon["top"] <= cy < mon["top"] + mon["height"]
+        ):
+            return mon
+    return fallback
+
+
+def _match_window_by_name(windows: list[dict], query: str) -> dict | None:
+    """Ranks visible desktop windows against a name/title query without stealing focus."""
+    q = " ".join((query or "").lower().split())
+    if not q:
+        return None
+    q_stem = q.removesuffix(".exe")
+
+    best_win = None
+    best_score = -1
+    for z_idx, w in enumerate(windows):
+        app_l = (w.get("app") or "").lower()
+        app_stem = app_l.removesuffix(".exe")
+        title_l = (w.get("title") or "").lower()
+        if "python" in app_l and not w.get("is_active"):
+            continue
+
+        score = 0
+        if q_stem == app_stem or q == title_l:
+            score = 100
+        elif app_stem.startswith(q_stem) or f" {q_stem}" in f" {title_l}":
+            score = 65
+        elif q_stem in app_stem or q in title_l:
+            score = 35
+
+        if score <= 0:
+            continue
+        if not w.get("is_minimized"):
+            score += 15
+        if w.get("is_active"):
+            score += 5
+        # Preserve front-to-back Z-order preference via fractional penalty
+        rank = score - (z_idx * 0.01)
+        if rank > best_score:
+            best_score = rank
+            best_win = w
+    return best_win
+
+
+def _is_window_occluded(target_hwnd: int, target_rect: tuple[int, int, int, int], windows: list[dict]) -> bool:
+    """Returns True if another visible window higher in Z-order meaningfully covers target_hwnd."""
+    tl, tt, tr, tb = target_rect
+    area = max(1, (tr - tl) * (tb - tt))
+    cx = (tl + tr) // 2
+    cy = (tt + tb) // 2
+
+    for w in windows:
+        if w["hwnd"] == target_hwnd:
+            break
+        if w.get("is_minimized"):
+            continue
+        wr = _get_extended_window_rect(w["hwnd"]) or w.get("rect")
+        if not wr:
+            continue
+        wl, wt, wr_x, wb = wr
+        if wl <= cx <= wr_x and wt <= cy <= wb:
+            return True
+        ix0, iy0 = max(tl, wl), max(tt, wt)
+        ix1, iy1 = min(tr, wr_x), min(tb, wb)
+        if ix1 > ix0 and iy1 > iy0:
+            overlap = (ix1 - ix0) * (iy1 - iy0)
+            if (overlap / area) >= 0.08:
+                return True
+    return False
+
+
+def _capture_window_printwindow(hwnd: int) -> Image.Image | None:
+    """Renders an occluded background window off-screen using PrintWindow (PW_RENDERFULLCONTENT)."""
+    if Image is None:
+        return None
+    try:
+        ol, ot, or_x, ob = win32gui.GetWindowRect(hwnd)
+    except Exception:
+        return None
+    rw, rh = or_x - ol, ob - ot
+    if rw <= 10 or rh <= 10:
+        return None
+
+    hwnd_dc = None
+    mfc_dc = None
+    save_dc = None
+    bitmap = None
+    try:
+        hwnd_dc = win32gui.GetWindowDC(hwnd)
+        mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+        save_dc = mfc_dc.CreateCompatibleDC()
+        bitmap = win32ui.CreateBitmap()
+        bitmap.CreateCompatibleBitmap(mfc_dc, rw, rh)
+        save_dc.SelectObject(bitmap)
+
+        PW_RENDERFULLCONTENT = 2
+        ok = ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), PW_RENDERFULLCONTENT)
+        if not ok:
+            return None
+
+        bmp_bits = bitmap.GetBitmapBits(True)
+        img = Image.frombuffer("RGB", (rw, rh), bmp_bits, "raw", "BGRX", 0, 1)
+
+        # Strip Windows 11 drop-shadow margins cleanly if extended bounds sit inside GetWindowRect
+        ext = _get_extended_window_rect(hwnd)
+        if ext:
+            cl = max(0, ext[0] - ol)
+            ct = max(0, ext[1] - ot)
+            cr = min(rw, ext[2] - ol)
+            cb = min(rh, ext[3] - ot)
+            if cr - cl > 10 and cb - ct > 10:
+                img = img.crop((cl, ct, cr, cb))
+
+        # Guard against completely black/blank frames (e.g. hardware-protected DRM surfaces)
+        extrema = img.getextrema()
+        if all(lo == 0 and hi == 0 for lo, hi in extrema):
+            return None
+        return img
+    except Exception:
+        return None
+    finally:
+        if bitmap is not None:
+            try:
+                win32gui.DeleteObject(bitmap.GetHandle())
+            except Exception:
+                pass
+        if save_dc is not None:
+            try:
+                save_dc.DeleteDC()
+            except Exception:
+                pass
+        if mfc_dc is not None:
+            try:
+                mfc_dc.DeleteDC()
+            except Exception:
+                pass
+        if hwnd_dc is not None:
+            try:
+                win32gui.ReleaseDC(hwnd, hwnd_dc)
+            except Exception:
+                pass
+
+
+def _hide_aiden_overlays_briefly() -> list[int]:
+    """Hides AIDEN's own visible overlays briefly so they never obscure captured pixels."""
+    hwnds = find_aiden_overlay_hwnds()
+    if not hwnds:
+        return []
+    SW_HIDE = 0
+    user32 = ctypes.windll.user32
+    for h in hwnds:
+        try:
+            user32.ShowWindowAsync(wintypes.HWND(h), SW_HIDE)
+        except Exception:
+            pass
+    time.sleep(0.045)
+    try:
+        ctypes.windll.dwmapi.DwmFlush()
+    except Exception:
+        pass
+    return hwnds
+
+
+def _restore_aiden_overlays(hwnds: list[int]) -> None:
+    """Restores AIDEN overlays without stealing keyboard/window focus."""
+    if not hwnds:
+        return
+    SW_SHOWNA = 8
+    user32 = ctypes.windll.user32
+    for h in hwnds:
+        try:
+            user32.ShowWindowAsync(wintypes.HWND(h), SW_SHOWNA)
+        except Exception:
+            pass
+
+
+def _encode_vision_image(img: Image.Image, detail: str, is_crop: bool) -> tuple[str, tuple[int, int], int]:
+    """Resizes proportionally and encodes to base64 JPEG matching our benchmarked quality/latency targets."""
+    work = img if img.mode == "RGB" else img.convert("RGB")
+    max_w = 1280 if detail == "low" else 1920
+    if work.width > max_w:
+        ratio = max_w / float(work.width)
+        new_h = max(1, int(round(work.height * ratio)))
+        work = work.resize((max_w, new_h), Image.Resampling.LANCZOS)
+
+    buf = io.BytesIO()
+    if detail == "low":
+        work.save(buf, format="JPEG", quality=80, optimize=True)
+    elif is_crop:
+        work.save(buf, format="JPEG", quality=85, subsampling=0, optimize=True)
+    else:
+        # Whole-screen high detail sweet spot: 1920px max wide, JPEG quality=82 (~109KB, ~10ms encode)
+        work.save(buf, format="JPEG", quality=82, optimize=True)
+
+    raw = buf.getvalue()
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}", work.size, len(raw)
+
+
+def look_at_screen(
+    scope: str = "whole_screen",
+    detail: str = "high",
+    window_name: str | None = None,
+    **_kwargs,
+):
+    """
+    Captures the user's display or a specific window cleanly in RAM and returns a
+    multimodal Responses API payload (`input_text` + `input_image`) for AIDEN to inspect.
+    """
+    if mss is None or Image is None:
+        return "Screen vision error: 'mss' or 'Pillow' dependency is missing."
+
+    norm_detail = "low" if str(detail or "").strip().lower() == "low" else "high"
+    win_query = (window_name or "").strip()
+    raw_scope = str(scope or "whole_screen").strip().lower()
+
+    if win_query and raw_scope in {"", "whole_screen", "active_screen", "screen", "full_screen"}:
+        norm_scope = "window"
+    elif raw_scope in {"active_window", "focused_window", "current_window"}:
+        norm_scope = "active_window"
+    elif raw_scope == "window":
+        norm_scope = "window" if win_query else "active_window"
+    else:
+        norm_scope = "whole_screen"
+
+    hidden_hwnds = _hide_aiden_overlays_briefly()
+    captured_img = None
+    capture_desc = ""
+    is_crop = norm_scope in {"active_window", "window"}
+
+    try:
+        windows = get_visible_desktop_windows()
+        active_win = next((w for w in windows if w.get("is_active")), None)
+
+        with mss.MSS() as sct:
+            vs = sct.monitors[0]
+
+            if norm_scope == "whole_screen":
+                mon = _find_monitor_for_hwnd(sct, active_win["hwnd"] if active_win else None)
+                raw = sct.grab(mon)
+                captured_img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+                active_label = (
+                    f"{active_win['app'].removesuffix('.exe')}: {active_win['title']}"
+                    if active_win
+                    else "Desktop"
+                )
+                capture_desc = (
+                    f"Captured whole monitor ({mon['width']}x{mon['height']}, active focus: {active_label})."
+                )
+            else:
+                if norm_scope == "active_window":
+                    target = active_win
+                    if not target:
+                        return "No visible non-minimized active window was found on the desktop."
+                else:
+                    target = _match_window_by_name(windows, win_query)
+                    if not target:
+                        available = [
+                            f"{w['app'].removesuffix('.exe')}: {w['title']}"
+                            for w in windows[:8]
+                            if not ("python" in w["app"] and not w["is_active"])
+                        ]
+                        avail_str = "; ".join(available) if available else "none"
+                        return (
+                            f"Could not find an open window matching '{win_query}'. "
+                            f"Currently open windows: {avail_str}."
+                        )
+
+                if target.get("is_minimized") or win32gui.IsIconic(target["hwnd"]):
+                    return (
+                        f"The window '{target['title']}' ({target['app']}) is currently minimized to the taskbar "
+                        f"and cannot be visually captured while minimized. Ask the user if they'd like to restore/bring it up or capture whole_screen."
+                    )
+
+                rect = _get_extended_window_rect(target["hwnd"]) or target.get("rect")
+                if not rect:
+                    return f"Could not determine screen coordinates for '{target['title']}'."
+
+                occluded = _is_window_occluded(target["hwnd"], rect, windows)
+                used_printwindow = False
+                if occluded:
+                    captured_img = _capture_window_printwindow(target["hwnd"])
+                    used_printwindow = captured_img is not None
+
+                if captured_img is None:
+                    left = max(vs["left"], rect[0])
+                    top = max(vs["top"], rect[1])
+                    right = min(vs["left"] + vs["width"], rect[2])
+                    bottom = min(vs["top"] + vs["height"], rect[3])
+                    cw, ch = right - left, bottom - top
+                    if cw <= 10 or ch <= 10:
+                        return f"Target window '{target['title']}' is outside visible screen bounds."
+                    crop_box = {"left": left, "top": top, "width": cw, "height": ch}
+                    raw = sct.grab(crop_box)
+                    captured_img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+                method = "offscreen window render" if used_printwindow else "direct window crop"
+                overlap_note = " (partially overlapped on desktop)" if (occluded and not used_printwindow) else ""
+                capture_desc = (
+                    f"Captured window '{target['title']}' ({target['app'].removesuffix('.exe')}) via {method}{overlap_note}."
+                )
+    except Exception as e:
+        err_msg = str(e)
+        if "BitBlt" in err_msg or "ScreenShotError" in type(e).__name__:
+            return (
+                "Screen capture is currently unavailable because Windows blocked desktop capture "
+                "(e.g. lock screen, UAC prompt, or asleep display)."
+            )
+        return f"Error capturing screen: {err_msg}"
+    finally:
+        _restore_aiden_overlays(hidden_hwnds)
+
+    if captured_img is None:
+        return "Screen capture returned an empty frame."
+
+    data_url, out_dims, raw_bytes = _encode_vision_image(captured_img, norm_detail, is_crop)
+    size_kb = round(raw_bytes / 1024.0, 1)
+    print(f"   👁️ [VISION] {capture_desc} -> {out_dims[0]}x{out_dims[1]} ({size_kb} KB, detail={norm_detail})")
+
+    return [
+        {
+            "type": "input_text",
+            "text": f"{capture_desc} Encoded frame: {out_dims[0]}x{out_dims[1]} JPEG ({size_kb} KB, detail={norm_detail}).",
+        },
+        {
+            "type": "input_image",
+            "image_url": data_url,
+            "detail": norm_detail,
+        },
+    ]
 
 
 def close_application(**kwargs):
@@ -955,6 +1344,7 @@ def grounded_web_search(query: str, search_context: str = "low") -> str:
 # ---------------------------------------------------------
 
 SYSTEM_TOOLS = {
+    "look_at_screen": look_at_screen,
     "grounded_web_search": grounded_web_search,
     "get_live_location": get_live_location,
     "manage_system_power": manage_system_power,

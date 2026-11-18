@@ -103,6 +103,34 @@ CORE_TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "look_at_screen",
+            "description": "Takes a visual screenshot of the user's screen or a specific window so you can see and analyze UI, code, errors, images, or layout. Temporarily hides AIDEN's overlay cleanly before capture. Check FOCUS and OPEN_WINDOWS in [CURRENT CONSCIOUSNESS STATE] first so you can target a window directly without calling get_active_windows.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": ["whole_screen", "active_window", "window"],
+                        "description": "'whole_screen' for the entire active monitor, 'active_window' to crop tightly to the currently focused window, or 'window' to crop a specific window named in window_name.",
+                    },
+                    "window_name": {
+                        "type": "string",
+                        "description": "Required only when scope is 'window': app or title substring from FOCUS or OPEN_WINDOWS (e.g., 'chrome', 'code', 'PowerShell', 'Spotify').",
+                    },
+                    "detail": {
+                        "type": "string",
+                        "enum": ["low", "high"],
+                        "description": "'high' (default) when reading text, code, errors, or UI details; 'low' for fast coarse overview without small text.",
+                    },
+                },
+                "required": ["scope", "detail"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_system_volume",
             "description": "Adjusts master system volume as an absolute percentage (0-100) or relative offset (+10, -10).",
             "parameters": {

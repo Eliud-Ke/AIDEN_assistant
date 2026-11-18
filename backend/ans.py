@@ -127,6 +127,32 @@ def _is_aiden_window(title_lower: str, app_name: str) -> bool:
     return False
 
 
+def find_aiden_overlay_hwnds() -> list[int]:
+    """Returns currently visible window handles belonging to AIDEN's own UI."""
+    hwnds: list[int] = []
+
+    def _cb(hwnd, _ctx):
+        if not win32gui.IsWindowVisible(hwnd):
+            return
+        title = win32gui.GetWindowText(hwnd)
+        if not title:
+            return
+        title_lower = title.lower().strip()
+        try:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            app_name = psutil.Process(pid).name().lower()
+        except Exception:
+            app_name = ""
+        if _is_aiden_window(title_lower, app_name):
+            hwnds.append(hwnd)
+
+    try:
+        win32gui.EnumWindows(_cb, None)
+    except Exception:
+        pass
+    return hwnds
+
+
 def _truncate(text: str, max_len: int = 55) -> str:
     cleaned = " ".join((text or "").split())
     if len(cleaned) <= max_len:
@@ -175,6 +201,8 @@ def get_visible_desktop_windows() -> list[dict]:
             "hwnd": hwnd,
             "title": title,
             "app": app_name,
+            "rect": rect,
+            "is_minimized": bool(win32gui.IsIconic(hwnd)),
             "is_active": False,
         })
 
@@ -183,17 +211,17 @@ def get_visible_desktop_windows() -> list[dict]:
     if not visible_windows:
         return []
 
-    # Prefer actual OS foreground window if it survived filtering; otherwise
-    # fall back to topmost non-Python/non-AIDEN window in Z-order behind the overlay.
+    # Prefer actual OS foreground non-minimized window if it survived filtering; otherwise
+    # fall back to topmost non-minimized, non-Python/non-AIDEN window in Z-order behind the overlay.
     true_focus_index = None
     for idx, win in enumerate(visible_windows):
-        if win["hwnd"] == raw_active_hwnd and "python" not in win["app"]:
+        if win["hwnd"] == raw_active_hwnd and not win["is_minimized"] and "python" not in win["app"]:
             true_focus_index = idx
             break
 
     if true_focus_index is None:
         for idx, win in enumerate(visible_windows):
-            if "python" not in win["app"]:
+            if not win["is_minimized"] and "python" not in win["app"]:
                 true_focus_index = idx
                 break
 
@@ -285,6 +313,7 @@ class AutonomicNervousSystem:
             "time_str": now_str,
             "vitals_str": "CPU --% | RAM --%",
             "focus_str": "Desktop (0 open)",
+            "open_windows_str": "",
             "media_str": "",
             "notifs_str": "",
             "current_mood": "Sassy, sharp, and witty.",
@@ -398,7 +427,7 @@ class AutonomicNervousSystem:
             vitals_parts.append(vol_str)
         vitals_str = " | ".join(vitals_parts)
 
-        # FOCUS (excludes AIDEN overlays + desktop docks)
+        # FOCUS & OTHER OPEN WINDOWS (excludes AIDEN overlays + desktop docks)
         windows = get_visible_desktop_windows()
         active_win = next((w for w in windows if w["is_active"]), None)
         if active_win:
@@ -409,6 +438,22 @@ class AutonomicNervousSystem:
         else:
             focus_str = "Desktop (0 open)"
             active_title_full = ""
+
+        bg_entries = []
+        bg_candidates = [
+            w for w in windows
+            if not w["is_active"] and "python" not in w["app"]
+        ]
+        # List visible (non-minimized) background windows first, then minimized ones concisely
+        bg_ordered = sorted(bg_candidates, key=lambda w: w.get("is_minimized", False))
+        for w in bg_ordered[:7]:
+            w_app = w["app"].removesuffix(".exe")
+            w_title = _truncate(w["title"], 38)
+            tag = " [min]" if w.get("is_minimized") else ""
+            bg_entries.append(f"{w_app}: {w_title}{tag}")
+        if len(bg_ordered) > 7:
+            bg_entries.append(f"(+{len(bg_ordered) - 7} more)")
+        open_windows_str = " | ".join(bg_entries)
 
         # MEDIA & NOTIFICATIONS (poll WinRT every 2nd tick = ~10s, plus immediate startup tick)
         if self._tick_count % 2 == 0:
@@ -448,6 +493,7 @@ class AutonomicNervousSystem:
             self.state["time_str"] = time_str
             self.state["vitals_str"] = vitals_str
             self.state["focus_str"] = focus_str
+            self.state["open_windows_str"] = open_windows_str
             self.state["media_str"] = self._cached_media_line
             self.state["notifs_str"] = self._cached_notifs_line
             self.state["current_mood"] = mood
@@ -462,6 +508,8 @@ class AutonomicNervousSystem:
                 f"VITALS: {self.state['vitals_str']}",
                 f"FOCUS: {self.state['focus_str']}",
             ]
+            if self.state.get("open_windows_str"):
+                lines.append(f"OPEN_WINDOWS: {self.state['open_windows_str']}")
             if self.state.get("media_str"):
                 lines.append(f"MEDIA: {self.state['media_str']}")
             if self.state.get("notifs_str"):

@@ -92,7 +92,8 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
 
 # ⚡ THE STATUS DICTIONARY (Minimalist Text Only)
 TOOL_STATUS_MAP = {
-    # System Hardware & Settings
+    # System Hardware & Settings & Vision
+    "look_at_screen": "Looking at your screen",
     "get_active_windows": "Scanning active windows",
     "set_system_brightness": "Adjusting screen brightness",
     "manage_system_power": "Applying power settings",
@@ -242,15 +243,65 @@ def execute_and_intercept(tc_id, func_name, arguments_str):
     except Exception as e:
         result = f"Error executing tool: {str(e)}"
 
-    tool_result = str(result)
-    print(
-        f"   📥 [RESULT]: Data received from {func_name} (Length: {len(tool_result)} chars)")
+    if isinstance(result, list):
+        tool_result = result
+        img_kb = sum(
+            round(len(str(item.get("image_url", ""))) * 0.75 / 1024, 1)
+            for item in result
+            if isinstance(item, dict) and item.get("type") == "input_image"
+        )
+        print(
+            f"   📥 [RESULT]: Multimodal output from {func_name} ({len(result)} items, ~{img_kb} KB image)"
+        )
+    else:
+        tool_result = str(result)
+        print(
+            f"   📥 [RESULT]: Data received from {func_name} (Length: {len(tool_result)} chars)"
+        )
     return {
         "type": "function_call_output",
         "call_id": tc_id,
         "output": tool_result,
         "_tool_name": func_name,
     }
+
+
+def _sanitize_for_token_audit(obj):
+    """Strips heavy Base64 data URLs before approximate JSON char token logging."""
+    if isinstance(obj, dict):
+        if obj.get("type") == "input_image":
+            return {"type": "input_image", "detail": obj.get("detail", "auto")}
+        return {k: _sanitize_for_token_audit(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_token_audit(x) for x in obj]
+    return obj
+
+
+def _strip_images_from_tool_output(raw_out):
+    """Replaces Base64 screenshot payloads with compact text notes before storing in working_memory."""
+    if isinstance(raw_out, list):
+        text_notes = [
+            str(item.get("text", "")).strip()
+            for item in raw_out
+            if isinstance(item, dict) and item.get("type") == "input_text" and item.get("text")
+        ]
+        summary_prefix = " ".join(text_notes).strip()
+        if summary_prefix:
+            return (
+                f"{summary_prefix} "
+                "[IMAGE DELETED FROM SHORT-TERM MEMORY TO SAVE TOKENS — call look_at_screen again if fresh visual inspection is needed]"
+            )
+        return "[IMAGE DELETED FROM SHORT-TERM MEMORY TO SAVE TOKENS]"
+
+    content_str = str(raw_out)
+    if "[IMAGE_PAYLOAD_START]" in content_str:
+        return re.sub(
+            r"\[IMAGE_PAYLOAD_START\].*?\[IMAGE_PAYLOAD_END\]",
+            "[IMAGE DELETED FROM SHORT-TERM MEMORY TO SAVE TOKENS]",
+            content_str,
+            flags=re.DOTALL,
+        )
+    return content_str
 
 
 # ---------------------------------------------------------
@@ -557,7 +608,7 @@ async def main_loop():
 
                     # 📊 --- LIVE TOKENIZER AUDIT --- 📊
                     try:
-                        msg_chars = len(json.dumps(active_input))
+                        msg_chars = len(json.dumps(_sanitize_for_token_audit(active_input)))
                         active_tools_list = api_kwargs.get("tools", [])
                         tool_chars = len(json.dumps(active_tools_list)) if active_tools_list else 0
                         msg_tokens = msg_chars // 4
@@ -775,16 +826,7 @@ async def main_loop():
                         for msg in new_turn_messages:
                             if msg.get("type") == "function_call_output":
                                 msg.pop("_tool_name", None)
-                                content_str = str(msg.get("output", ""))
-
-                                # 🧹 SCREENSHOT WIPE: Delete Base64 images from short-term memory immediately!
-                                if "[IMAGE_PAYLOAD_START]" in content_str:
-                                    msg["output"] = re.sub(
-                                        r"\[IMAGE_PAYLOAD_START\].*?\[IMAGE_PAYLOAD_END\]",
-                                        "[IMAGE DELETED FROM SHORT-TERM MEMORY TO SAVE TOKENS]",
-                                        content_str,
-                                        flags=re.DOTALL
-                                    )
+                                msg["output"] = _strip_images_from_tool_output(msg.get("output", ""))
 
                             working_memory.append(msg)
 
