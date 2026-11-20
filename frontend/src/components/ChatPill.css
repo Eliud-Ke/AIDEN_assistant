@@ -5679,6 +5679,69 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
 }
 
+.siri-unified-pill.is-pip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  box-shadow: inset 0 0 14px rgba(132, 186, 255, 0.30);
+  transition: opacity 0.35s ease;
+}
+
+.siri-unified-pill.is-pip.pip-paused::before {
+  opacity: 0.62;
+}
+
+.siri-unified-pill.light-mode.is-pip.pip-paused::before {
+  box-shadow: inset 0 0 12px rgba(45, 95, 210, 0.22);
+}
+
+@keyframes aidenPipStreamingRim {
+  0%, 100% {
+    box-shadow: inset 0 0 12px rgba(154, 130, 255, 0.30);
+  }
+  50% {
+    box-shadow: inset 0 0 20px rgba(122, 188, 255, 0.58);
+  }
+}
+
+.siri-unified-pill.is-pip.pip-streaming::before {
+  opacity: 1;
+  animation: aidenPipStreamingRim 1.4s ease-in-out infinite;
+}
+
+.siri-unified-pill.is-pip.pip-rim-green::before {
+  opacity: 1;
+  box-shadow: inset 0 0 15px rgba(52, 211, 153, 0.45);
+}
+
+.siri-unified-pill.is-pip.pip-rim-red::before {
+  opacity: 1;
+  box-shadow: inset 0 0 14px rgba(248, 113, 113, 0.42);
+}
+
+.siri-unified-pill.is-pip.pip-rim-amber::before {
+  opacity: 1;
+  box-shadow: inset 0 0 14px rgba(251, 191, 36, 0.34);
+}
+
+@keyframes aidenPipMusicRim {
+  0%, 100% {
+    box-shadow: inset 0 0 14px rgba(30, 215, 96, 0.30);
+  }
+  45% {
+    box-shadow: inset 0 0 20px rgba(52, 211, 153, 0.54);
+  }
+}
+
+.siri-unified-pill.is-pip.pip-rim-music::before {
+  opacity: 1;
+  animation: aidenPipMusicRim 1.07s ease-in-out infinite;
+}
+
 .siri-unified-pill.is-pip::after {
   content: "";
   position: absolute;
@@ -5799,57 +5862,80 @@
 }
 
 .siri-pip-eyes {
-  --gx: 0px;
-  --gy: 0px;
-  --gaze-ms: 120ms;
-  --gaze-ease: cubic-bezier(0.22, 1, 0.36, 1);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 11px;
-  transform: translate3d(var(--gx), var(--gy), 0);
-  transition: transform var(--gaze-ms) var(--gaze-ease);
-  will-change: transform;
+  transform-origin: center center;
+  will-change: transform, opacity;
   pointer-events: none;
 }
 
 .siri-pip-eye-slot {
-  --dx: 0px;
-  --dy: 0px;
-  --dsx: 1;
-  --dsy: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: translate3d(var(--dx), var(--dy), 0) scale(var(--dsx), var(--dsy));
+  transform-origin: center center;
   will-change: transform;
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.30))
+    drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+  transition: filter 0.22s ease;
 }
 
-.siri-pip-eye {
+.siri-unified-pill.is-pip:hover .siri-pip-eye-slot {
+  filter:
+    drop-shadow(0 0 7px rgba(255, 255, 255, 0.50))
+    drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+}
+
+.siri-unified-pill.light-mode .siri-pip-eye-slot {
+  filter: drop-shadow(0 1px 2.5px rgba(0, 0, 0, 0.16));
+}
+
+.siri-unified-pill.light-mode.is-pip:hover .siri-pip-eye-slot {
+  filter: drop-shadow(0 0 5px rgba(16, 18, 24, 0.28));
+}
+
+.siri-pip-eye-pill {
   width: 7px;
   height: 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.95);
-  opacity: var(--eye-op, 1);
-  box-shadow:
-    0 0 10px rgba(255, 255, 255, 0.28),
-    0 1px 2px rgba(0, 0, 0, 0.35);
-  transform-origin: center center;
-  will-change: transform, opacity;
-  transition: opacity 0.15s ease, background 0.25s ease, box-shadow 0.25s ease;
+  overflow: hidden;
+  display: block;
+  transform: translateZ(0);
 }
 
-.siri-unified-pill.is-pip:hover .siri-pip-eye {
-  box-shadow:
-    0 0 13px rgba(255, 255, 255, 0.44),
-    0 1px 2px rgba(0, 0, 0, 0.35);
+.siri-pip-eye-svg {
+  display: block;
+  width: 7px;
+  height: 12px;
+  color: rgba(255, 255, 255, 0.95);
+  transition: color 0.25s ease;
 }
 
-.siri-unified-pill.light-mode .siri-pip-eye {
-  background: rgba(16, 18, 24, 0.90);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+.siri-unified-pill.light-mode .siri-pip-eye-svg {
+  color: rgba(16, 18, 24, 0.90);
 }
 
-.siri-unified-pill.light-mode.is-pip:hover .siri-pip-eye {
-  box-shadow: 0 0 10px rgba(16, 18, 24, 0.28);
+.siri-pip-sparkle {
+  position: absolute;
+  top: 7px;
+  right: 9px;
+  font-size: 9px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.88);
+  opacity: 0;
+  transform: scale(0.5) translateY(3px);
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.siri-unified-pill.light-mode .siri-pip-sparkle {
+  color: rgba(45, 95, 210, 0.88);
+}
+
+.siri-pip-content.show-sparkle .siri-pip-sparkle {
+  opacity: 0.92;
+  transform: scale(1) translateY(0);
 }

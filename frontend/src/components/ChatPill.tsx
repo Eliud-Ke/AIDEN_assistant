@@ -111,6 +111,7 @@ interface ChatPillProps {
   onHardwareChange?: (action: "volume" | "brightness", level?: number, muted?: boolean) => void;
   onSpotifyPlay?: (spotifyId: string, itemType: "track" | "album" | "artist" | "playlist") => void;
   onHeightChange?: (targetH: number, durationMs?: number) => void;
+  isBackendOnline?: boolean;
   pipPhase?: PipPhase;
   onMinimizeToPip?: (restoreH: number) => void;
   onMaximizeFromPip?: () => void;
@@ -963,6 +964,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onHardwareChange,
   onSpotifyPlay,
   onHeightChange,
+  isBackendOnline = true,
   pipPhase = "max",
   onMinimizeToPip,
   onMaximizeFromPip,
@@ -1088,6 +1090,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isPipDragging, setIsPipDragging] = useState(false);
   const [isPipDimmed, setIsPipDimmed] = useState(false);
+  const [pipRimTone, setPipRimTone] = useState<"none" | "green" | "red" | "amber" | "music">("none");
 
   const handleDragVisualChange = useCallback((dragging: boolean, dimmed: boolean) => {
     setIsPipDragging((prev) => (prev !== dragging ? dragging : prev));
@@ -1098,6 +1101,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     if (pipPhase === "max") {
       setIsPipDragging(false);
       setIsPipDimmed(false);
+      setPipRimTone("none");
     }
   }, [pipPhase]);
   const followupInputRef = useRef<HTMLTextAreaElement>(null);
@@ -1128,34 +1132,46 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isLensBlurActive, setIsLensBlurActive] = useState(false);
 
   // Dynamic Island wake/hide choreography phase for inner content stagger
-  const wasAwakeForBloomRef = useRef<boolean>(isAwake);
+  const prevBloomStateRef = useRef<{ isAwake: boolean; isBackendOnline: boolean }>({
+    isAwake,
+    isBackendOnline,
+  });
   const wakePhaseTimerRef = useRef<number | null>(null);
   const [wakePhase, setWakePhase] = useState<"idle" | "waking" | "hiding">("idle");
 
   useEffect(() => {
-    const prev = wasAwakeForBloomRef.current;
-    wasAwakeForBloomRef.current = isAwake;
-    if (prev === isAwake) return;
+    const prev = prevBloomStateRef.current;
+    prevBloomStateRef.current = { isAwake, isBackendOnline };
+    if (prev.isAwake === isAwake && prev.isBackendOnline === isBackendOnline) return;
 
     if (wakePhaseTimerRef.current !== null) {
       window.clearTimeout(wakePhaseTimerRef.current);
       wakePhaseTimerRef.current = null;
     }
 
-    if (isAwake) {
+    if (!isBackendOnline) {
+      if (prev.isBackendOnline || prev.isAwake) {
+        setWakePhase("hiding");
+        wakePhaseTimerRef.current = window.setTimeout(() => {
+          setWakePhase("idle");
+          wakePhaseTimerRef.current = null;
+        }, 280);
+      } else {
+        setWakePhase("idle");
+      }
+      return;
+    }
+
+    if (!prev.isAwake && isAwake) {
       setWakePhase("waking");
       wakePhaseTimerRef.current = window.setTimeout(() => {
         setWakePhase("idle");
         wakePhaseTimerRef.current = null;
       }, 360);
     } else {
-      setWakePhase("hiding");
-      wakePhaseTimerRef.current = window.setTimeout(() => {
-        setWakePhase("idle");
-        wakePhaseTimerRef.current = null;
-      }, 280);
+      setWakePhase("idle");
     }
-  }, [isAwake]);
+  }, [isAwake, isBackendOnline]);
 
   useEffect(() => {
     return () => {
@@ -1361,6 +1377,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isAwake, pillMode]);
 
+  const triggerMinimizeToPipRef = useRef<() => void>(() => {});
+
   const sleepUi = useCallback(() => {
     setIsHovered(false);
     setIsInputFocused(false);
@@ -1371,9 +1389,21 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isAwake, onToggleSleep]);
 
-  // Global key listener: Space to exit voice in responding mode, Escape to sleep UI
+  // Global key listener: Ctrl+M to minimize responding mode, Space to exit voice, Escape to sleep
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.key.toLowerCase() === "m" || e.code === "KeyM")
+      ) {
+        if (pillMode === "responding" && isAwake && pipPhase === "max") {
+          e.preventDefault();
+          triggerMinimizeToPipRef.current();
+          return;
+        }
+      }
       if (e.key === " " || e.code === "Space") {
         if (pillMode === "responding" && voiceActive) {
           e.preventDefault();
@@ -1392,7 +1422,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [voiceActive, pillMode, sleepUi]);
+  }, [voiceActive, pillMode, isAwake, pipPhase, sleepUi]);
 
   // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
@@ -1744,6 +1774,37 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bnotion\b/gi, "Notion");
   };
 
+  const triggerMinimizeToPip = useCallback(() => {
+    if (!onMinimizeToPip || !isAwake || pillMode !== "responding") return;
+    if (pipPhase === "pip" || pipPhase === "to-pip") return;
+    const stillControls = isInputFocused || inputText.length > 0;
+    const fallbackH = lastReportedHRef.current || 280;
+    const restoreH = isMultiTurnMode
+      ? 620
+      : Math.min(
+          620,
+          Math.max(
+            stillControls ? 180 : 128,
+            stillControls || !isControlsVisible ? fallbackH : fallbackH - 90
+          )
+        );
+    setIsHovered(false);
+    setIsInputFocused(false);
+    followupInputRef.current?.blur();
+    onMinimizeToPip(restoreH);
+  }, [
+    onMinimizeToPip,
+    isAwake,
+    pillMode,
+    pipPhase,
+    isInputFocused,
+    inputText.length,
+    isMultiTurnMode,
+    isControlsVisible,
+  ]);
+
+  triggerMinimizeToPipRef.current = triggerMinimizeToPip;
+
   return (
     <div className="chat-pill-anchor">
       {/* Colourless Clear Glass Button-Lens Filter:
@@ -1826,7 +1887,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       </svg>
       <div
         ref={contentRef}
-        className={`chat-pill-wrapper ${isAwake ? "awake" : ""} ${
+        className={`chat-pill-wrapper ${isBackendOnline && (isAwake || pipPhase !== "max") ? "awake" : ""} ${
           wakePhase === "waking" ? "waking-bloom" : wakePhase === "hiding" ? "hiding-bloom" : ""
         }`}
       >
@@ -1853,7 +1914,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             pipPhase === "to-pip" ? "is-morphing-to-pip" : ""
           } ${pipPhase === "to-max" ? "is-morphing-to-max" : ""} ${
             pipPhase === "pip" && isPipDragging ? "is-dragging" : ""
-          } ${pipPhase === "pip" && isPipDimmed ? "is-dimmed" : ""}`}
+          } ${pipPhase === "pip" && isPipDimmed ? "is-dimmed" : ""} ${
+            pipPhase === "pip" && isAwake ? "pip-paused" : ""
+          } ${pipPhase === "pip" && isStreaming ? "pip-streaming" : ""} ${
+            pipPhase === "pip" && pipRimTone === "green"
+              ? "pip-rim-green"
+              : pipPhase === "pip" && pipRimTone === "red"
+              ? "pip-rim-red"
+              : pipPhase === "pip" && pipRimTone === "amber"
+              ? "pip-rim-amber"
+              : pipPhase === "pip" && pipRimTone === "music"
+              ? "pip-rim-music"
+              : ""
+          }`}
           onTransitionRun={(e) => {
             if (!showReplyWindow || voiceActive || pipPhase !== "max") return;
             const target = e.target as HTMLElement | null;
@@ -1884,8 +1957,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           {pipPhase !== "max" && onMaximizeFromPip && (
             <PipSquareEyes
               active={pipPhase === "pip"}
+              isAwake={isAwake}
+              isStreaming={isStreaming}
+              isDarkMode={isDarkMode}
               onMaximize={onMaximizeFromPip}
               onDragVisualChange={handleDragVisualChange}
+              onRimToneChange={setPipRimTone}
             />
           )}
           {/* 1. IDLE / INPUT STATE */}
@@ -2069,24 +2146,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 className="siri-floating-close-btn"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!onMinimizeToPip) return;
-                  const stillControls = isInputFocused || inputText.length > 0;
-                  const fallbackH = lastReportedHRef.current || 280;
-                  const restoreH = isMultiTurnMode
-                    ? 620
-                    : Math.min(
-                        620,
-                        Math.max(
-                          stillControls ? 180 : 128,
-                          stillControls || !isControlsVisible ? fallbackH : fallbackH - 90
-                        )
-                      );
-                  setIsHovered(false);
-                  setIsInputFocused(false);
-                  followupInputRef.current?.blur();
-                  onMinimizeToPip(restoreH);
+                  triggerMinimizeToPip();
                 }}
-                title="Minimize"
+                title="Minimize (Ctrl+M)"
                 aria-label="Minimize"
                 tabIndex={isControlsVisible ? 0 : -1}
               >
@@ -2600,6 +2662,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
 interface ChatPillSyncPayload {
   isAwake?: boolean | null;
+  backendOnline?: boolean | null;
   isDarkMode?: boolean | null;
   reply?: string | null;
   expanded?: boolean | null;
@@ -2609,7 +2672,16 @@ interface ChatPillSyncPayload {
  * Standalone Window Container for the Siri-Style AI Pill ("chat_pill" window)
  */
 export const ChatPillWindow: React.FC = () => {
+  const [isBackendOnline, setIsBackendOnline] = useState(false);
   const [isAwake, setIsAwake] = useState(false);
+  const offlineGraceTimerRef = useRef<number | null>(null);
+
+  const clearOfflineGraceTimer = useCallback(() => {
+    if (offlineGraceTimerRef.current !== null) {
+      window.clearTimeout(offlineGraceTimerRef.current);
+      offlineGraceTimerRef.current = null;
+    }
+  }, []);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [followupThinkingPrompt, setFollowupThinkingPrompt] = useState<string | null>(null);
@@ -2762,7 +2834,7 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  const resetReplyState = () => {
+  const resetReplyState = (skipSocket = false) => {
     stopStreamRaf();
     setIsVoiceActive(false);
     setIsExitingVoice(false);
@@ -2794,7 +2866,7 @@ export const ChatPillWindow: React.FC = () => {
     streamEndedRef.current = false;
     lastLineEmittedTimeRef.current = 0;
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (!skipSocket && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "clear_response" }));
     }
   };
@@ -2866,45 +2938,131 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  // Manage sleep exit animation & native Dynamic Island wake/hide timing
+  const wasBackendOnlineRef = useRef<boolean>(false);
+  const wasAwakeRef = useRef<boolean>(false);
+
   useEffect(() => {
-    clearPipTimer();
-    pipPhaseRef.current = "max";
-    setPipPhase("max");
-
-    if (isAwake) {
-      hasOpenedOnceRef.current = true;
-      if (hideTimerRef.current !== null) {
-        window.clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = null;
-      }
-      resetReplyState();
-      lastSyncWidthRef.current = 466;
-      lastSyncHeightRef.current = 60;
-      idleTargetHeightRef.current = 60;
-      invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
-    } else if (hasOpenedOnceRef.current) {
-      // Pass cursor events through immediately and collapse inward via WindowMorpher (230ms)
-      invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
-
-      // Defer clearing reply state & safety hide fallback until after the 230ms collapse finishes
-      hideTimerRef.current = window.setTimeout(() => {
-        resetReplyState();
-        lastSyncWidthRef.current = 466;
-        lastSyncHeightRef.current = 60;
-        idleTargetHeightRef.current = 60;
-        invoke("hide_chat_pill").catch(() => {});
-        hideTimerRef.current = null;
-      }, 280);
-    }
-
     return () => {
       clearPipTimer();
       if (hideTimerRef.current !== null) {
         window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
       }
+      clearOfflineGraceTimer();
     };
-  }, [isAwake]);
+  }, [clearOfflineGraceTimer]);
+
+  // Manage Living Square / Pill lifecycle transitions:
+  //   - Offline: fade & hide HWND
+  //   - Online & Awake: spring from square (or hidden fallback) to compact pill
+  //   - Online & Asleep: morph/persist as 68x68 living square
+  useEffect(() => {
+    const prevOnline = wasBackendOnlineRef.current;
+    const prevAwake = wasAwakeRef.current;
+    wasBackendOnlineRef.current = isBackendOnline;
+    wasAwakeRef.current = isAwake;
+
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+
+    if (!isBackendOnline) {
+      clearPipTimer();
+      if (prevOnline || prevAwake || hasOpenedOnceRef.current) {
+        if (prevAwake && pipPhaseRef.current !== "pip") {
+          invoke("set_chat_pill_state", { isAwake: false }).catch(() => {});
+        }
+        hideTimerRef.current = window.setTimeout(() => {
+          resetReplyState(true);
+          lastSyncWidthRef.current = 466;
+          lastSyncHeightRef.current = 60;
+          idleTargetHeightRef.current = 60;
+          pipPhaseRef.current = "max";
+          setPipPhase("max");
+          invoke("hide_chat_pill").catch(() => {});
+          hideTimerRef.current = null;
+        }, 280);
+      }
+      return;
+    }
+
+    if (isAwake) {
+      if (!prevAwake || !prevOnline) {
+        clearPipTimer();
+        hasOpenedOnceRef.current = true;
+        resetReplyState(true);
+        lastSyncWidthRef.current = 466;
+        lastSyncHeightRef.current = 60;
+        idleTargetHeightRef.current = 60;
+
+        if (pipPhaseRef.current === "pip" || pipPhaseRef.current === "to-pip") {
+          pipPhaseRef.current = "to-max";
+          setPipPhase("to-max");
+          invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
+          pipPhaseTimerRef.current = window.setTimeout(() => {
+            pipPhaseTimerRef.current = null;
+            pipPhaseRef.current = "max";
+            setPipPhase("max");
+          }, 320);
+        } else {
+          pipPhaseRef.current = "max";
+          setPipPhase("max");
+          invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    // isBackendOnline && !isAwake -> Living Asleep Square (68x68)
+    if (!prevOnline) {
+      clearPipTimer();
+      resetReplyState(true);
+      lastSyncWidthRef.current = 466;
+      lastSyncHeightRef.current = 60;
+      idleTargetHeightRef.current = 60;
+      pipPhaseRef.current = "pip";
+      setPipPhase("pip");
+      invoke("enter_asleep_square", { size: 68 }).catch(() => {});
+    } else if (prevAwake) {
+      if (pipPhaseRef.current === "pip") {
+        // Already sitting as Paused Chat Square: keep eyes/position uninterrupted and clear chat
+        resetReplyState(false);
+        lastSyncWidthRef.current = 466;
+        lastSyncHeightRef.current = 60;
+        idleTargetHeightRef.current = 60;
+        invoke("enter_asleep_square", { size: 68 }).catch(() => {});
+      } else if (pipPhaseRef.current === "to-pip") {
+        // Mid-minimize morph to square: keep minimize animation intact, clear chat once landed
+        invoke("enter_asleep_square", { size: 68 }).catch(() => {});
+        hideTimerRef.current = window.setTimeout(() => {
+          resetReplyState(false);
+          lastSyncWidthRef.current = 466;
+          lastSyncHeightRef.current = 60;
+          idleTargetHeightRef.current = 60;
+          hideTimerRef.current = null;
+        }, 310);
+      } else {
+        // Morph down from Compact Pill or Extended Chat into 68x68 Asleep Square
+        clearPipTimer();
+        pipPhaseRef.current = "to-pip";
+        setPipPhase("to-pip");
+        invoke("enter_asleep_square", { size: 68 }).catch(() => {});
+        pipPhaseTimerRef.current = window.setTimeout(() => {
+          pipPhaseTimerRef.current = null;
+          pipPhaseRef.current = "pip";
+          setPipPhase("pip");
+        }, 310);
+        hideTimerRef.current = window.setTimeout(() => {
+          resetReplyState(false);
+          lastSyncWidthRef.current = 466;
+          lastSyncHeightRef.current = 60;
+          idleTargetHeightRef.current = 60;
+          hideTimerRef.current = null;
+        }, 310);
+      }
+    }
+  }, [isBackendOnline, isAwake]);
 
   const handleMinimizeToPip = useCallback(
     (restoreH: number) => {
@@ -2942,6 +3100,17 @@ export const ChatPillWindow: React.FC = () => {
       setPipPhase("max");
     }, 340);
   }, [isAwake]);
+
+  const handleSquareActivate = useCallback(() => {
+    if (!isAwake) {
+      setIsAwake(true);
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "wake" }));
+      }
+      return;
+    }
+    handleMaximizeFromPip();
+  }, [isAwake, handleMaximizeFromPip]);
 
   const morphTo = useCallback(
     (targetWidth: number, targetHeight: number, durationMs = 280) => {
@@ -3005,7 +3174,15 @@ export const ChatPillWindow: React.FC = () => {
       try {
         unlistenSync = await listen<ChatPillSyncPayload>("chat-pill-sync", (event) => {
           const payload = event.payload;
+          if (typeof payload.backendOnline === "boolean") {
+            clearOfflineGraceTimer();
+            setIsBackendOnline(payload.backendOnline);
+          }
           if (typeof payload.isAwake === "boolean") {
+            if (payload.isAwake) {
+              clearOfflineGraceTimer();
+              setIsBackendOnline(true);
+            }
             setIsAwake(payload.isAwake);
           }
           if (typeof payload.isDarkMode === "boolean") {
@@ -3025,7 +3202,7 @@ export const ChatPillWindow: React.FC = () => {
     return () => {
       if (unlistenSync) unlistenSync();
     };
-  }, []);
+  }, [clearOfflineGraceTimer]);
 
   // Real-time backend WebSocket connection
   useEffect(() => {
@@ -3038,7 +3215,7 @@ export const ChatPillWindow: React.FC = () => {
         wsRef.current = ws;
 
         ws.onopen = () => {
-          // Connected
+          clearOfflineGraceTimer();
         };
 
         ws.onmessage = (event) => {
@@ -3090,6 +3267,12 @@ export const ChatPillWindow: React.FC = () => {
                 );
               }
             } else if (msgType === "state" || msgType === "state_change") {
+              clearOfflineGraceTimer();
+              if (typeof data.backendOnline === "boolean") {
+                setIsBackendOnline(data.backendOnline);
+              } else {
+                setIsBackendOnline(true);
+              }
               const nextAwake = Boolean(data.isAwake);
               setIsAwake(nextAwake);
             } else if (msgType === "ui_tag") {
@@ -3227,9 +3410,14 @@ export const ChatPillWindow: React.FC = () => {
 
         ws.onclose = () => {
           wsRef.current = null;
-          if (isMounted) {
-            reconnectTimer = window.setTimeout(connectWebSocket, 1200);
-          }
+          if (!isMounted) return;
+          clearOfflineGraceTimer();
+          offlineGraceTimerRef.current = window.setTimeout(() => {
+            offlineGraceTimerRef.current = null;
+            setIsBackendOnline(false);
+            setIsAwake(false);
+          }, 2200);
+          reconnectTimer = window.setTimeout(connectWebSocket, 1200);
         };
 
         ws.onerror = () => {
@@ -3252,6 +3440,7 @@ export const ChatPillWindow: React.FC = () => {
       isMounted = false;
       stopStreamRaf();
       stopPolishShuffle();
+      clearOfflineGraceTimer();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) {
         try {
@@ -3261,7 +3450,7 @@ export const ChatPillWindow: React.FC = () => {
         }
       }
     };
-  }, []);
+  }, [clearOfflineGraceTimer]);
 
   const handleSendMessage = (msg: string, _isFollowup?: boolean) => {
     stopStreamRaf();
@@ -3339,6 +3528,7 @@ export const ChatPillWindow: React.FC = () => {
       <ChatPill
         contentRef={contentRef}
         isAwake={isAwake}
+        isBackendOnline={isBackendOnline}
         isDarkMode={isDarkMode}
         isMaxHeight={isMaxHeight}
         turns={turns}
@@ -3346,7 +3536,7 @@ export const ChatPillWindow: React.FC = () => {
         activeUiTag={activeUiTag}
         activeConnector={activeConnector}
         isStreaming={isStreaming}
-        onClearResponse={resetReplyState}
+        onClearResponse={() => resetReplyState()}
         onToggleSleep={() => {
           const nextAwake = !isAwake;
           setIsAwake(nextAwake);
@@ -3368,7 +3558,7 @@ export const ChatPillWindow: React.FC = () => {
         onHeightChange={handlePillHeightChange}
         pipPhase={pipPhase}
         onMinimizeToPip={handleMinimizeToPip}
-        onMaximizeFromPip={handleMaximizeFromPip}
+        onMaximizeFromPip={handleSquareActivate}
       />
     </div>
   );

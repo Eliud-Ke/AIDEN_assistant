@@ -1,0 +1,187 @@
+.pip-headphones-window {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: transparent !important;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* 108x100 AirPods Max SVG inside 128x122 window:
+   Cube sits at (10+20=30, 18+22=40) matching compute_pip_headphones_rect(-30, -40, 128, 122) */
+.pip-hp-rig {
+  position: absolute;
+  left: 10px;
+  top: 18px;
+  width: 108px;
+  height: 100px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.pip-hp-svg {
+  width: 108px;
+  height: 100px;
+  overflow: visible;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.44));
+  transition: filter 0.3s ease;
+}
+
+.pip-headphones-window.light-mode .pip-hp-svg {
+  filter: drop-shadow(0 5px 10px rgba(24, 38, 66, 0.22));
+}
+
+/* Drop-on & lift-off choreography (zero independent wobble once resting on head) */
+.pip-apm-whole {
+  opacity: 0;
+  transform-origin: 54px 26px;
+  transform: translateY(-20px) scale(1.06, 0.94);
+  transition:
+    opacity 0.24s ease,
+    transform 0.44s cubic-bezier(0.22, 1.32, 0.36, 1);
+}
+
+.pip-apm-cup-l {
+  transform-origin: 18px 54px;
+  transform: translateX(-8px) rotate(11deg);
+  transition: transform 0.42s cubic-bezier(0.2, 1.36, 0.35, 1) 0.05s;
+}
+
+.pip-apm-cup-r {
+  transform-origin: 90px 54px;
+  transform: translateX(8px) rotate(-11deg);
+  transition: transform 0.42s cubic-bezier(0.2, 1.36, 0.35, 1) 0.05s;
+}
+
+.pip-hp-rig.hp-on .pip-apm-whole {
+  opacity: 1;
+  transform: translateY(0px) scale(1, 1);
+}
+
+.pip-hp-rig.hp-on .pip-apm-cup-l,
+.pip-hp-rig.hp-on .pip-apm-cup-r {
+  transform: translateX(0px) rotate(0deg);
+}
+
+.pip-hp-rig.hp-removing .pip-apm-whole {
+  opacity: 0;
+  transform: translateY(-22px) scale(0.96, 0.96);
+  transition:
+    opacity 0.32s ease 0.14s,
+    transform 0.46s cubic-bezier(0.4, 0, 0.2, 1) 0.08s;
+}
+
+.pip-hp-rig.hp-removing .pip-apm-cup-l {
+  transform: translateX(-9px) rotate(13deg);
+  transition: transform 0.26s ease-out;
+}
+
+.pip-hp-rig.hp-removing .pip-apm-cup-r {
+  transform: translateX(9px) rotate(-13deg);
+  transition: transform 0.26s ease-out;
+}
+
+/* Midnight / Space Gray (Dark Mode) — zero lights, pure matte anodized aluminum */
+.pip-apm-band-outer {
+  stroke: #2c323d;
+  transition: stroke 0.3s ease;
+}
+
+.pip-apm-band-sheen {
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.pip-apm-canopy-base {
+  fill: url(#pipApmMeshFillMidnight);
+  stroke: rgba(255, 255, 255, 0.1);
+}
+
+.pip-apm-canopy-weave {
+  fill: url(#pipApmMeshPatternDark);
+}
+
+.pip-apm-collar {
+  fill: #252a34;
+  stroke: rgba(255, 255, 255, 0.14);
+}
+
+.pip-apm-stem {
+  fill: url(#pipApmSteelMidnight);
+}
+
+.pip-apm-cup-shell-l {
+  fill: url(#pipApmAlumMidnightL);
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.pip-apm-cup-shell-r {
+  fill: url(#pipApmAlumMidnightR);
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.pip-apm-cushion-l {
+  fill: url(#pipApmCushionMidnightL);
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.pip-apm-cushion-r {
+  fill: url(#pipApmCushionMidnightR);
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.pip-apm-crown {
+  fill: #647082;
+  stroke: #1e232c;
+}
+
+/* Silver Aluminum (Light Mode) */
+.pip-headphones-window.light-mode .pip-apm-band-outer {
+  stroke: #d8dee7;
+}
+
+.pip-headphones-window.light-mode .pip-apm-band-sheen {
+  stroke: rgba(255, 255, 255, 0.92);
+}
+
+.pip-headphones-window.light-mode .pip-apm-canopy-base {
+  fill: url(#pipApmMeshFillSilver);
+  stroke: rgba(15, 23, 42, 0.1);
+}
+
+.pip-headphones-window.light-mode .pip-apm-canopy-weave {
+  fill: url(#pipApmMeshPatternLight);
+}
+
+.pip-headphones-window.light-mode .pip-apm-collar {
+  fill: #cdd5e0;
+  stroke: rgba(15, 23, 42, 0.12);
+}
+
+.pip-headphones-window.light-mode .pip-apm-stem {
+  fill: url(#pipApmSteelSilver);
+}
+
+.pip-headphones-window.light-mode .pip-apm-cup-shell-l {
+  fill: url(#pipApmAlumSilverL);
+  stroke: rgba(15, 23, 42, 0.16);
+}
+
+.pip-headphones-window.light-mode .pip-apm-cup-shell-r {
+  fill: url(#pipApmAlumSilverR);
+  stroke: rgba(15, 23, 42, 0.16);
+}
+
+.pip-headphones-window.light-mode .pip-apm-cushion-l {
+  fill: url(#pipApmCushionSilverL);
+  stroke: rgba(15, 23, 42, 0.1);
+}
+
+.pip-headphones-window.light-mode .pip-apm-cushion-r {
+  fill: url(#pipApmCushionSilverR);
+  stroke: rgba(15, 23, 42, 0.1);
+}
+
+.pip-headphones-window.light-mode .pip-apm-crown {
+  fill: #eef2f6;
+  stroke: #94a3b8;
+}

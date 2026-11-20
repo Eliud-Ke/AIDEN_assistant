@@ -6,15 +6,16 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+mod audio_beat;
 #[cfg(target_os = "windows")]
 mod native_window;
 
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, State, WebviewWindow,
 };
@@ -28,6 +29,35 @@ struct PipWatchState {
     generation: Arc<AtomicU64>,
     is_dragging: Arc<AtomicBool>,
 }
+
+struct PipBubbleState {
+    visible: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+    last_flip_right: Arc<AtomicBool>,
+}
+
+struct PipHeadphonesState {
+    visible: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+}
+
+struct PipBopState {
+    generation: Arc<AtomicU64>,
+    running: Arc<AtomicBool>,
+    target_active: Arc<AtomicBool>,
+    track_reset_seq: Arc<AtomicU64>,
+    home_pos: Arc<Mutex<Option<(i32, i32)>>>,
+}
+
+#[cfg(target_os = "windows")]
+struct PipPowerState(Mutex<Option<native_window::PowerStatusSnapshot>>);
+#[cfg(not(target_os = "windows"))]
+struct PipPowerState(Mutex<Option<()>>);
+
+#[cfg(target_os = "windows")]
+struct PipSpotifyState(Mutex<Option<native_window::SpotifyMediaSnapshot>>);
+#[cfg(not(target_os = "windows"))]
+struct PipSpotifyState(Mutex<Option<()>>);
 
 #[cfg(target_os = "windows")]
 pub struct MorpherState(pub std::sync::Mutex<Option<native_window::WindowMorpher>>);
@@ -203,22 +233,49 @@ fn spawn_aiden_backend(state: &BackendState) -> Result<u32, String> {
     Ok(pid)
 }
 
-#[tauri::command]
-fn boot_aiden(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
-    // Check if tracked child is still alive
-    let mut already_alive = false;
+fn is_tracked_backend_alive(state: &BackendState) -> bool {
     if let Ok(mut guard) = state.0.lock() {
         if let Some(child) = guard.as_mut() {
             match child.try_wait() {
-                Ok(None) => already_alive = true,
+                Ok(None) => return true,
                 _ => {
                     *guard = None;
                 }
             }
         }
     }
+    false
+}
 
-    if already_alive || is_port_8765_active() {
+fn reset_chat_pill_on_stop(app: &AppHandle) {
+    stop_pip_cursor_watcher(app);
+    hide_pip_bubble_immediately(app);
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                morpher.set_awake_flag(false);
+            }
+        }
+    }
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_ignore_cursor_events(true);
+        let _ = pill_win.hide();
+        let _ = pill_win.set_size(LogicalSize::new(466.0, 60.0));
+    }
+    let _ = app.emit(
+        "chat-pill-sync",
+        serde_json::json!({
+            "isAwake": false,
+            "backendOnline": false,
+            "reply": serde_json::Value::Null,
+        }),
+    );
+}
+
+fn perform_boot_aiden(state: &BackendState) -> Result<serde_json::Value, String> {
+    if is_tracked_backend_alive(state) || is_port_8765_active() {
         return Ok(serde_json::json!({
             "ok": true,
             "running": true,
@@ -227,7 +284,7 @@ fn boot_aiden(state: State<'_, BackendState>) -> Result<serde_json::Value, Strin
         }));
     }
 
-    let pid = spawn_aiden_backend(&state)?;
+    let pid = spawn_aiden_backend(state)?;
     Ok(serde_json::json!({
         "ok": true,
         "running": true,
@@ -237,57 +294,25 @@ fn boot_aiden(state: State<'_, BackendState>) -> Result<serde_json::Value, Strin
     }))
 }
 
-#[tauri::command]
-fn shutdown_aiden(
-    app: AppHandle,
-    state: State<'_, BackendState>,
-) -> Result<serde_json::Value, String> {
-    stop_all_aiden_processes(&state);
+fn perform_shutdown_aiden(app: &AppHandle, state: &BackendState) -> serde_json::Value {
+    stop_all_aiden_processes(state);
+    reset_chat_pill_on_stop(app);
 
-    if let Some(pill_win) = app.get_webview_window("chat_pill") {
-        let _ = pill_win.set_ignore_cursor_events(true);
-        let _ = pill_win.hide();
-        let _ = pill_win.set_size(LogicalSize::new(466.0, 60.0));
-    }
-    let _ = app.emit(
-        "chat-pill-sync",
-        serde_json::json!({
-            "isAwake": false,
-            "reply": serde_json::Value::Null,
-        }),
-    );
-
-    Ok(serde_json::json!({
+    serde_json::json!({
         "ok": true,
         "running": false,
         "status": "stopped",
         "message": "Aiden has been shut down completely."
-    }))
+    })
 }
 
-#[tauri::command]
-fn restart_aiden(
-    app: AppHandle,
-    state: State<'_, BackendState>,
-) -> Result<serde_json::Value, String> {
-    stop_all_aiden_processes(&state);
-
-    if let Some(pill_win) = app.get_webview_window("chat_pill") {
-        let _ = pill_win.set_ignore_cursor_events(true);
-        let _ = pill_win.hide();
-        let _ = pill_win.set_size(LogicalSize::new(466.0, 60.0));
-    }
-    let _ = app.emit(
-        "chat-pill-sync",
-        serde_json::json!({
-            "isAwake": false,
-            "reply": serde_json::Value::Null,
-        }),
-    );
+fn perform_restart_aiden(app: &AppHandle, state: &BackendState) -> Result<serde_json::Value, String> {
+    stop_all_aiden_processes(state);
+    reset_chat_pill_on_stop(app);
 
     std::thread::sleep(Duration::from_millis(400));
 
-    let pid = spawn_aiden_backend(&state)?;
+    let pid = spawn_aiden_backend(state)?;
     Ok(serde_json::json!({
         "ok": true,
         "running": true,
@@ -298,19 +323,29 @@ fn restart_aiden(
 }
 
 #[tauri::command]
-fn get_aiden_status(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
-    let mut tracked_alive = false;
-    if let Ok(mut guard) = state.0.lock() {
-        if let Some(child) = guard.as_mut() {
-            match child.try_wait() {
-                Ok(None) => tracked_alive = true,
-                _ => {
-                    *guard = None;
-                }
-            }
-        }
-    }
+fn boot_aiden(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
+    perform_boot_aiden(&state)
+}
 
+#[tauri::command]
+fn shutdown_aiden(
+    app: AppHandle,
+    state: State<'_, BackendState>,
+) -> Result<serde_json::Value, String> {
+    Ok(perform_shutdown_aiden(&app, &state))
+}
+
+#[tauri::command]
+fn restart_aiden(
+    app: AppHandle,
+    state: State<'_, BackendState>,
+) -> Result<serde_json::Value, String> {
+    perform_restart_aiden(&app, &state)
+}
+
+#[tauri::command]
+fn get_aiden_status(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
+    let tracked_alive = is_tracked_backend_alive(&state);
     let ws_online = is_port_8765_active();
     Ok(serde_json::json!({
         "running": tracked_alive || ws_online,
@@ -1004,10 +1039,672 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
             }
         }
     }
+    stop_pip_bop_immediately(&app);
+    hide_pip_bubble_immediately(&app);
+    hide_pip_headphones_immediately(&app);
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_ignore_cursor_events(true);
         let _ = pill_win.hide();
         let _ = pill_win.set_size(LogicalSize::new(466.0, 60.0));
+    }
+    Ok(())
+}
+
+fn compute_bubble_placement(app: &AppHandle) -> Option<(i32, i32, i32, i32, bool)> {
+    #[cfg(target_os = "windows")]
+    {
+        let pill_win = app.get_webview_window("chat_pill")?;
+        let scale = pill_win.scale_factor().unwrap_or(1.0);
+        let morph_state = app.state::<MorpherState>();
+        let cube_rect = if let Ok(guard) = morph_state.0.lock() {
+            guard.as_ref().map(|m| m.live_rect())
+        } else {
+            None
+        }?;
+        let bounds = native_window::get_virtual_screen_bounds();
+        return Some(native_window::compute_pip_bubble_rect(
+            cube_rect.x,
+            cube_rect.y,
+            cube_rect.width,
+            scale,
+            bounds,
+        ));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
+fn sync_pip_bubble_position(app: &AppHandle) {
+    let bubble_state = app.state::<PipBubbleState>();
+    if !bubble_state.visible.load(Ordering::Acquire) {
+        return;
+    }
+    if let Some((bx, by, bw, bh, flip_right)) = compute_bubble_placement(app) {
+        if let Some(bubble_win) = app.get_webview_window("pip_bubble") {
+            #[cfg(target_os = "windows")]
+            if let Ok(hwnd) = bubble_win.hwnd() {
+                native_window::move_window_topmost_noactivate(hwnd, bx, by, bw, bh);
+            }
+            let prev_flip = bubble_state.last_flip_right.swap(flip_right, Ordering::SeqCst);
+            if prev_flip != flip_right {
+                let _ = app.emit_to(
+                    "pip_bubble",
+                    "pip-bubble-flip",
+                    serde_json::json!({ "flipRight": flip_right }),
+                );
+            }
+        }
+    }
+}
+
+fn hide_pip_bubble_immediately(app: &AppHandle) {
+    let bubble_state = app.state::<PipBubbleState>();
+    bubble_state.generation.fetch_add(1, Ordering::SeqCst);
+    bubble_state.visible.store(false, Ordering::Release);
+    let _ = app.emit_to(
+        "pip_bubble",
+        "pip-bubble-sync",
+        serde_json::json!({ "kind": serde_json::Value::Null }),
+    );
+    if let Some(bubble_win) = app.get_webview_window("pip_bubble") {
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = bubble_win.hwnd() {
+            native_window::hide_window_clean(hwnd);
+            return;
+        }
+        let _ = bubble_win.hide();
+    }
+}
+
+#[tauri::command]
+fn set_pip_bubble(
+    app: AppHandle,
+    kind: Option<String>,
+    dark_mode: Option<bool>,
+    battery_pct: Option<u8>,
+) -> Result<(), String> {
+    let bubble_state = app.state::<PipBubbleState>();
+    let gen_id = bubble_state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let is_dark = dark_mode.unwrap_or(true);
+
+    let Some(bubble_win) = app.get_webview_window("pip_bubble") else {
+        return Ok(());
+    };
+
+    if let Some(k) = kind {
+        bubble_state.visible.store(true, Ordering::Release);
+        let flip_right = if let Some((bx, by, bw, bh, flip)) = compute_bubble_placement(&app) {
+            bubble_state.last_flip_right.store(flip, Ordering::Release);
+            #[cfg(target_os = "windows")]
+            if let Ok(hwnd) = bubble_win.hwnd() {
+                native_window::make_noactivate_tool_window(hwnd);
+                native_window::move_window_topmost_noactivate(hwnd, bx, by, bw, bh);
+            }
+            flip
+        } else {
+            bubble_state.last_flip_right.load(Ordering::Acquire)
+        };
+
+        let _ = bubble_win.set_always_on_top(true);
+        let _ = bubble_win.set_ignore_cursor_events(true);
+        let _ = app.emit_to(
+            "pip_bubble",
+            "pip-bubble-sync",
+            serde_json::json!({
+                "kind": k,
+                "flipRight": flip_right,
+                "darkMode": is_dark,
+                "batteryPct": battery_pct.unwrap_or(100),
+            }),
+        );
+
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = bubble_win.hwnd() {
+            native_window::show_window_noactivate(hwnd);
+            return Ok(());
+        }
+        let _ = bubble_win.show();
+    } else {
+        let flip = bubble_state.last_flip_right.load(Ordering::Acquire);
+        let _ = app.emit_to(
+            "pip_bubble",
+            "pip-bubble-sync",
+            serde_json::json!({
+                "kind": serde_json::Value::Null,
+                "flipRight": flip,
+                "darkMode": is_dark,
+            }),
+        );
+        let visible_arc = Arc::clone(&bubble_state.visible);
+        let gen_arc = Arc::clone(&bubble_state.generation);
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(220));
+            if gen_arc.load(Ordering::Acquire) == gen_id {
+                visible_arc.store(false, Ordering::Release);
+                if let Some(bw) = app_clone.get_webview_window("pip_bubble") {
+                    #[cfg(target_os = "windows")]
+                    if let Ok(hwnd) = bw.hwnd() {
+                        native_window::hide_window_clean(hwnd);
+                        return;
+                    }
+                    let _ = bw.hide();
+                }
+            }
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_pip_power_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(curr) = native_window::get_system_power_snapshot() {
+            let power_state = app.state::<PipPowerState>();
+            if let Ok(mut guard) = power_state.0.lock() {
+                if guard.is_none() {
+                    *guard = Some(curr);
+                }
+            }
+            return Ok(serde_json::json!({
+                "hasBattery": curr.has_battery,
+                "pluggedIn": curr.plugged_in,
+                "percent": curr.percent,
+            }));
+        }
+    }
+    let _ = app;
+    Ok(serde_json::json!({
+        "hasBattery": false,
+        "pluggedIn": true,
+        "percent": 100,
+    }))
+}
+
+fn compute_headphones_placement(app: &AppHandle) -> Option<(i32, i32, i32, i32)> {
+    #[cfg(target_os = "windows")]
+    {
+        let pill_win = app.get_webview_window("chat_pill")?;
+        let scale = pill_win.scale_factor().unwrap_or(1.0);
+        let morph_state = app.state::<MorpherState>();
+        let cube_rect = if let Ok(guard) = morph_state.0.lock() {
+            guard.as_ref().map(|m| m.live_rect())
+        } else {
+            None
+        }?;
+        return Some(native_window::compute_pip_headphones_rect(
+            cube_rect.x,
+            cube_rect.y,
+            scale,
+        ));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
+fn sync_pip_headphones_position(app: &AppHandle) {
+    let hp_state = app.state::<PipHeadphonesState>();
+    if !hp_state.visible.load(Ordering::Acquire) {
+        return;
+    }
+    if let Some((hx, hy, hw, hh)) = compute_headphones_placement(app) {
+        if let Some(hp_win) = app.get_webview_window("pip_headphones") {
+            #[cfg(target_os = "windows")]
+            if let Ok(hwnd) = hp_win.hwnd() {
+                native_window::move_window_topmost_noactivate(hwnd, hx, hy, hw, hh);
+            }
+        }
+    }
+}
+
+fn hide_pip_headphones_immediately(app: &AppHandle) {
+    let hp_state = app.state::<PipHeadphonesState>();
+    hp_state.generation.fetch_add(1, Ordering::SeqCst);
+    hp_state.visible.store(false, Ordering::Release);
+    let _ = app.emit_to(
+        "pip_headphones",
+        "pip-headphones-sync",
+        serde_json::json!({
+            "mode": "off",
+            "playing": false,
+            "paused": false,
+        }),
+    );
+    if let Some(hp_win) = app.get_webview_window("pip_headphones") {
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = hp_win.hwnd() {
+            native_window::hide_window_clean(hwnd);
+            return;
+        }
+        let _ = hp_win.hide();
+    }
+}
+
+#[tauri::command]
+fn set_pip_headphones(
+    app: AppHandle,
+    mode: String,
+    dark_mode: Option<bool>,
+    playing: Option<bool>,
+    paused: Option<bool>,
+    bpm: Option<f64>,
+) -> Result<(), String> {
+    let hp_state = app.state::<PipHeadphonesState>();
+    let gen_id = hp_state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let is_dark = dark_mode.unwrap_or(true);
+    let is_playing = playing.unwrap_or(false);
+    let is_paused = paused.unwrap_or(false);
+    let tempo_bpm = bpm.unwrap_or(112.0);
+
+    let Some(hp_win) = app.get_webview_window("pip_headphones") else {
+        return Ok(());
+    };
+
+    match mode.as_str() {
+        "on" => {
+            hp_state.visible.store(true, Ordering::Release);
+            if let Some((hx, hy, hw, hh)) = compute_headphones_placement(&app) {
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = hp_win.hwnd() {
+                    native_window::make_noactivate_tool_window(hwnd);
+                    native_window::move_window_topmost_noactivate(hwnd, hx, hy, hw, hh);
+                }
+            }
+            let _ = hp_win.set_always_on_top(true);
+            let _ = hp_win.set_ignore_cursor_events(true);
+            let _ = app.emit_to(
+                "pip_headphones",
+                "pip-headphones-sync",
+                serde_json::json!({
+                    "mode": "on",
+                    "darkMode": is_dark,
+                    "playing": is_playing,
+                    "paused": is_paused,
+                    "bpm": tempo_bpm,
+                }),
+            );
+            #[cfg(target_os = "windows")]
+            if let Ok(hwnd) = hp_win.hwnd() {
+                native_window::show_window_noactivate(hwnd);
+                // Keep comment bubble above headphones if currently open
+                sync_pip_bubble_position(&app);
+                return Ok(());
+            }
+            let _ = hp_win.show();
+        }
+        "removing" => {
+            let _ = app.emit_to(
+                "pip_headphones",
+                "pip-headphones-sync",
+                serde_json::json!({
+                    "mode": "removing",
+                    "darkMode": is_dark,
+                    "playing": false,
+                    "paused": false,
+                    "bpm": tempo_bpm,
+                }),
+            );
+            let visible_arc = Arc::clone(&hp_state.visible);
+            let gen_arc = Arc::clone(&hp_state.generation);
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(540));
+                if gen_arc.load(Ordering::Acquire) == gen_id {
+                    visible_arc.store(false, Ordering::Release);
+                    let _ = app_clone.emit_to(
+                        "pip_headphones",
+                        "pip-headphones-sync",
+                        serde_json::json!({
+                            "mode": "off",
+                            "playing": false,
+                            "paused": false,
+                        }),
+                    );
+                    if let Some(hw) = app_clone.get_webview_window("pip_headphones") {
+                        #[cfg(target_os = "windows")]
+                        if let Ok(hwnd) = hw.hwnd() {
+                            native_window::hide_window_clean(hwnd);
+                            return;
+                        }
+                        let _ = hw.hide();
+                    }
+                }
+            });
+        }
+        _ => {
+            hide_pip_headphones_immediately(&app);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_pip_spotify_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let curr = native_window::get_spotify_media_snapshot();
+        let sp_state = app.state::<PipSpotifyState>();
+        if let Ok(mut guard) = sp_state.0.lock() {
+            *guard = Some(curr.clone());
+        }
+        return Ok(serde_json::json!({
+            "running": curr.running,
+            "playing": curr.playing,
+            "paused": curr.paused,
+            "hasTrack": curr.has_track,
+            "trackKey": curr.track_key,
+        }));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Ok(serde_json::json!({
+            "running": false,
+            "playing": false,
+            "paused": false,
+            "hasTrack": false,
+            "trackKey": "",
+        }))
+    }
+}
+
+fn stop_pip_bop_immediately(app: &AppHandle) {
+    let bop = app.state::<PipBopState>();
+    bop.target_active.store(false, Ordering::Release);
+    bop.running.store(false, Ordering::Release);
+    bop.generation.fetch_add(1, Ordering::SeqCst);
+    if let Ok(mut guard) = bop.home_pos.lock() {
+        *guard = None;
+    }
+    let _ = app.emit_to(
+        "chat_pill",
+        "pip-beat-sync",
+        serde_json::json!({ "active": false }),
+    );
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_pip_bop_loop(app: AppHandle, gen_id: u64) {
+    let bop = app.state::<PipBopState>();
+    let gen_arc = Arc::clone(&bop.generation);
+    let running_arc = Arc::clone(&bop.running);
+    let target_active_arc = Arc::clone(&bop.target_active);
+    let reset_seq_arc = Arc::clone(&bop.track_reset_seq);
+    let home_pos_arc = Arc::clone(&bop.home_pos);
+
+    let dragging_arc = Arc::clone(&app.state::<PipWatchState>().is_dragging);
+    let hp_visible_arc = Arc::clone(&app.state::<PipHeadphonesState>().visible);
+    let bub_visible_arc = Arc::clone(&app.state::<PipBubbleState>().visible);
+    let bub_flip_arc = Arc::clone(&app.state::<PipBubbleState>().last_flip_right);
+
+    std::thread::spawn(move || {
+        let mut loopback = audio_beat::wasapi::LoopbackReader::open();
+        let initial_sr = loopback.as_ref().map(|r| r.sample_rate()).unwrap_or(48_000);
+        let mut tracker = audio_beat::BassBeatTracker::new(initial_sr);
+        let mut last_reset_seq = reset_seq_arc.load(Ordering::Acquire);
+        let mut last_reopen_try = Instant::now();
+
+        let mut last_frame = Instant::now();
+        let mut last_emit = Instant::now();
+        let mut last_emitted_beat_idx: u64 = u64::MAX;
+
+        let mut cur_dx = 0.0f64;
+        let mut cur_dy = 0.0f64;
+        let mut last_applied_pos: Option<(i32, i32)> = None;
+
+        while gen_arc.load(Ordering::Acquire) == gen_id {
+            native_window::dwm_flush_vsync();
+            if gen_arc.load(Ordering::Acquire) != gen_id {
+                break;
+            }
+
+            let now = Instant::now();
+            let dt = now
+                .duration_since(last_frame)
+                .as_secs_f64()
+                .clamp(0.004, 0.05);
+            last_frame = now;
+
+            // Reset BPM interval memory cleanly on track switches
+            let seq_now = reset_seq_arc.load(Ordering::Acquire);
+            if seq_now != last_reset_seq {
+                last_reset_seq = seq_now;
+                tracker.reset_for_new_track();
+            }
+
+            let Some(pill_win) = app.get_webview_window("chat_pill") else {
+                break;
+            };
+            let Ok(cube_hwnd) = pill_win.hwnd() else {
+                break;
+            };
+            let scale = pill_win.scale_factor().unwrap_or(1.0);
+
+            // Inspect WindowMorpher state safely without holding the lock across Win32 moves
+            let (pip_active, is_morphing, live_rect) = {
+                let morph_state = app.state::<MorpherState>();
+                if let Ok(guard) = morph_state.0.lock() {
+                    if let Some(m) = guard.as_ref() {
+                        (m.is_pip_active(), m.is_morphing(), m.live_rect())
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            };
+
+            if !pip_active {
+                break;
+            }
+
+            if is_morphing || dragging_arc.load(Ordering::Acquire) {
+                cur_dx = 0.0;
+                cur_dy = 0.0;
+                last_applied_pos = None;
+                if let Ok(mut hp) = home_pos_arc.lock() {
+                    *hp = None;
+                }
+                continue;
+            }
+
+            // Capture home resting anchor once after morph or drag settles
+            let (home_x, home_y) = {
+                let mut guard = home_pos_arc.lock().unwrap();
+                if let Some(pos) = *guard {
+                    pos
+                } else {
+                    let pos = (live_rect.x, live_rect.y);
+                    *guard = Some(pos);
+                    pos
+                }
+            };
+
+            let want_active = target_active_arc.load(Ordering::Acquire);
+
+            // Pump live WASAPI loopback audio only while actively bopping
+            if want_active {
+                if loopback.is_none() && now.duration_since(last_reopen_try) >= Duration::from_secs(2) {
+                    last_reopen_try = now;
+                    loopback = audio_beat::wasapi::LoopbackReader::open();
+                    if let Some(ref r) = loopback {
+                        tracker.set_sample_rate(r.sample_rate());
+                    }
+                }
+                if let Some(ref mut reader) = loopback {
+                    match reader.drain_mono() {
+                        Some(samples) if !samples.is_empty() => {
+                            tracker.push_mono_samples(samples);
+                        }
+                        Some(_) => {}
+                        None => {
+                            // Audio endpoint switched/invalidated — drop cleanly & retry later
+                            loopback = None;
+                            last_reopen_try = now;
+                        }
+                    }
+                }
+            }
+
+            let clock = tracker.advance_clock(dt);
+            let (target_dx, target_dy) = if want_active {
+                audio_beat::compute_bop_target_logical(clock)
+            } else {
+                (0.0, 0.0)
+            };
+
+            let follow_k = 1.0 - (-24.0 * dt).exp();
+            cur_dx += (target_dx - cur_dx) * follow_k;
+            cur_dy += (target_dy - cur_dy) * follow_k;
+
+            let settled_home = !want_active && cur_dx.abs() < 0.18 && cur_dy.abs() < 0.18;
+            let (raw_x, raw_y) = if settled_home {
+                (home_x, home_y)
+            } else {
+                (
+                    home_x + (cur_dx * scale).round() as i32,
+                    home_y + (cur_dy * scale).round() as i32,
+                )
+            };
+
+            let bounds = native_window::get_virtual_screen_bounds();
+            let pad = (4.0 * scale).round() as i32;
+            let (tx, ty) = native_window::clamp_origin_to_bounds(
+                raw_x,
+                raw_y,
+                live_rect.width,
+                live_rect.height,
+                bounds,
+                pad,
+            );
+
+            if last_applied_pos != Some((tx, ty)) {
+                last_applied_pos = Some((tx, ty));
+
+                let hp_arg = if hp_visible_arc.load(Ordering::Acquire) {
+                    app.get_webview_window("pip_headphones")
+                        .and_then(|w| w.hwnd().ok())
+                        .map(|h| {
+                            let (hx, hy, hw, hh) =
+                                native_window::compute_pip_headphones_rect(tx, ty, scale);
+                            (h, hx, hy, hw, hh)
+                        })
+                } else {
+                    None
+                };
+
+                let mut flip_changed: Option<bool> = None;
+                let bubble_arg = if bub_visible_arc.load(Ordering::Acquire) {
+                    app.get_webview_window("pip_bubble")
+                        .and_then(|w| w.hwnd().ok())
+                        .map(|h| {
+                            let (bx, by, bw, bh, flip) = native_window::compute_pip_bubble_rect(
+                                tx,
+                                ty,
+                                live_rect.width,
+                                scale,
+                                bounds,
+                            );
+                            let prev_flip = bub_flip_arc.swap(flip, Ordering::SeqCst);
+                            if prev_flip != flip {
+                                flip_changed = Some(flip);
+                            }
+                            (h, bx, by, bw, bh)
+                        })
+                } else {
+                    None
+                };
+
+                native_window::atomic_move_pip_group(cube_hwnd, tx, ty, hp_arg, bubble_arg);
+
+                if let Some(flip) = flip_changed {
+                    let _ = app.emit_to(
+                        "pip_bubble",
+                        "pip-bubble-flip",
+                        serde_json::json!({ "flipRight": flip }),
+                    );
+                }
+
+                let morph_state = app.state::<MorpherState>();
+                if let Ok(guard) = morph_state.0.lock() {
+                    if let Some(m) = guard.as_ref() {
+                        m.sync_bop_rect(tx, ty);
+                    }
+                }
+            }
+
+            // Emit beat sync to frontend eyes/rim (~20Hz or immediately on each new beat)
+            let beat_idx = clock.beat_count.floor() as u64;
+            if want_active
+                && (beat_idx != last_emitted_beat_idx
+                    || now.duration_since(last_emit) >= Duration::from_millis(50))
+            {
+                last_emitted_beat_idx = beat_idx;
+                last_emit = now;
+                let _ = app.emit_to(
+                    "chat_pill",
+                    "pip-beat-sync",
+                    serde_json::json!({
+                        "active": true,
+                        "bpm": clock.bpm,
+                        "beatCount": clock.beat_count,
+                        "beatPhase": clock.beat_phase,
+                        "sway": clock.sway.as_str(),
+                        "energyScale": clock.energy_scale,
+                    }),
+                );
+            }
+
+            if settled_home {
+                let _ = app.emit_to(
+                    "chat_pill",
+                    "pip-beat-sync",
+                    serde_json::json!({ "active": false }),
+                );
+                break;
+            }
+        }
+
+        // Only clear `running` if we are still the active generation
+        if gen_arc.load(Ordering::Acquire) == gen_id {
+            running_arc.store(false, Ordering::Release);
+            if let Ok(mut guard) = home_pos_arc.lock() {
+                *guard = None;
+            }
+        }
+    });
+}
+
+#[tauri::command]
+fn set_pip_music_bop(
+    app: AppHandle,
+    active: bool,
+    track_reset: Option<bool>,
+) -> Result<(), String> {
+    let bop = app.state::<PipBopState>();
+    if track_reset.unwrap_or(false) {
+        bop.track_reset_seq.fetch_add(1, Ordering::SeqCst);
+    }
+
+    if active {
+        bop.target_active.store(true, Ordering::Release);
+        #[cfg(target_os = "windows")]
+        if !bop.running.swap(true, Ordering::SeqCst) {
+            let gen_id = bop.generation.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Ok(mut guard) = bop.home_pos.lock() {
+                *guard = None;
+            }
+            spawn_pip_bop_loop(app.clone(), gen_id);
+        }
+    } else {
+        bop.target_active.store(false, Ordering::Release);
     }
     Ok(())
 }
@@ -1081,6 +1778,9 @@ fn spawn_pip_cursor_watcher(app: AppHandle, hwnd_raw: isize, scale: f64) {
         let mut last_dx = f64::NAN;
         let mut last_dy = f64::NAN;
         let mut was_near = false;
+        let mut power_ticks: u32 = 20;
+        let mut spotify_ticks: u32 = 0;
+        let mut last_overlay_pos: Option<(i32, i32)> = None;
 
         while gen_arc.load(Ordering::Acquire) == gen_id {
             if !dragging_arc.load(Ordering::Acquire) {
@@ -1100,19 +1800,112 @@ fn spawn_pip_cursor_watcher(app: AppHandle, hwnd_raw: isize, scale: f64) {
                         );
                     }
                 }
+
+                // Keep headphones & bubble overlays glued to the cube if a morph just moved it
+                // (Skip while PipBopState is driving atomic EndDeferWindowPos moves!)
+                let bop_running = app.state::<PipBopState>().running.load(Ordering::Acquire);
+                let hp_vis = app.state::<PipHeadphonesState>().visible.load(Ordering::Acquire);
+                let bub_vis = app.state::<PipBubbleState>().visible.load(Ordering::Acquire);
+                if !bop_running && (hp_vis || bub_vis) {
+                    let live_pos = app
+                        .state::<MorpherState>()
+                        .0
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.as_ref().map(|m| {
+                            let r = m.live_rect();
+                            (r.x, r.y)
+                        }));
+                    if live_pos.is_some() && live_pos != last_overlay_pos {
+                        last_overlay_pos = live_pos;
+                        if hp_vis {
+                            sync_pip_headphones_position(&app);
+                        }
+                        if bub_vis {
+                            sync_pip_bubble_position(&app);
+                        }
+                    }
+                }
             }
+
+            power_ticks = power_ticks.saturating_add(1);
+            if power_ticks >= 20 {
+                power_ticks = 0;
+                if let Some(curr) = native_window::get_system_power_snapshot() {
+                    let (changed, evt) = {
+                        let power_state = app.state::<PipPowerState>();
+                        let mut guard = power_state.0.lock().unwrap();
+                        let prev = *guard;
+                        let chg = prev != Some(curr);
+                        let event = if chg {
+                            native_window::classify_battery_event(prev, curr)
+                        } else {
+                            None
+                        };
+                        if chg {
+                            *guard = Some(curr);
+                        }
+                        (chg, event)
+                    };
+                    if changed {
+                        let _ = app.emit_to(
+                            "chat_pill",
+                            "pip-power-update",
+                            serde_json::json!({
+                                "hasBattery": curr.has_battery,
+                                "pluggedIn": curr.plugged_in,
+                                "percent": curr.percent,
+                                "event": evt,
+                            }),
+                        );
+                    }
+                }
+            }
+
+            spotify_ticks = spotify_ticks.saturating_add(1);
+            if spotify_ticks >= 18 {
+                spotify_ticks = 0;
+                let curr = native_window::get_spotify_media_snapshot();
+                let (changed, evt) = {
+                    let sp_state = app.state::<PipSpotifyState>();
+                    let mut guard = sp_state.0.lock().unwrap();
+                    let chg = guard.as_ref() != Some(&curr);
+                    let event = if chg {
+                        native_window::classify_spotify_event(guard.as_ref(), &curr)
+                    } else {
+                        None
+                    };
+                    if chg {
+                        *guard = Some(curr.clone());
+                    }
+                    (chg, event)
+                };
+                if changed {
+                    let _ = app.emit_to(
+                        "chat_pill",
+                        "pip-spotify-update",
+                        serde_json::json!({
+                            "running": curr.running,
+                            "playing": curr.playing,
+                            "paused": curr.paused,
+                            "hasTrack": curr.has_track,
+                            "trackKey": curr.track_key,
+                            "event": evt,
+                        }),
+                    );
+                }
+            }
+
             std::thread::sleep(Duration::from_millis(22));
         }
     });
 }
 
-#[tauri::command]
-fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
-    let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
-    let pill_win = app
-        .get_webview_window("chat_pill")
-        .ok_or_else(|| "chat_pill window not found".to_string())?;
-
+fn compute_pip_dock_rect(
+    app: &AppHandle,
+    pill_win: &WebviewWindow,
+    pip_logical: f64,
+) -> (i32, i32, i32, i32, f64) {
     let scale = pill_win.scale_factor().unwrap_or(1.0);
     let pip_w = (pip_logical * scale).round() as i32;
     let pip_h = pip_w;
@@ -1126,7 +1919,7 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
     let (default_x, default_y) = if let Some(mon) = monitor {
         let wa = mon.work_area();
         let margin_r = (40.0 * scale).round() as i32;
-        let margin_b = (44.0 * scale).round() as i32;
+        let margin_b = (48.0 * scale).round() as i32;
         (
             wa.position.x + wa.size.width as i32 - pip_w - margin_r,
             wa.position.y + wa.size.height as i32 - pip_h - margin_b,
@@ -1140,19 +1933,40 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
         let bounds = native_window::get_virtual_screen_bounds();
         let pad = (8.0 * scale).round() as i32;
         let morph_state = app.state::<MorpherState>();
-        let mut target_xy = (default_x, default_y);
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                if let Some((sx, sy)) = morpher.get_saved_pip_pos() {
+                    let (cx, cy) = native_window::clamp_origin_to_bounds(sx, sy, pip_w, pip_h, bounds, pad);
+                    return (cx, cy, pip_w, pip_h, scale);
+                }
+            }
+        }
+    }
+
+    (default_x, default_y, pip_w, pip_h, scale)
+}
+
+#[tauri::command]
+fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
+    let pill_win = app
+        .get_webview_window("chat_pill")
+        .ok_or_else(|| "chat_pill window not found".to_string())?;
+
+    let (target_x, target_y, pip_w, pip_h, scale) = compute_pip_dock_rect(&app, &pill_win, pip_logical);
+
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
         let mut hwnd_raw: isize = 0;
 
         if let Ok(guard) = morph_state.0.lock() {
             if let Some(morpher) = guard.as_ref() {
-                if let Some((sx, sy)) = morpher.get_saved_pip_pos() {
-                    target_xy = native_window::clamp_origin_to_bounds(sx, sy, pip_w, pip_h, bounds, pad);
-                }
                 morpher.set_pip_active(true);
                 morpher.morph_to_rect(
                     native_window::RectTarget {
-                        x: target_xy.0,
-                        y: target_xy.1,
+                        x: target_x,
+                        y: target_y,
                         width: pip_w,
                         height: pip_h,
                     },
@@ -1168,8 +1982,8 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
         }
 
         return Ok(serde_json::json!({
-            "x": target_xy.0,
-            "y": target_xy.1,
+            "x": target_x,
+            "y": target_y,
             "width": pip_logical,
             "height": pip_logical,
         }));
@@ -1179,12 +1993,95 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
     {
         let _ = pill_win.set_size(LogicalSize::new(pip_logical, pip_logical));
         let _ = pill_win.set_position(Position::Physical(PhysicalPosition {
-            x: default_x,
-            y: default_y,
+            x: target_x,
+            y: target_y,
         }));
         Ok(serde_json::json!({
-            "x": default_x,
-            "y": default_y,
+            "x": target_x,
+            "y": target_y,
+            "width": pip_logical,
+            "height": pip_logical,
+        }))
+    }
+}
+
+#[tauri::command]
+fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
+    let pill_win = app
+        .get_webview_window("chat_pill")
+        .ok_or_else(|| "chat_pill window not found".to_string())?;
+
+    let (target_x, target_y, pip_w, pip_h, scale) = compute_pip_dock_rect(&app, &pill_win, pip_logical);
+    let was_visible = pill_win.is_visible().unwrap_or(false);
+    let _ = pill_win.set_ignore_cursor_events(false);
+    let _ = pill_win.set_always_on_top(true);
+
+    #[cfg(target_os = "windows")]
+    {
+        let morph_state = app.state::<MorpherState>();
+        let mut hwnd_raw: isize = 0;
+
+        if let Ok(guard) = morph_state.0.lock() {
+            if let Some(morpher) = guard.as_ref() {
+                morpher.set_awake_flag(false);
+                let live = morpher.live_rect();
+                let already_square = was_visible
+                    && morpher.is_pip_active()
+                    && (live.width - pip_w).abs() <= 4
+                    && (live.height - pip_h).abs() <= 4;
+
+                morpher.set_pip_active(true);
+                if already_square {
+                    // Already sitting cleanly as the paused square: keep eyes & position uninterrupted
+                } else if was_visible {
+                    morpher.morph_to_rect(
+                        native_window::RectTarget {
+                            x: target_x,
+                            y: target_y,
+                            width: pip_w,
+                            height: pip_h,
+                        },
+                        310,
+                        native_window::MorphEasing::QuarticOut,
+                    );
+                } else {
+                    morpher.snap_to_rect(native_window::RectTarget {
+                        x: target_x,
+                        y: target_y,
+                        width: pip_w,
+                        height: pip_h,
+                    });
+                    let _ = pill_win.show();
+                    let _ = pill_win.set_always_on_top(true);
+                }
+                hwnd_raw = morpher.hwnd_raw();
+            }
+        }
+
+        if hwnd_raw != 0 {
+            spawn_pip_cursor_watcher(app.clone(), hwnd_raw, scale);
+        }
+
+        return Ok(serde_json::json!({
+            "x": target_x,
+            "y": target_y,
+            "width": pip_logical,
+            "height": pip_logical,
+        }));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = pill_win.set_size(LogicalSize::new(pip_logical, pip_logical));
+        let _ = pill_win.set_position(Position::Physical(PhysicalPosition {
+            x: target_x,
+            y: target_y,
+        }));
+        let _ = pill_win.show();
+        Ok(serde_json::json!({
+            "x": target_x,
+            "y": target_y,
             "width": pip_logical,
             "height": pip_logical,
         }))
@@ -1193,7 +2090,10 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
 
 #[tauri::command]
 fn maximize_from_pip(app: AppHandle, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
+    stop_pip_bop_immediately(&app);
     stop_pip_cursor_watcher(&app);
+    hide_pip_bubble_immediately(&app);
+    hide_pip_headphones_immediately(&app);
 
     let pill_win = app
         .get_webview_window("chat_pill")
@@ -1262,6 +2162,9 @@ fn maximize_from_pip(app: AppHandle, width: Option<f64>, height: Option<f64>) ->
 fn begin_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
     let pip_watch = app.state::<PipWatchState>();
     pip_watch.is_dragging.store(true, Ordering::Release);
+    if let Ok(mut guard) = app.state::<PipBopState>().home_pos.lock() {
+        *guard = None;
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -1299,6 +2202,9 @@ fn step_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
         if let Ok(guard) = morph_state.0.lock() {
             if let Some(morpher) = guard.as_ref() {
                 if let Some((x, y, cx, cy)) = morpher.step_pip_drag() {
+                    drop(guard);
+                    sync_pip_headphones_position(&app);
+                    sync_pip_bubble_position(&app);
                     return Ok(serde_json::json!({
                         "x": x,
                         "y": y,
@@ -1315,20 +2221,27 @@ fn step_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn end_pip_drag(app: AppHandle) -> Result<serde_json::Value, String> {
-    let pip_watch = app.state::<PipWatchState>();
-    pip_watch.is_dragging.store(false, Ordering::Release);
-
     #[cfg(target_os = "windows")]
     {
         let morph_state = app.state::<MorpherState>();
         if let Ok(guard) = morph_state.0.lock() {
             if let Some(morpher) = guard.as_ref() {
                 if let Some((x, y)) = morpher.end_pip_drag() {
+                    drop(guard);
+                    if let Ok(mut hp) = app.state::<PipBopState>().home_pos.lock() {
+                        *hp = Some((x, y));
+                    }
+                    let pip_watch = app.state::<PipWatchState>();
+                    pip_watch.is_dragging.store(false, Ordering::Release);
+                    sync_pip_headphones_position(&app);
+                    sync_pip_bubble_position(&app);
                     return Ok(serde_json::json!({ "x": x, "y": y }));
                 }
             }
         }
     }
+    let pip_watch = app.state::<PipWatchState>();
+    pip_watch.is_dragging.store(false, Ordering::Release);
     Ok(serde_json::json!({ "ok": true }))
 }
 
@@ -1361,7 +2274,10 @@ fn set_chat_pill_state(
     expanded: Option<bool>,
 ) -> Result<(), String> {
     if is_awake.is_some() {
+        stop_pip_bop_immediately(&app);
         stop_pip_cursor_watcher(&app);
+        hide_pip_bubble_immediately(&app);
+        hide_pip_headphones_immediately(&app);
     }
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_always_on_top(true);
@@ -1467,6 +2383,24 @@ pub fn run() {
             generation: Arc::new(AtomicU64::new(0)),
             is_dragging: Arc::new(AtomicBool::new(false)),
         })
+        .manage(PipBubbleState {
+            visible: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
+            last_flip_right: Arc::new(AtomicBool::new(false)),
+        })
+        .manage(PipHeadphonesState {
+            visible: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
+        })
+        .manage(PipBopState {
+            generation: Arc::new(AtomicU64::new(0)),
+            running: Arc::new(AtomicBool::new(false)),
+            target_active: Arc::new(AtomicBool::new(false)),
+            track_reset_seq: Arc::new(AtomicU64::new(0)),
+            home_pos: Arc::new(Mutex::new(None)),
+        })
+        .manage(PipPowerState(Mutex::new(None)))
+        .manage(PipSpotifyState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Auto-boot Aiden backend automatically on app launch
@@ -1506,10 +2440,50 @@ pub fn run() {
                 }
             }
 
-            // Context menu with "Open" and "Exit"
+            if let Some(bubble_win) = app.get_webview_window("pip_bubble") {
+                let _ = bubble_win.set_always_on_top(true);
+                let _ = bubble_win.set_ignore_cursor_events(true);
+                let _ = bubble_win.hide();
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = bubble_win.hwnd() {
+                        native_window::make_noactivate_tool_window(hwnd);
+                    }
+                }
+            }
+
+            if let Some(hp_win) = app.get_webview_window("pip_headphones") {
+                let _ = hp_win.set_always_on_top(true);
+                let _ = hp_win.set_ignore_cursor_events(true);
+                let _ = hp_win.hide();
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = hp_win.hwnd() {
+                        native_window::make_noactivate_tool_window(hwnd);
+                    }
+                }
+            }
+
+            // Context menu with Open, quick engine controls (Boot up, Restart, Shutdown), and Exit
             let open_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let boot_item = MenuItem::with_id(app, "boot_up", "Boot up", true, None::<&str>)?;
+            let restart_item = MenuItem::with_id(app, "restart", "Restart", true, None::<&str>)?;
+            let shutdown_item = MenuItem::with_id(app, "shutdown", "Shutdown", true, None::<&str>)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
             let exit_item = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&open_item, &exit_item])?;
+            let tray_menu = Menu::with_items(
+                app,
+                &[
+                    &open_item,
+                    &sep1,
+                    &boot_item,
+                    &restart_item,
+                    &shutdown_item,
+                    &sep2,
+                    &exit_item,
+                ],
+            )?;
 
             let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("AIDEN")
@@ -1524,9 +2498,47 @@ pub fn run() {
                             let _ = window.set_focus();
                         }
                     }
+                    "boot_up" => {
+                        let app_handle = app.clone();
+                        std::thread::spawn(move || {
+                            let state = app_handle.state::<BackendState>();
+                            match perform_boot_aiden(&state) {
+                                Ok(res) => println!("[TRAY] Boot up: {}", res["status"]),
+                                Err(e) => eprintln!("[TRAY] Boot up failed: {}", e),
+                            }
+                        });
+                    }
+                    "restart" => {
+                        let app_handle = app.clone();
+                        std::thread::spawn(move || {
+                            let state = app_handle.state::<BackendState>();
+                            match perform_restart_aiden(&app_handle, &state) {
+                                Ok(res) => println!("[TRAY] Restart: {}", res["status"]),
+                                Err(e) => eprintln!("[TRAY] Restart failed: {}", e),
+                            }
+                        });
+                    }
+                    "shutdown" => {
+                        let app_handle = app.clone();
+                        std::thread::spawn(move || {
+                            let state = app_handle.state::<BackendState>();
+                            let _ = perform_shutdown_aiden(&app_handle, &state);
+                            println!("[TRAY] Shutdown completed.");
+                        });
+                    }
                     "exit" => {
+                        stop_pip_bop_immediately(app);
+                        stop_pip_cursor_watcher(app);
+                        hide_pip_bubble_immediately(app);
+                        hide_pip_headphones_immediately(app);
                         let state = app.state::<BackendState>();
                         stop_all_aiden_processes(&state);
+                        if let Some(hp_win) = app.get_webview_window("pip_headphones") {
+                            let _ = hp_win.destroy();
+                        }
+                        if let Some(bubble_win) = app.get_webview_window("pip_bubble") {
+                            let _ = bubble_win.destroy();
+                        }
                         if let Some(pill_win) = app.get_webview_window("chat_pill") {
                             let _ = pill_win.destroy();
                         }
@@ -1592,11 +2604,17 @@ pub fn run() {
             set_chat_pill_size,
             animate_chat_pill_shape,
             minimize_to_pip,
+            enter_asleep_square,
             maximize_from_pip,
             begin_pip_drag,
             step_pip_drag,
             end_pip_drag,
             get_pip_cursor_delta,
+            set_pip_bubble,
+            set_pip_headphones,
+            set_pip_music_bop,
+            get_pip_power_status,
+            get_pip_spotify_status,
             boot_aiden,
             shutdown_aiden,
             restart_aiden,

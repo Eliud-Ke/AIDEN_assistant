@@ -5,19 +5,29 @@ use std::sync::{
 };
 use windows::{
     core::Result,
+    Media::Control::{
+        GlobalSystemMediaTransportControlsSessionManager,
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus,
+    },
     Win32::{
         Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, WPARAM},
         Graphics::Dwm::{
             DwmExtendFrameIntoClientArea, DwmFlush, DwmSetWindowAttribute,
             DWMWINDOWATTRIBUTE, DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
         },
+        System::{
+            Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
+            WinRT::{RoInitialize, RO_INIT_MULTITHREADED},
+        },
         UI::Controls::MARGINS,
         UI::WindowsAndMessaging::{
-            CallWindowProcW, DefWindowProcW, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW,
-            GetWindowRect, IsWindowVisible, SetLayeredWindowAttributes, SetWindowLongPtrW,
-            SetWindowPos, ShowWindow, GWL_EXSTYLE, GWLP_WNDPROC, LWA_ALPHA, SM_CXVIRTUALSCREEN,
+            BeginDeferWindowPos, CallWindowProcW, DefWindowProcW, DeferWindowPos,
+            EndDeferWindowPos, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+            IsWindowVisible, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos,
+            ShowWindow, GWL_EXSTYLE, GWLP_WNDPROC, HWND_TOPMOST, LWA_ALPHA, SM_CXVIRTUALSCREEN,
             SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOSIZE,
-            SWP_NOZORDER, SW_HIDE, WM_NCACTIVATE, WNDPROC, WS_EX_LAYERED,
+            SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, WM_NCACTIVATE, WNDPROC, WS_EX_LAYERED,
+            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
         },
     },
 };
@@ -308,6 +318,17 @@ impl WindowMorpher {
         self.pip_active.load(Ordering::Acquire)
     }
 
+    pub fn is_morphing(&self) -> bool {
+        self.is_running.load(Ordering::Acquire)
+    }
+
+    pub fn sync_bop_rect(&self, x: i32, y: i32) {
+        if let Ok(mut cur) = self.current_rect.lock() {
+            cur.x = x;
+            cur.y = y;
+        }
+    }
+
     pub fn get_saved_pip_pos(&self) -> Option<(i32, i32)> {
         self.pip_saved_pos.lock().ok().and_then(|g| *g)
     }
@@ -443,8 +464,34 @@ impl WindowMorpher {
         }
     }
 
+    pub fn set_awake_flag(&self, awake: bool) {
+        self.is_awake_target.store(awake, Ordering::Release);
+    }
+
     pub fn is_awake(&self) -> bool {
         self.is_awake_target.load(Ordering::Acquire)
+    }
+
+    pub fn snap_to_rect(&self, target: RectTarget) {
+        if let Ok(mut tgt) = self.target_rect.lock() {
+            *tgt = None;
+        }
+        let hwnd = HWND(self.hwnd as *mut _);
+        restore_unlayered_style(hwnd, &self.is_layered_fade, &self.saved_ex_style);
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                target.x,
+                target.y,
+                target.width,
+                target.height,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            );
+        }
+        if let Ok(mut cur) = self.current_rect.lock() {
+            *cur = target;
+        }
     }
 
     /// Snap hidden HWND cleanly into a slim centered capsule just before ShowWindow.
@@ -877,9 +924,422 @@ impl WindowMorpher {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub fn make_noactivate_tool_window(hwnd: HWND) {
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let desired = ex
+            | (WS_EX_NOACTIVATE.0 as isize)
+            | (WS_EX_TOOLWINDOW.0 as isize)
+            | (WS_EX_TRANSPARENT.0 as isize);
+        if desired != ex {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, desired);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn move_window_topmost_noactivate(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
+    unsafe {
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), x, y, w, h, SWP_NOACTIVATE);
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn dwm_flush_vsync() {
+    unsafe {
+        if DwmFlush().is_err() {
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+    }
+}
+
+/// Atomically moves `chat_pill` together with `pip_headphones` and `pip_bubble` in one
+/// Win32 compositor transaction (`BeginDeferWindowPos` / `EndDeferWindowPos`), keeping
+/// static headphones locked to the cube with zero frame slip.
+#[cfg(target_os = "windows")]
+pub fn atomic_move_pip_group(
+    cube_hwnd: HWND,
+    cube_x: i32,
+    cube_y: i32,
+    hp: Option<(HWND, i32, i32, i32, i32)>,
+    bubble: Option<(HWND, i32, i32, i32, i32)>,
+) {
+    unsafe {
+        let count = 1 + i32::from(hp.is_some()) + i32::from(bubble.is_some());
+        if let Ok(mut hdwp) = BeginDeferWindowPos(count) {
+            if let Ok(next) = DeferWindowPos(
+                hdwp,
+                cube_hwnd,
+                None,
+                cube_x,
+                cube_y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            ) {
+                hdwp = next;
+            }
+            if let Some((h, x, y, w, h_px)) = hp {
+                if let Ok(next) = DeferWindowPos(
+                    hdwp,
+                    h,
+                    Some(HWND_TOPMOST),
+                    x,
+                    y,
+                    w,
+                    h_px,
+                    SWP_NOACTIVATE,
+                ) {
+                    hdwp = next;
+                }
+            }
+            if let Some((h, x, y, w, h_px)) = bubble {
+                if let Ok(next) = DeferWindowPos(
+                    hdwp,
+                    h,
+                    Some(HWND_TOPMOST),
+                    x,
+                    y,
+                    w,
+                    h_px,
+                    SWP_NOACTIVATE,
+                ) {
+                    hdwp = next;
+                }
+            }
+            let _ = EndDeferWindowPos(hdwp);
+        } else {
+            let _ = SetWindowPos(
+                cube_hwnd,
+                None,
+                cube_x,
+                cube_y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+            if let Some((h, x, y, w, h_px)) = hp {
+                let _ = SetWindowPos(h, Some(HWND_TOPMOST), x, y, w, h_px, SWP_NOACTIVATE);
+            }
+            if let Some((h, x, y, w, h_px)) = bubble {
+                let _ = SetWindowPos(h, Some(HWND_TOPMOST), x, y, w, h_px, SWP_NOACTIVATE);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn show_window_noactivate(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn hide_window_clean(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+}
+
+/// Computes physical `(x, y, width, height, flip_right)` for the 76x64 transparent
+/// comment bubble positioned beside the cube's top-left corner, auto-flipping to
+/// top-right when near the virtual screen's left boundary.
+pub fn compute_pip_bubble_rect(
+    cube_x: i32,
+    cube_y: i32,
+    cube_w: i32,
+    scale: f64,
+    bounds: (i32, i32, i32, i32),
+) -> (i32, i32, i32, i32, bool) {
+    let s = if scale > 0.1 { scale } else { 1.0 };
+    let bw_phys = (76.0 * s).round() as i32;
+    let bh_phys = (64.0 * s).round() as i32;
+    let (bx, by, bw, bh) = bounds;
+    let pad = (4.0 * s).round() as i32;
+
+    let left_x = cube_x - (51.0 * s).round() as i32;
+    let flip_right = left_x < bx + pad;
+    let raw_x = if flip_right {
+        cube_x + cube_w - (25.0 * s).round() as i32
+    } else {
+        left_x
+    };
+    let raw_y = cube_y - (36.0 * s).round() as i32;
+
+    let min_x = bx + pad;
+    let max_x = (bx + bw - bw_phys - pad).max(min_x);
+    let min_y = by + pad;
+    let max_y = (by + bh - bh_phys - pad).max(min_y);
+
+    (raw_x.clamp(min_x, max_x), raw_y.clamp(min_y, max_y), bw_phys, bh_phys, flip_right)
+}
+
+/// Computes physical `(x, y, width, height)` for the 128x122 transparent click-through
+/// Apple AirPods Max overlay aligned pixel-for-pixel around the 68x68 PiP cube
+/// (30px left/right margin, 40px top margin for drop/lift headroom, 14px bottom margin).
+pub fn compute_pip_headphones_rect(cube_x: i32, cube_y: i32, scale: f64) -> (i32, i32, i32, i32) {
+    let s = if scale > 0.1 { scale } else { 1.0 };
+    let hx = cube_x - (30.0 * s).round() as i32;
+    let hy = cube_y - (40.0 * s).round() as i32;
+    let hw = (128.0 * s).round() as i32;
+    let hh = (122.0 * s).round() as i32;
+    (hx, hy, hw, hh)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpotifyMediaSnapshot {
+    pub running: bool,
+    pub playing: bool,
+    pub paused: bool,
+    pub has_track: bool,
+    pub track_key: String,
+}
+
+impl Default for SpotifyMediaSnapshot {
+    fn default() -> Self {
+        Self {
+            running: false,
+            playing: false,
+            paused: false,
+            has_track: false,
+            track_key: String::new(),
+        }
+    }
+}
+
+/// Returns true strictly for Spotify desktop/Store media sessions (ignoring browsers, VLC, etc.).
+pub fn is_spotify_app_id(app_id: &str) -> bool {
+    let lower = app_id.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    lower.contains("spotify")
+}
+
+/// Returns true when metadata corresponds to a real music track (ignoring blank sessions or ads).
+pub fn is_valid_music_track(title: &str, artist: &str) -> bool {
+    let t = title.trim();
+    let a = artist.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let tl = t.to_ascii_lowercase();
+    if tl == "advertisement" || tl == "spotify" && a.is_empty() {
+        return false;
+    }
+    true
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_winrt_initialized() {
+    thread_local! {
+        static INIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    INIT.with(|done| {
+        if !done.get() {
+            unsafe {
+                let _ = RoInitialize(RO_INIT_MULTITHREADED);
+            }
+            done.set(true);
+        }
+    });
+}
+
+/// Polls Windows GSMTC (`GlobalSystemMediaTransportControlsSessionManager`) filtered
+/// strictly to Spotify Desktop / Microsoft Store sessions.
+#[cfg(target_os = "windows")]
+pub fn get_spotify_media_snapshot() -> SpotifyMediaSnapshot {
+    ensure_winrt_initialized();
+
+    let Ok(op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() else {
+        return SpotifyMediaSnapshot::default();
+    };
+    let Ok(manager) = op.join() else {
+        return SpotifyMediaSnapshot::default();
+    };
+    let Ok(sessions) = manager.GetSessions() else {
+        return SpotifyMediaSnapshot::default();
+    };
+    let Ok(count) = sessions.Size() else {
+        return SpotifyMediaSnapshot::default();
+    };
+
+    let mut chosen: Option<SpotifyMediaSnapshot> = None;
+
+    for idx in 0..count {
+        let Ok(session) = sessions.GetAt(idx) else {
+            continue;
+        };
+        let app_id = session
+            .SourceAppUserModelId()
+            .map(|h| h.to_string_lossy())
+            .unwrap_or_default();
+        if !is_spotify_app_id(&app_id) {
+            continue;
+        }
+
+        let status = session
+            .GetPlaybackInfo()
+            .and_then(|info| info.PlaybackStatus())
+            .unwrap_or(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed);
+
+        let is_playing = status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+        let is_paused = status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Paused;
+
+        let (title, artist) = session
+            .TryGetMediaPropertiesAsync()
+            .ok()
+            .and_then(|props_op| props_op.join().ok())
+            .map(|props| {
+                let t = props.Title().map(|h| h.to_string_lossy()).unwrap_or_default();
+                let a = props.Artist().map(|h| h.to_string_lossy()).unwrap_or_default();
+                (t, a)
+            })
+            .unwrap_or_default();
+
+        let has_track = is_valid_music_track(&title, &artist);
+        let track_key = if has_track {
+            let t = title.trim();
+            let a = artist.trim();
+            if a.is_empty() {
+                t.to_string()
+            } else {
+                format!("{} — {}", t, a)
+            }
+        } else {
+            String::new()
+        };
+
+        let snap = SpotifyMediaSnapshot {
+            running: true,
+            playing: is_playing && has_track,
+            paused: is_paused && has_track,
+            has_track,
+            track_key,
+        };
+
+        if snap.playing {
+            return snap;
+        }
+        if chosen.is_none() {
+            chosen = Some(snap);
+        }
+    }
+
+    chosen.unwrap_or_default()
+}
+
+/// Classifies Spotify state transitions into cube reaction events:
+/// `"play"`, `"resume"`, `"pause"`, `"track_change"`, or `"stop"`.
+pub fn classify_spotify_event(
+    prev: Option<&SpotifyMediaSnapshot>,
+    curr: &SpotifyMediaSnapshot,
+) -> Option<&'static str> {
+    let Some(p) = prev else {
+        if curr.running && curr.playing && curr.has_track {
+            return Some("play");
+        }
+        return None;
+    };
+
+    if !curr.running {
+        if p.playing || p.paused {
+            return Some("stop");
+        }
+        return None;
+    }
+
+    if !p.playing && curr.playing && curr.has_track {
+        return Some(if p.paused { "resume" } else { "play" });
+    }
+
+    if p.playing && curr.paused {
+        return Some("pause");
+    }
+
+    if p.playing && !curr.playing && !curr.paused {
+        return Some("stop");
+    }
+
+    if p.playing
+        && curr.playing
+        && curr.has_track
+        && !p.track_key.is_empty()
+        && curr.track_key != p.track_key
+    {
+        return Some("track_change");
+    }
+
+    None
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PowerStatusSnapshot {
+    pub has_battery: bool,
+    pub plugged_in: bool,
+    pub percent: u8,
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_system_power_snapshot() -> Option<PowerStatusSnapshot> {
+    unsafe {
+        let mut sps = SYSTEM_POWER_STATUS::default();
+        if GetSystemPowerStatus(&mut sps).is_err() {
+            return None;
+        }
+        let no_battery = (sps.BatteryFlag & 128) != 0 || sps.BatteryLifePercent == 255;
+        Some(PowerStatusSnapshot {
+            has_battery: !no_battery,
+            plugged_in: sps.ACLineStatus == 1,
+            percent: if no_battery {
+                100
+            } else {
+                sps.BatteryLifePercent.min(100)
+            },
+        })
+    }
+}
+
+/// Maps power transitions between two snapshots into a cube reaction event:
+/// `"plug_in"`, `"unplugged"`, `"low"`, or `"full"`.
+pub fn classify_battery_event(
+    prev: Option<PowerStatusSnapshot>,
+    curr: PowerStatusSnapshot,
+) -> Option<&'static str> {
+    if !curr.has_battery {
+        return None;
+    }
+    let p = prev?;
+    if !p.has_battery {
+        return None;
+    }
+    if !p.plugged_in && curr.plugged_in {
+        return Some("plug_in");
+    }
+    if p.plugged_in && !curr.plugged_in {
+        if curr.percent <= 20 {
+            return Some("low");
+        }
+        return Some("unplugged");
+    }
+    if !curr.plugged_in && curr.percent <= 20 && p.percent > 20 {
+        return Some("low");
+    }
+    if curr.plugged_in && curr.percent >= 100 && p.percent < 100 {
+        return Some("full");
+    }
+    None
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
-    use super::{clamp_origin_to_bounds, compute_delta_logical};
+    use super::{
+        clamp_origin_to_bounds, classify_battery_event, classify_spotify_event,
+        compute_delta_logical, compute_pip_bubble_rect, compute_pip_headphones_rect,
+        is_spotify_app_id, is_valid_music_track, PowerStatusSnapshot, SpotifyMediaSnapshot,
+    };
 
     #[test]
     fn clamp_respects_multi_monitor_negative_origins() {
@@ -896,5 +1356,91 @@ mod tests {
         assert!((dx - 100.0).abs() < 1e-6);
         assert!(dy.abs() < 1e-6);
         assert!((dist - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pip_bubble_rect_places_top_left_and_flips_on_left_edge() {
+        let bounds = (-1920, 0, 3840, 1080);
+        let (x, y, w, h, flip) = compute_pip_bubble_rect(800, 400, 68, 1.0, bounds);
+        assert_eq!((x, y, w, h, flip), (749, 364, 76, 64, false));
+
+        // Near negative multi-monitor left boundary: flips cleanly to right side of cube
+        let (fx, fy, fw, fh, flipped) = compute_pip_bubble_rect(-1905, 400, 68, 1.0, bounds);
+        assert_eq!((fx, fy, fw, fh, flipped), (-1862, 364, 76, 64, true));
+    }
+
+    #[test]
+    fn battery_classifier_detects_all_transitions_and_ignores_no_battery() {
+        let desktop = PowerStatusSnapshot { has_battery: false, plugged_in: true, percent: 100 };
+        assert_eq!(classify_battery_event(None, desktop), None);
+        assert_eq!(classify_battery_event(Some(desktop), desktop), None);
+
+        let dc_ok = PowerStatusSnapshot { has_battery: true, plugged_in: false, percent: 65 };
+        let ac_ok = PowerStatusSnapshot { has_battery: true, plugged_in: true, percent: 65 };
+        let ac_full = PowerStatusSnapshot { has_battery: true, plugged_in: true, percent: 100 };
+        let dc_21 = PowerStatusSnapshot { has_battery: true, plugged_in: false, percent: 21 };
+        let dc_low = PowerStatusSnapshot { has_battery: true, plugged_in: false, percent: 20 };
+
+        assert_eq!(classify_battery_event(Some(dc_ok), ac_ok), Some("plug_in"));
+        assert_eq!(classify_battery_event(Some(ac_ok), dc_ok), Some("unplugged"));
+        assert_eq!(classify_battery_event(Some(dc_21), dc_low), Some("low"));
+        assert_eq!(classify_battery_event(Some(ac_ok), dc_low), Some("low"));
+        assert_eq!(classify_battery_event(Some(ac_ok), ac_full), Some("full"));
+        assert_eq!(classify_battery_event(Some(dc_ok), dc_ok), None);
+    }
+
+    #[test]
+    fn pip_headphones_rect_centers_around_cube_at_hidpi() {
+        assert_eq!(compute_pip_headphones_rect(800, 400, 1.0), (770, 360, 128, 122));
+        assert_eq!(compute_pip_headphones_rect(800, 400, 1.5), (755, 340, 192, 183));
+    }
+
+    #[test]
+    fn spotify_filter_and_classifier_handle_full_lifecycle() {
+        assert!(is_spotify_app_id("Spotify.exe"));
+        assert!(is_spotify_app_id("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"));
+        assert!(!is_spotify_app_id("chrome.exe"));
+        assert!(!is_spotify_app_id("msedge.exe"));
+        assert!(!is_spotify_app_id("vlc.exe"));
+        assert!(!is_spotify_app_id(""));
+
+        assert!(is_valid_music_track("Midnight City", "M83"));
+        assert!(!is_valid_music_track("", "M83"));
+        assert!(!is_valid_music_track("Advertisement", ""));
+        assert!(!is_valid_music_track("Spotify", ""));
+
+        let closed = SpotifyMediaSnapshot::default();
+        let idle = SpotifyMediaSnapshot { running: true, ..Default::default() };
+        let playing_a = SpotifyMediaSnapshot {
+            running: true,
+            playing: true,
+            paused: false,
+            has_track: true,
+            track_key: "Midnight City — M83".to_string(),
+        };
+        let playing_b = SpotifyMediaSnapshot {
+            running: true,
+            playing: true,
+            paused: false,
+            has_track: true,
+            track_key: "Instant Crush — Daft Punk".to_string(),
+        };
+        let paused_b = SpotifyMediaSnapshot {
+            running: true,
+            playing: false,
+            paused: true,
+            has_track: true,
+            track_key: "Instant Crush — Daft Punk".to_string(),
+        };
+
+        assert_eq!(classify_spotify_event(None, &closed), None);
+        assert_eq!(classify_spotify_event(None, &playing_a), Some("play"));
+        assert_eq!(classify_spotify_event(Some(&idle), &playing_a), Some("play"));
+        assert_eq!(classify_spotify_event(Some(&playing_a), &playing_b), Some("track_change"));
+        assert_eq!(classify_spotify_event(Some(&playing_b), &paused_b), Some("pause"));
+        assert_eq!(classify_spotify_event(Some(&paused_b), &playing_b), Some("resume"));
+        assert_eq!(classify_spotify_event(Some(&paused_b), &closed), Some("stop"));
+        assert_eq!(classify_spotify_event(Some(&playing_b), &closed), Some("stop"));
+        assert_eq!(classify_spotify_event(Some(&playing_b), &playing_b), None);
     }
 }

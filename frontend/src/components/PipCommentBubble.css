@@ -1,0 +1,833 @@
+.pip-bubble-window {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.pip-bubble-shell {
+  position: relative;
+  width: 54px;
+  height: 44px;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: 84% 92%;
+  transform: scale(0.32) translate(6px, 6px) rotate(-8deg);
+  filter: blur(3px);
+  transition:
+    opacity 0.17s ease,
+    transform 0.27s cubic-bezier(0.22, 1.32, 0.36, 1),
+    filter 0.17s ease;
+  will-change: transform, opacity, filter;
+}
+
+.pip-bubble-shell.flip-right {
+  transform-origin: 16% 92%;
+  transform: scale(0.32) translate(-6px, 6px) rotate(8deg);
+}
+
+.pip-bubble-shell.is-visible {
+  opacity: 1;
+  transform: scale(1) translate(0, 0) rotate(0deg);
+  filter: blur(0px);
+}
+
+.pip-bubble-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pip-bubble-shell.is-visible .pip-bubble-inner {
+  animation: pipBubbleFloat 2.4s ease-in-out infinite;
+}
+
+.pip-bubble-shell.is-visible.mood-annoyed .pip-bubble-inner {
+  animation: pipBubbleAngryJitter 0.18s steps(2, end) infinite;
+}
+
+.pip-bubble-shell.is-visible.mood-surprised .pip-bubble-inner {
+  animation: pipBubbleStartlePop 0.30s cubic-bezier(0.22, 1.4, 0.36, 1) forwards;
+}
+
+.pip-bubble-shell.is-visible.mood-dizzy .pip-bubble-inner {
+  animation: pipBubbleFloat 1.2s ease-in-out infinite;
+}
+
+@keyframes pipBubbleFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-2.4px);
+  }
+}
+
+@keyframes pipBubbleAngryJitter {
+  0% {
+    transform: translate(0px, 0px) rotate(-1.5deg);
+  }
+  25% {
+    transform: translate(1.2px, -0.9px) rotate(1.8deg);
+  }
+  50% {
+    transform: translate(-1.1px, 0.7px) rotate(-1.2deg);
+  }
+  75% {
+    transform: translate(0.9px, 0.8px) rotate(1.4deg);
+  }
+  100% {
+    transform: translate(0px, 0px) rotate(-1.5deg);
+  }
+}
+
+@keyframes pipBubbleStartlePop {
+  0% {
+    transform: scale(0.86);
+  }
+  55% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.pip-bubble-bg-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.pip-bubble-shell.flip-right .pip-bubble-bg-svg {
+  transform: scaleX(-1);
+}
+
+/* Borderless matte-glass bubble: dark grey in dark mode, whitish in light mode */
+.pip-bubble-shape {
+  fill: rgba(44, 46, 52, 0.95);
+  stroke: none;
+  stroke-width: 0;
+  filter: drop-shadow(0 5px 12px rgba(0, 0, 0, 0.44));
+  transition: fill 0.22s ease;
+}
+
+.pip-bubble-window.light-mode .pip-bubble-shape {
+  fill: rgba(246, 247, 250, 0.96);
+  stroke: none;
+  stroke-width: 0;
+  filter: drop-shadow(0 5px 12px rgba(24, 38, 66, 0.18));
+}
+
+.pip-bubble-shell.mood-annoyed .pip-bubble-shape {
+  fill: rgba(54, 42, 46, 0.96);
+  stroke: none;
+  stroke-width: 0;
+}
+
+.pip-bubble-window.light-mode .pip-bubble-shell.mood-annoyed .pip-bubble-shape {
+  fill: rgba(252, 242, 244, 0.97);
+  stroke: none;
+  stroke-width: 0;
+}
+
+.pip-bubble-shell.mood-happy .pip-bubble-shape {
+  stroke: none;
+  stroke-width: 0;
+}
+
+.pip-bubble-glyph-box {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.pip-bubble-window.light-mode .pip-bubble-glyph-box {
+  color: #161822;
+}
+
+.pip-glyph-q {
+  font-size: 16px;
+  color: #9ac2ff;
+  animation: pipQWobble 1.3s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-q {
+  color: #2155d6;
+}
+
+@keyframes pipQWobble {
+  0%, 100% {
+    transform: rotate(-6deg) scale(1);
+  }
+  50% {
+    transform: rotate(7deg) scale(1.08);
+  }
+}
+
+.pip-glyph-grawlix {
+  font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #ff6b7d;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.pip-bubble-window.light-mode .pip-glyph-grawlix {
+  color: #dc2645;
+  text-shadow: none;
+}
+
+.pip-glyph-grawlix span:nth-child(odd) {
+  transform: rotate(-7deg) translateY(-0.5px);
+}
+
+.pip-glyph-grawlix span:nth-child(even) {
+  transform: rotate(6deg) translateY(0.5px);
+}
+
+.pip-glyph-bang {
+  font-size: 16px;
+  font-weight: 900;
+  color: #fbbf24;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-bang {
+  color: #d97706;
+}
+
+.pip-glyph-heart {
+  font-size: 14px;
+  color: #ff7ba5;
+  animation: pipHeartBeat 0.72s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-heart {
+  color: #e11d64;
+}
+
+@keyframes pipHeartBeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.22);
+  }
+}
+
+.pip-glyph-zzz {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  font-style: italic;
+  font-weight: 800;
+  color: #b7ccff;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-zzz {
+  color: #3b5ec9;
+}
+
+.pip-glyph-zzz span:nth-child(1) {
+  font-size: 8px;
+  animation: pipZzzDrift 1.8s ease-in-out infinite 0s;
+}
+
+.pip-glyph-zzz span:nth-child(2) {
+  font-size: 10.5px;
+  animation: pipZzzDrift 1.8s ease-in-out infinite 0.3s;
+}
+
+.pip-glyph-zzz span:nth-child(3) {
+  font-size: 13px;
+  animation: pipZzzDrift 1.8s ease-in-out infinite 0.6s;
+}
+
+@keyframes pipZzzDrift {
+  0%, 100% {
+    transform: translateY(1px);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(-2.5px);
+    opacity: 1;
+  }
+}
+
+.pip-glyph-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.pip-glyph-dots span {
+  width: 4.5px;
+  height: 4.5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pipDotPulse 1.1s ease-in-out infinite;
+}
+
+.pip-glyph-dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.pip-glyph-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes pipDotPulse {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.38;
+  }
+  45% {
+    transform: translateY(-2.5px);
+    opacity: 1;
+  }
+}
+
+.pip-glyph-dizzy-svg {
+  width: 17px;
+  height: 17px;
+  animation: pipSpinSwirl 0.85s linear infinite;
+  color: #a5b4fc;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-dizzy-svg {
+  color: #4f46e5;
+}
+
+@keyframes pipSpinSwirl {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+.pip-glyph-sweat-svg {
+  width: 15px;
+  height: 16px;
+  color: #67d4ff;
+  animation: pipSweatDrop 1.1s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-sweat-svg {
+  color: #0284c7;
+}
+
+@keyframes pipSweatDrop {
+  0%, 100% {
+    transform: translateY(-1px) scaleY(1);
+  }
+  50% {
+    transform: translateY(2px) scaleY(1.08);
+  }
+}
+
+.pip-glyph-spark-svg {
+  width: 15px;
+  height: 15px;
+  color: #fbbf24;
+  animation: pipSparkPop 1s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-spark-svg {
+  color: #d97706;
+}
+
+@keyframes pipSparkPop {
+  0%, 100% {
+    transform: scale(0.95) rotate(-5deg);
+  }
+  50% {
+    transform: scale(1.12) rotate(5deg);
+  }
+}
+
+.pip-glyph-done-svg {
+  width: 16px;
+  height: 16px;
+  color: #5ce6a0;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-done-svg {
+  color: #059669;
+}
+
+.pip-glyph-note {
+  font-size: 15px;
+  color: #6ee7b7;
+  animation: pipNoteBob 0.9s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-note {
+  color: #059669;
+}
+
+@keyframes pipNoteBob {
+  0%, 100% {
+    transform: rotate(-8deg) translateY(0);
+  }
+  50% {
+    transform: rotate(8deg) translateY(-2px);
+  }
+}
+
+/* Battery Awareness Icons */
+.pip-bat-svg {
+  width: 24px;
+  height: 15px;
+  overflow: visible;
+}
+
+.pip-bat-body {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.76);
+  stroke-width: 1.7;
+}
+
+.pip-bat-nub {
+  fill: rgba(255, 255, 255, 0.76);
+}
+
+.pip-bubble-window.light-mode .pip-bat-body {
+  stroke: rgba(22, 24, 34, 0.68);
+}
+
+.pip-bubble-window.light-mode .pip-bat-nub {
+  fill: rgba(22, 24, 34, 0.68);
+}
+
+.pip-bat-fill-green {
+  fill: #34d399;
+  transform-origin: left center;
+  animation: pipChargeSurge 1.6s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-bat-fill-green {
+  fill: #10b981;
+}
+
+@keyframes pipChargeSurge {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scaleX(0.86);
+  }
+  55% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.pip-bat-bolt {
+  fill: #ffffff;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.45));
+  animation: pipBoltFlash 1.2s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-bat-bolt {
+  fill: #ffffff;
+  filter: drop-shadow(0 0 2px rgba(4, 120, 87, 0.65));
+}
+
+@keyframes pipBoltFlash {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+.pip-bat-fill-unplug {
+  fill: #93c5fd;
+}
+
+.pip-bubble-window.light-mode .pip-bat-fill-unplug {
+  fill: #3b82f6;
+}
+
+.pip-bat-unplug-slash {
+  stroke: #fbbf24;
+  stroke-width: 2;
+  stroke-linecap: round;
+  animation: pipUnplugBlink 1.1s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-bat-unplug-slash {
+  stroke: #d97706;
+}
+
+@keyframes pipUnplugBlink {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pip-bat-body.low-outline {
+  stroke: rgba(248, 113, 113, 0.88);
+}
+
+.pip-bat-nub.low-outline {
+  fill: rgba(248, 113, 113, 0.88);
+}
+
+.pip-bubble-window.light-mode .pip-bat-body.low-outline {
+  stroke: #dc2626;
+}
+
+.pip-bubble-window.light-mode .pip-bat-nub.low-outline {
+  fill: #dc2626;
+}
+
+.pip-bat-fill-red {
+  fill: #ef4444;
+  animation: pipLowPulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pipLowPulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pip-bat-fill-full {
+  fill: #4ade80;
+}
+
+.pip-bubble-window.light-mode .pip-bat-fill-full {
+  fill: #059669;
+}
+
+.pip-bat-full-check {
+  stroke: #ffffff;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.pip-bat-full-star {
+  fill: #fde047;
+  transform-origin: 21px 2px;
+  animation: pipStarTwinkle 1.1s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-bat-full-star {
+  fill: #d97706;
+}
+
+@keyframes pipStarTwinkle {
+  0%, 100% {
+    transform: scale(0.85) rotate(0deg);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.18) rotate(18deg);
+    opacity: 1;
+  }
+}
+
+/* Spotify Music Vibing & Pause Icons */
+.pip-music-eq-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.4px;
+  height: 15px;
+}
+
+.pip-music-eq-bar {
+  width: 2.8px;
+  border-radius: 99px;
+  background: #1ed760;
+  transform-origin: bottom center;
+}
+
+.pip-bubble-window.light-mode .pip-music-eq-bar {
+  background: #059669;
+}
+
+.pip-music-eq-bar.b1 {
+  height: 13px;
+  animation: pipEqBounce 0.62s ease-in-out infinite;
+}
+
+.pip-music-eq-bar.b2 {
+  height: 15px;
+  background: #34d399;
+  animation: pipEqBounce 0.54s ease-in-out infinite 0.15s;
+}
+
+.pip-music-eq-bar.b3 {
+  height: 14px;
+  animation: pipEqBounce 0.66s ease-in-out infinite 0.28s;
+}
+
+.pip-music-eq-bar.b4 {
+  height: 11px;
+  background: #6ee7b7;
+  animation: pipEqBounce 0.58s ease-in-out infinite 0.08s;
+}
+
+.pip-bubble-window.light-mode .pip-music-eq-bar.b2 {
+  background: #10b981;
+}
+
+.pip-bubble-window.light-mode .pip-music-eq-bar.b4 {
+  background: #34d399;
+}
+
+@keyframes pipEqBounce {
+  0%, 100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.pip-music-notes-svg {
+  width: 23px;
+  height: 17px;
+  overflow: visible;
+}
+
+.pip-music-note-a {
+  color: #34d399;
+  fill: #34d399;
+  transform-origin: center;
+  animation: pipNoteBobA 1.15s ease-in-out infinite;
+}
+
+.pip-music-note-b {
+  color: #7dd3fc;
+  fill: #7dd3fc;
+  transform-origin: center;
+  animation: pipNoteBobB 1.15s ease-in-out infinite 0.35s;
+}
+
+.pip-bubble-window.light-mode .pip-music-note-a {
+  color: #059669;
+  fill: #059669;
+}
+
+.pip-bubble-window.light-mode .pip-music-note-b {
+  color: #0284c7;
+  fill: #0284c7;
+}
+
+@keyframes pipNoteBobA {
+  0%, 100% {
+    transform: translateY(1px) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-2.3px) rotate(6deg);
+  }
+}
+
+@keyframes pipNoteBobB {
+  0%, 100% {
+    transform: translateY(1.4px) rotate(8deg);
+  }
+  50% {
+    transform: translateY(-2.1px) rotate(-5deg);
+  }
+}
+
+.pip-music-vinyl-svg {
+  width: 19px;
+  height: 19px;
+  overflow: visible;
+  animation: pipVinylSpin 2.1s linear infinite;
+}
+
+@keyframes pipVinylSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pip-music-vinyl-disc {
+  fill: #171923;
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 1.1;
+}
+
+.pip-bubble-window.light-mode .pip-music-vinyl-disc {
+  fill: #1e2433;
+  stroke: rgba(0, 0, 0, 0.24);
+}
+
+.pip-music-vinyl-groove {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 0.9;
+}
+
+.pip-music-vinyl-glint {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.62);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.pip-music-vinyl-label {
+  fill: #1ed760;
+}
+
+.pip-bubble-window.light-mode .pip-music-vinyl-label {
+  fill: #10b981;
+}
+
+.pip-music-vibe-svg {
+  width: 23px;
+  height: 17px;
+  overflow: visible;
+}
+
+.pip-music-vibe-heart {
+  fill: #34d399;
+  transform-origin: 9px 10px;
+  animation: pipVibeBeat 0.85s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-music-vibe-heart {
+  fill: #059669;
+}
+
+.pip-music-vibe-star {
+  fill: #fde047;
+  transform-origin: 19.5px 6.4px;
+  animation: pipStarTwinkle 1.1s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-music-vibe-star {
+  fill: #d97706;
+}
+
+@keyframes pipVibeBeat {
+  0%, 100% {
+    transform: scale(0.92);
+  }
+  45% {
+    transform: scale(1.16);
+  }
+}
+
+.pip-music-pause-svg {
+  width: 22px;
+  height: 16px;
+  overflow: visible;
+}
+
+.pip-music-pause-bar {
+  fill: #fbbf24;
+  transform-origin: center;
+  animation: pipPausePulse 1.4s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-music-pause-bar {
+  fill: #d97706;
+}
+
+.pip-music-pause-note {
+  color: rgba(255, 255, 255, 0.42);
+  fill: rgba(255, 255, 255, 0.42);
+  animation: pipPauseFade 1.4s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-music-pause-note {
+  color: rgba(20, 24, 34, 0.38);
+  fill: rgba(20, 24, 34, 0.38);
+}
+
+@keyframes pipPausePulse {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scaleY(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1.04);
+  }
+}
+
+@keyframes pipPauseFade {
+  0%, 100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.pip-music-bored-dots {
+  display: flex;
+  align-items: center;
+  gap: 3.5px;
+}
+
+.pip-music-bored-dot {
+  width: 4.4px;
+  height: 4.4px;
+  border-radius: 50%;
+  background: rgba(226, 232, 240, 0.8);
+  animation: pipBoredDot 1.6s ease-in-out infinite;
+}
+
+.pip-bubble-window.light-mode .pip-music-bored-dot {
+  background: rgba(51, 65, 85, 0.74);
+}
+
+.pip-music-bored-dot:nth-child(2) {
+  animation-delay: 0.24s;
+}
+
+.pip-music-bored-dot:nth-child(3) {
+  animation-delay: 0.48s;
+}
+
+@keyframes pipBoredDot {
+  0%, 100% {
+    opacity: 0.32;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.94;
+    transform: translateY(-1.8px);
+  }
+}

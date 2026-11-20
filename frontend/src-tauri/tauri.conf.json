@@ -38,6 +38,38 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false
+      },
+      {
+        "title": "AIDEN Bubble",
+        "label": "pip_bubble",
+        "url": "index.html?window=pip_bubble",
+        "width": 76,
+        "height": 64,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "maximizable": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focusable": false,
+        "visible": false
+      },
+      {
+        "title": "AIDEN Headphones",
+        "label": "pip_headphones",
+        "url": "index.html?window=pip_headphones",
+        "width": 128,
+        "height": 122,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "maximizable": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focusable": false,
+        "visible": false
       }
     ],
     "security": {
