@@ -1080,9 +1080,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, []);
 
-  // Dynamic Shining Cursor tracking
+  // Dynamic 2D Shining Cursor tracking (supports single-line, multiline, scrolling, and follow-up capsule)
   const [selectionIndex, setSelectionIndex] = useState(0);
-  const [cursorLeft, setCursorLeft] = useState(0);
+  const [hasTextSelection, setHasTextSelection] = useState(false);
+  const [caretPos, setCaretPos] = useState<{ left: number; top: number; visible: boolean }>({
+    left: 0,
+    top: 3,
+    visible: true,
+  });
 
   const [isMultiline, setIsMultiline] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1108,8 +1113,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
   const lastIdleReportedHRef = useRef<number>(60);
   const [followupExtraH, setFollowupExtraH] = useState<number>(0);
-  const pillMeasureRef = useRef<HTMLSpanElement>(null);
-  const cardMeasureRef = useRef<HTMLSpanElement>(null);
+  const pillMirrorRef = useRef<HTMLDivElement>(null);
+  const pillMarkerRef = useRef<HTMLSpanElement>(null);
+  const followupMirrorRef = useRef<HTMLDivElement>(null);
+  const followupMarkerRef = useRef<HTMLSpanElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
   const followupBarRef = useRef<HTMLDivElement>(null);
   const pendingWrapRef = useRef<HTMLDivElement>(null);
@@ -1356,15 +1363,71 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
 
-  const cursorPrefix = inputText.slice(0, selectionIndex);
+  const clampedSelectionIndex = Math.max(0, Math.min(selectionIndex, inputText.length));
+  const cursorPrefix = inputText.slice(0, clampedSelectionIndex);
+  const cursorSuffix = inputText.slice(clampedSelectionIndex);
 
-  // Measure text width up to the caret position for the shining cursor
+  const measureActiveCaret = useCallback(() => {
+    const isFollowup = showReplyWindow;
+    const textarea = isFollowup ? followupInputRef.current : pillInputRef.current;
+    const mirror = isFollowup ? followupMirrorRef.current : pillMirrorRef.current;
+    const marker = isFollowup ? followupMarkerRef.current : pillMarkerRef.current;
+    if (!textarea || !mirror || !marker) return;
+
+    const mirrorRect = mirror.getBoundingClientRect();
+    const markerRect = marker.getBoundingClientRect();
+    if (mirrorRect.width <= 0) return;
+
+    const cursorH = isFollowup ? 18 : 20;
+    const markerH = markerRect.height > 2 ? markerRect.height : isFollowup ? 22 : 22.4;
+    const rawLeft = markerRect.left - mirrorRect.left - textarea.scrollLeft;
+    const rawTop =
+      markerRect.top -
+      mirrorRect.top +
+      (markerH - cursorH) / 2 -
+      textarea.scrollTop;
+
+    const maxLeft = Math.max(0, textarea.clientWidth - 2);
+    const clampedLeft = Math.max(0, Math.min(rawLeft, maxLeft));
+    const inView = rawTop + cursorH > -2 && rawTop < textarea.clientHeight + 2;
+
+    setCaretPos((prev) => {
+      if (
+        Math.abs(prev.left - clampedLeft) < 0.25 &&
+        Math.abs(prev.top - rawTop) < 0.25 &&
+        prev.visible === inView
+      ) {
+        return prev;
+      }
+      return { left: clampedLeft, top: rawTop, visible: inView };
+    });
+  }, [showReplyWindow]);
+
+  // Measure 2D caret coordinates synchronously before paint + re-check after browser auto-scroll
   useLayoutEffect(() => {
-    const activeMeasureRef = showReplyWindow ? cardMeasureRef : pillMeasureRef;
-    if (activeMeasureRef.current) {
-      setCursorLeft(activeMeasureRef.current.offsetWidth);
-    }
-  }, [inputText, selectionIndex, showReplyWindow]);
+    measureActiveCaret();
+    const rafId = window.requestAnimationFrame(() => measureActiveCaret());
+    return () => window.cancelAnimationFrame(rafId);
+  }, [
+    inputText,
+    clampedSelectionIndex,
+    showReplyWindow,
+    isMultiline,
+    isInputFocused,
+    pillMode,
+    isAwake,
+    followupExtraH,
+    measureActiveCaret,
+  ]);
+
+  // Keep 2D caret synced if the textarea resizes (e.g. morphing or line expansion)
+  useEffect(() => {
+    const activeEl = showReplyWindow ? followupInputRef.current : pillInputRef.current;
+    if (!activeEl) return;
+    const ro = new ResizeObserver(() => measureActiveCaret());
+    ro.observe(activeEl);
+    return () => ro.disconnect();
+  }, [showReplyWindow, pillMode, isControlsVisible, measureActiveCaret]);
 
   // Auto-focus input when in idle mode
   useEffect(() => {
@@ -1655,11 +1718,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [showReplyWindow, pipPhase, activeTurns, followupThinkingPrompt, responseMessage, userPrompt, isControlsVisible, activeUiTag, followupExtraH, updateScrollMask, syncLensMaskToDom]);
 
-  const updateSelection = (el: HTMLTextAreaElement | null) => {
-    if (el) {
-      setSelectionIndex(el.selectionStart ?? el.value.length);
-    }
-  };
+  const updateSelection = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    setSelectionIndex(start);
+    setHasTextSelection(end !== start);
+  }, []);
 
   const resetTextarea = () => {
     setIsMultiline(false);
@@ -1750,7 +1815,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
     setInputText("");
     setSelectionIndex(0);
-    setCursorLeft(0);
+    setHasTextSelection(false);
+    setCaretPos({ left: 0, top: showReplyWindow ? 2 : 3, visible: true });
     resetTextarea();
     followupInputRef.current?.blur();
     setIsInputFocused(false);
@@ -1974,13 +2040,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 }`}
               >
                 <div className="siri-input-track">
-                  <span ref={pillMeasureRef} className="siri-measure-text" aria-hidden="true">
+                  <div ref={pillMirrorRef} className="siri-cursor-mirror pill-mirror" aria-hidden="true">
                     {cursorPrefix}
-                  </span>
-                  {!isMultiline && (
+                    <span ref={pillMarkerRef} className="siri-caret-marker">
+                      &#8288;
+                    </span>
+                    {cursorSuffix}
+                  </div>
+                  {!hasTextSelection && caretPos.visible && (
                     <span
                       className="siri-shining-cursor"
-                      style={{ left: `${cursorLeft}px` }}
+                      style={{
+                        transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
+                      }}
                       aria-hidden="true"
                     />
                   )}
@@ -1995,10 +2067,16 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       updateSelection(e.target);
                       adjustTextareaHeight(e.target);
                     }}
+                    onFocus={(e) => updateSelection(e.currentTarget)}
                     onSelect={(e) => updateSelection(e.currentTarget)}
                     onKeyUp={(e) => updateSelection(e.currentTarget)}
                     onClick={(e) => updateSelection(e.currentTarget)}
-                    onKeyDown={handleKeyDown}
+                    onScroll={() => measureActiveCaret()}
+                    onKeyDown={(e) => {
+                      handleKeyDown(e);
+                      const target = e.currentTarget;
+                      window.requestAnimationFrame(() => updateSelection(target));
+                    }}
                     spellCheck={false}
                   />
                 </div>
@@ -2593,30 +2671,64 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
                   {/* Center: Frosted Capsule Input with "Ask Aiden" placeholder */}
                   <div ref={capsuleRef} className="siri-command-capsule">
-                    <textarea
-                      ref={followupInputRef}
-                      rows={1}
-                      className="siri-command-input"
-                      placeholder="Ask Aiden"
-                      value={inputText}
-                      onChange={(e) => {
-                        setInputText(e.target.value);
-                        adjustTextareaHeight(e.target);
-                      }}
-                      onFocus={() => setIsInputFocused(true)}
-                      onBlur={() => setIsInputFocused(false)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                          e.preventDefault();
-                          handleSend();
-                        } else if (e.key === "Escape") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          sleepUi();
-                        }
-                      }}
-                      spellCheck={false}
-                    />
+                    <div className="siri-input-track">
+                      <div
+                        ref={followupMirrorRef}
+                        className="siri-cursor-mirror followup-mirror"
+                        aria-hidden="true"
+                      >
+                        {cursorPrefix}
+                        <span ref={followupMarkerRef} className="siri-caret-marker">
+                          &#8288;
+                        </span>
+                        {cursorSuffix}
+                      </div>
+                      {isInputFocused && !hasTextSelection && caretPos.visible && (
+                        <span
+                          className="siri-shining-cursor followup-cursor"
+                          style={{
+                            transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <textarea
+                        ref={followupInputRef}
+                        rows={1}
+                        className="siri-command-input"
+                        placeholder="Ask Aiden"
+                        value={inputText}
+                        onChange={(e) => {
+                          setInputText(e.target.value);
+                          updateSelection(e.target);
+                          adjustTextareaHeight(e.target);
+                        }}
+                        onFocus={(e) => {
+                          setIsInputFocused(true);
+                          updateSelection(e.currentTarget);
+                        }}
+                        onBlur={() => setIsInputFocused(false)}
+                        onSelect={(e) => updateSelection(e.currentTarget)}
+                        onKeyUp={(e) => updateSelection(e.currentTarget)}
+                        onClick={(e) => updateSelection(e.currentTarget)}
+                        onScroll={() => measureActiveCaret()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            handleSend();
+                            return;
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            sleepUi();
+                            return;
+                          }
+                          const target = e.currentTarget;
+                          window.requestAnimationFrame(() => updateSelection(target));
+                        }}
+                        spellCheck={false}
+                      />
+                    </div>
                   </div>
 
                   {/* Right: Circular Frosted Glass Mic Button */}
