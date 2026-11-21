@@ -115,6 +115,7 @@ interface ChatPillProps {
   pipPhase?: PipPhase;
   onMinimizeToPip?: (restoreH: number) => void;
   onMaximizeFromPip?: () => void;
+  winMinimizeRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 interface MediaGalleryItem {
@@ -968,6 +969,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   pipPhase = "max",
   onMinimizeToPip,
   onMaximizeFromPip,
+  winMinimizeRef,
 }) => {
   void _onClearResponse;
   void _onStartRecording;
@@ -1429,16 +1431,27 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     return () => ro.disconnect();
   }, [showReplyWindow, pillMode, isControlsVisible, measureActiveCaret]);
 
-  // Auto-focus input when in idle mode
+  // Auto-focus input when waking or restoring from PiP so typing works immediately
   useEffect(() => {
-    if (isAwake && pillMode === "idle") {
+    if (!isAwake || voiceActive || (pipPhase !== "max" && pipPhase !== "to-max")) {
+      return;
+    }
+    if (pillMode === "idle") {
+      const delay = pipPhase === "to-max" ? 45 : 80;
       const timer = window.setTimeout(() => {
         pillInputRef.current?.focus();
         setSelectionIndex(pillInputRef.current?.selectionStart ?? inputText.length);
-      }, 120);
+      }, delay);
       return () => clearTimeout(timer);
     }
-  }, [isAwake, pillMode]);
+    if (pillMode === "responding" && pipPhase === "max" && inputText.length > 0) {
+      const timer = window.setTimeout(() => {
+        followupInputRef.current?.focus();
+        setSelectionIndex(followupInputRef.current?.selectionStart ?? inputText.length);
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [isAwake, pillMode, pipPhase, voiceActive]);
 
   const triggerMinimizeToPipRef = useRef<() => void>(() => {});
 
@@ -1870,6 +1883,55 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   ]);
 
   triggerMinimizeToPipRef.current = triggerMinimizeToPip;
+
+  // Native Left-Win minimize handler: strictly Awake <-> Minimize (NEVER clears an active chat or draft)
+  const handleWinKeyMinimize = useCallback(() => {
+    if (!isAwake || pipPhase === "pip" || pipPhase === "to-pip") return;
+
+    if (pillMode === "responding") {
+      triggerMinimizeToPip();
+      return;
+    }
+
+    // Preserve active thinking state or a half-typed idle draft in PiP rather than clearing it
+    if (pillMode === "thinking" || inputText.length > 0) {
+      const restoreH =
+        pillMode === "thinking"
+          ? 60
+          : Math.max(60, lastIdleReportedHRef.current || 60);
+      setIsHovered(false);
+      setIsInputFocused(false);
+      pillInputRef.current?.blur();
+      followupInputRef.current?.blur();
+      if (onMinimizeToPip) {
+        onMinimizeToPip(restoreH);
+      }
+      return;
+    }
+
+    // Clean empty Search/Ask pill (no chat, no draft): morph gently to the 68x68 asleep cube
+    if (voiceActive) {
+      toggleVoiceMode(false);
+    }
+    sleepUi();
+  }, [
+    isAwake,
+    pipPhase,
+    pillMode,
+    inputText.length,
+    voiceActive,
+    triggerMinimizeToPip,
+    onMinimizeToPip,
+    sleepUi,
+  ]);
+
+  useEffect(() => {
+    if (!winMinimizeRef) return;
+    winMinimizeRef.current = handleWinKeyMinimize;
+    return () => {
+      winMinimizeRef.current = null;
+    };
+  }, [winMinimizeRef, handleWinKeyMinimize]);
 
   return (
     <div className="chat-pill-anchor">
@@ -3224,6 +3286,60 @@ export const ChatPillWindow: React.FC = () => {
     handleMaximizeFromPip();
   }, [isAwake, handleMaximizeFromPip]);
 
+  const isBackendOnlineRef = useRef(isBackendOnline);
+  isBackendOnlineRef.current = isBackendOnline;
+  const isAwakeRef = useRef(isAwake);
+  isAwakeRef.current = isAwake;
+  const handleSquareActivateRef = useRef(handleSquareActivate);
+  handleSquareActivateRef.current = handleSquareActivate;
+  const winMinimizeActionRef = useRef<(() => void) | null>(null);
+  const lastWinToggleSeqRef = useRef<number>(0);
+
+  // Native Left-Win key toggle emitted by Rust WH_KEYBOARD_LL hook (Awake <-> Minimize)
+  useEffect(() => {
+    let disposed = false;
+    let unlistenWinKey: (() => void) | undefined;
+
+    const setupWinKeyListener = async () => {
+      try {
+        const unlisten = await listen<{ seq?: number }>("aiden-win-key-toggle", (event) => {
+          const seq = typeof event.payload?.seq === "number" ? event.payload.seq : 0;
+          if (seq > 0) {
+            if (seq <= lastWinToggleSeqRef.current) return;
+            lastWinToggleSeqRef.current = seq;
+          }
+          if (!isBackendOnlineRef.current) {
+            invoke("show_main_window").catch(() => {});
+            return;
+          }
+          if (
+            !isAwakeRef.current ||
+            pipPhaseRef.current === "pip" ||
+            pipPhaseRef.current === "to-pip"
+          ) {
+            handleSquareActivateRef.current();
+          } else {
+            winMinimizeActionRef.current?.();
+          }
+        });
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenWinKey = unlisten;
+        }
+      } catch {
+        // Fallback when running outside Tauri
+      }
+    };
+
+    setupWinKeyListener();
+
+    return () => {
+      disposed = true;
+      if (unlistenWinKey) unlistenWinKey();
+    };
+  }, []);
+
   const morphTo = useCallback(
     (targetWidth: number, targetHeight: number, durationMs = 280) => {
       if (!isAwake || pipPhaseRef.current !== "max") return;
@@ -3280,11 +3396,12 @@ export const ChatPillWindow: React.FC = () => {
 
   // Sync state events from Tauri main process
   useEffect(() => {
+    let disposed = false;
     let unlistenSync: (() => void) | undefined;
 
     const setupListener = async () => {
       try {
-        unlistenSync = await listen<ChatPillSyncPayload>("chat-pill-sync", (event) => {
+        const unlisten = await listen<ChatPillSyncPayload>("chat-pill-sync", (event) => {
           const payload = event.payload;
           if (typeof payload.backendOnline === "boolean") {
             clearOfflineGraceTimer();
@@ -3304,6 +3421,11 @@ export const ChatPillWindow: React.FC = () => {
             setTurns([{ id: "sync-turn", userPrompt: null, assistantReply: payload.reply }]);
           }
         });
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenSync = unlisten;
+        }
       } catch {
         // Fallback if running outside Tauri
       }
@@ -3312,6 +3434,7 @@ export const ChatPillWindow: React.FC = () => {
     setupListener();
 
     return () => {
+      disposed = true;
       if (unlistenSync) unlistenSync();
     };
   }, [clearOfflineGraceTimer]);
@@ -3671,6 +3794,7 @@ export const ChatPillWindow: React.FC = () => {
         pipPhase={pipPhase}
         onMinimizeToPip={handleMinimizeToPip}
         onMaximizeFromPip={handleSquareActivate}
+        winMinimizeRef={winMinimizeActionRef}
       />
     </div>
   );

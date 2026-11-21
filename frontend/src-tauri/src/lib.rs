@@ -13,6 +13,7 @@ use std::os::windows::process::CommandExt;
 mod audio_beat;
 #[cfg(target_os = "windows")]
 mod native_window;
+mod win_hotkey;
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -48,6 +49,8 @@ struct PipBopState {
     track_reset_seq: Arc<AtomicU64>,
     home_pos: Arc<Mutex<Option<(i32, i32)>>>,
 }
+
+struct PrevForegroundState(Mutex<Option<isize>>);
 
 #[cfg(target_os = "windows")]
 struct PipPowerState(Mutex<Option<native_window::PowerStatusSnapshot>>);
@@ -275,6 +278,7 @@ fn reset_chat_pill_on_stop(app: &AppHandle) {
 }
 
 fn perform_boot_aiden(state: &BackendState) -> Result<serde_json::Value, String> {
+    win_hotkey::set_engine_paused(false);
     if is_tracked_backend_alive(state) || is_port_8765_active() {
         return Ok(serde_json::json!({
             "ok": true,
@@ -295,6 +299,7 @@ fn perform_boot_aiden(state: &BackendState) -> Result<serde_json::Value, String>
 }
 
 fn perform_shutdown_aiden(app: &AppHandle, state: &BackendState) -> serde_json::Value {
+    win_hotkey::set_engine_paused(true);
     stop_all_aiden_processes(state);
     reset_chat_pill_on_stop(app);
 
@@ -307,6 +312,7 @@ fn perform_shutdown_aiden(app: &AppHandle, state: &BackendState) -> serde_json::
 }
 
 fn perform_restart_aiden(app: &AppHandle, state: &BackendState) -> Result<serde_json::Value, String> {
+    win_hotkey::set_engine_paused(false);
     stop_all_aiden_processes(state);
     reset_chat_pill_on_stop(app);
 
@@ -1709,6 +1715,75 @@ fn set_pip_music_bop(
     Ok(())
 }
 
+fn capture_previous_foreground(app: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(fg_raw) = native_window::get_foreground_hwnd_raw() else {
+            return;
+        };
+        let mut is_own = false;
+        for label in ["main", "chat_pill", "pip_bubble", "pip_headphones"] {
+            if let Some(w) = app.get_webview_window(label) {
+                if let Ok(h) = w.hwnd() {
+                    if (h.0 as isize) == fg_raw {
+                        is_own = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if !is_own {
+            let prev = app.state::<PrevForegroundState>();
+            if let Ok(mut guard) = prev.0.lock() {
+                *guard = Some(fg_raw);
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+    }
+}
+
+fn restore_previous_foreground(app: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        let prev_hwnd = {
+            let prev = app.state::<PrevForegroundState>();
+            prev.0.lock().ok().and_then(|mut g| g.take())
+        };
+        if let Some(hwnd_raw) = prev_hwnd {
+            native_window::restore_foreground_window(hwnd_raw);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+    }
+}
+
+fn focus_chat_pill_native(app: &AppHandle) {
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_always_on_top(true);
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = pill_win.hwnd() {
+            native_window::force_foreground_window(hwnd);
+        }
+        let _ = pill_win.set_focus();
+    }
+}
+
+#[tauri::command]
+fn set_win_key_override(enabled: bool) -> Result<bool, String> {
+    win_hotkey::set_enabled(enabled);
+    Ok(win_hotkey::is_enabled())
+}
+
+#[tauri::command]
+fn get_win_key_override() -> Result<bool, String> {
+    Ok(win_hotkey::is_enabled())
+}
+
 fn compute_upper_third_pill_rect(app: &AppHandle, pill_win: &WebviewWindow) -> Option<(i32, i32, i32, i32, f64)> {
     let monitor = app
         .primary_monitor()
@@ -1981,6 +2056,8 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
             spawn_pip_cursor_watcher(app.clone(), hwnd_raw, scale);
         }
 
+        restore_previous_foreground(&app);
+
         return Ok(serde_json::json!({
             "x": target_x,
             "y": target_y,
@@ -2021,6 +2098,7 @@ fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::
     {
         let morph_state = app.state::<MorpherState>();
         let mut hwnd_raw: isize = 0;
+        let mut morphed_from_open_pill = false;
 
         if let Ok(guard) = morph_state.0.lock() {
             if let Some(morpher) = guard.as_ref() {
@@ -2035,6 +2113,7 @@ fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::
                 if already_square {
                     // Already sitting cleanly as the paused square: keep eyes & position uninterrupted
                 } else if was_visible {
+                    morphed_from_open_pill = true;
                     morpher.morph_to_rect(
                         native_window::RectTarget {
                             x: target_x,
@@ -2061,6 +2140,9 @@ fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::
 
         if hwnd_raw != 0 {
             spawn_pip_cursor_watcher(app.clone(), hwnd_raw, scale);
+        }
+        if morphed_from_open_pill {
+            restore_previous_foreground(&app);
         }
 
         return Ok(serde_json::json!({
@@ -2090,6 +2172,7 @@ fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::
 
 #[tauri::command]
 fn maximize_from_pip(app: AppHandle, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
+    capture_previous_foreground(&app);
     stop_pip_bop_immediately(&app);
     stop_pip_cursor_watcher(&app);
     hide_pip_bubble_immediately(&app);
@@ -2145,6 +2228,8 @@ fn maximize_from_pip(app: AppHandle, width: Option<f64>, height: Option<f64>) ->
                     340,
                     native_window::MorphEasing::DynamicSpring,
                 );
+                drop(guard);
+                focus_chat_pill_native(&app);
                 return Ok(());
             }
         }
@@ -2293,6 +2378,7 @@ fn set_chat_pill_state(
             let _ = pill_win.set_ignore_cursor_events(!awake);
             let rect_info = compute_upper_third_pill_rect(&app, &pill_win);
             if awake {
+                capture_previous_foreground(&app);
                 #[cfg(target_os = "windows")]
                 {
                     if let Some((rx, ry, rw, rh, scale)) = rect_info {
@@ -2311,8 +2397,7 @@ fn set_chat_pill_state(
 
                 let _ = pill_win.show();
                 let _ = pill_win.unminimize();
-                let _ = pill_win.set_always_on_top(true);
-                let _ = pill_win.set_focus();
+                focus_chat_pill_native(&app);
 
                 #[cfg(target_os = "windows")]
                 if let Some((rx, ry, rw, rh, _)) = rect_info {
@@ -2399,6 +2484,7 @@ pub fn run() {
             track_reset_seq: Arc::new(AtomicU64::new(0)),
             home_pos: Arc::new(Mutex::new(None)),
         })
+        .manage(PrevForegroundState(Mutex::new(None)))
         .manage(PipPowerState(Mutex::new(None)))
         .manage(PipSpotifyState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
@@ -2464,6 +2550,21 @@ pub fn run() {
                 }
             }
 
+            // Native Left-Win solo-tap hook: Awake <-> Minimize AIDEN (preserves Win+* combos & Right Win)
+            {
+                let win_app_handle = app.handle().clone();
+                let toggle_seq = Arc::new(AtomicU64::new(0));
+                win_hotkey::start_hook(move || {
+                    capture_previous_foreground(&win_app_handle);
+                    let seq = toggle_seq.fetch_add(1, Ordering::Relaxed) + 1;
+                    let _ = win_app_handle.emit_to(
+                        "chat_pill",
+                        "aiden-win-key-toggle",
+                        serde_json::json!({ "seq": seq }),
+                    );
+                });
+            }
+
             // Context menu with Open, quick engine controls (Boot up, Restart, Shutdown), and Exit
             let open_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -2527,6 +2628,7 @@ pub fn run() {
                         });
                     }
                     "exit" => {
+                        win_hotkey::stop_hook();
                         stop_pip_bop_immediately(app);
                         stop_pip_cursor_watcher(app);
                         hide_pip_bubble_immediately(app);
@@ -2613,6 +2715,8 @@ pub fn run() {
             set_pip_bubble,
             set_pip_headphones,
             set_pip_music_bop,
+            set_win_key_override,
+            get_win_key_override,
             get_pip_power_status,
             get_pip_spotify_status,
             boot_aiden,

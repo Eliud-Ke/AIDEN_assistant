@@ -17,17 +17,20 @@ use windows::{
         },
         System::{
             Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
+            Threading::{AttachThreadInput, GetCurrentThreadId},
             WinRT::{RoInitialize, RO_INIT_MULTITHREADED},
         },
         UI::Controls::MARGINS,
         UI::WindowsAndMessaging::{
-            BeginDeferWindowPos, CallWindowProcW, DefWindowProcW, DeferWindowPos,
-            EndDeferWindowPos, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
-            IsWindowVisible, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos,
-            ShowWindow, GWL_EXSTYLE, GWLP_WNDPROC, HWND_TOPMOST, LWA_ALPHA, SM_CXVIRTUALSCREEN,
-            SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOSIZE,
-            SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, WM_NCACTIVATE, WNDPROC, WS_EX_LAYERED,
-            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+            BeginDeferWindowPos, BringWindowToTop, CallWindowProcW, DefWindowProcW,
+            DeferWindowPos, EndDeferWindowPos, GetCursorPos, GetForegroundWindow,
+            GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
+            IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow, SetLayeredWindowAttributes,
+            SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWLP_WNDPROC, HWND_TOPMOST,
+            LWA_ALPHA, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+            SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE,
+            SW_SHOWNOACTIVATE, WM_NCACTIVATE, WNDPROC, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+            WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
         },
     },
 };
@@ -1040,6 +1043,73 @@ pub fn show_window_noactivate(hwnd: HWND) {
 pub fn hide_window_clean(hwnd: HWND) {
     unsafe {
         let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_foreground_hwnd_raw() -> Option<isize> {
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            None
+        } else {
+            Some(fg.0 as isize)
+        }
+    }
+}
+
+/// Reliably transfers Windows foreground keyboard focus to `target_hwnd`, bypassing
+/// Windows' foreground lock when waking AIDEN from Terminal, Chrome, or VS Code.
+#[cfg(target_os = "windows")]
+pub fn force_foreground_window(target_hwnd: HWND) {
+    unsafe {
+        if !IsWindow(Some(target_hwnd)).as_bool() {
+            return;
+        }
+        let fg = GetForegroundWindow();
+        if fg == target_hwnd {
+            return;
+        }
+        let fg_tid = if !fg.0.is_null() {
+            GetWindowThreadProcessId(fg, None)
+        } else {
+            0
+        };
+        let my_tid = GetCurrentThreadId();
+        let target_tid = GetWindowThreadProcessId(target_hwnd, None);
+
+        let attached_fg = fg_tid != 0 && fg_tid != my_tid && AttachThreadInput(my_tid, fg_tid, true).as_bool();
+        let attached_target = target_tid != 0
+            && target_tid != my_tid
+            && target_tid != fg_tid
+            && AttachThreadInput(my_tid, target_tid, true).as_bool();
+
+        let _ = BringWindowToTop(target_hwnd);
+        let _ = SetForegroundWindow(target_hwnd);
+
+        if attached_target {
+            let _ = AttachThreadInput(my_tid, target_tid, false);
+        }
+        if attached_fg {
+            let _ = AttachThreadInput(my_tid, fg_tid, false);
+        }
+    }
+}
+
+/// Hands keyboard focus cleanly back to the window the user was working in before waking AIDEN.
+#[cfg(target_os = "windows")]
+pub fn restore_foreground_window(hwnd_raw: isize) {
+    if hwnd_raw == 0 {
+        return;
+    }
+    let hwnd = HWND(hwnd_raw as *mut _);
+    unsafe {
+        if IsWindow(Some(hwnd)).as_bool()
+            && IsWindowVisible(hwnd).as_bool()
+            && !IsIconic(hwnd).as_bool()
+        {
+            force_foreground_window(hwnd);
+        }
     }
 }
 
