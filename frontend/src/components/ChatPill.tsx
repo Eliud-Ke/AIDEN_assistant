@@ -13,7 +13,32 @@ import { SpotifyPlaylistsCard, SpotifyPlaylistsCardData, SpotifyPlaylistItem } f
 import { SpotifyLibraryPlaylistsCard, SpotifyLibraryPlaylistsCardData } from "./SpotifyLibraryPlaylistsCard";
 import { MarkdownContent } from "./MarkdownContent";
 import { PipSquareEyes } from "./PipSquareEyes";
+import type { SearchItem } from "./SearchDrawer";
 import "./ChatPill.css";
+
+interface UnifiedSearchResponse {
+  query: string;
+  mode: "recents" | "search";
+  recents: SearchItem[];
+  apps: SearchItem[];
+  files: SearchItem[];
+  everythingAvailable: boolean;
+}
+
+const SEARCH_AUTO_THRESHOLD = 4;
+
+function computeSearchDrawerHeight(res: UnifiedSearchResponse): number {
+  if (res.mode === "recents") {
+    if (res.recents.length === 0) return 182;
+    return Math.min(410, Math.max(124, 18 + 26 + res.recents.length * 46 + 34));
+  }
+  const hasApps = res.apps.length > 0;
+  const hasFiles = res.files.length > 0;
+  const headers = (hasApps ? 1 : 0) + (hasFiles ? 1 : 0);
+  const rows = res.apps.length + res.files.length;
+  const dividerGap = hasApps && hasFiles ? 12 : 0;
+  return Math.min(430, Math.max(124, 18 + headers * 26 + rows * 46 + dividerGap + 34));
+}
 
 export type PipPhase = "max" | "to-pip" | "pip" | "to-max";
 
@@ -979,6 +1004,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   );
   const activeConnectorMeta = isConnecting ? resolveConnectorMeta(activeUiTag, activeConnector) : null;
   const [inputText, setInputText] = useState("");
+  const inputTextRef = useRef(inputText);
+  inputTextRef.current = inputText;
   const [localVoiceActive, setLocalVoiceActive] = useState(false);
   const voiceActive = isVoiceActive !== undefined ? isVoiceActive : localVoiceActive;
 
@@ -1093,6 +1120,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const [isMultiline, setIsMultiline] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [drawerForceOpen, setDrawerForceOpen] = useState(false);
+  const [drawerSelectedIndex, setDrawerSelectedIndex] = useState(-1);
+  const [searchResult, setSearchResult] = useState<UnifiedSearchResponse | null>(null);
+  const searchReqGenRef = useRef<number>(0);
+  const searchDebounceRef = useRef<number | null>(null);
+  const drawerVisiblePrevRef = useRef<boolean>(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isPipDragging, setIsPipDragging] = useState(false);
@@ -1431,31 +1464,105 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     return () => ro.disconnect();
   }, [showReplyWindow, pillMode, isControlsVisible, measureActiveCaret]);
 
+  // Focus active input (immediate for idle Search/Ask pill; preserves hover-to-reveal in maximized mode unless a draft exists or user starts typing)
+  const focusActiveInput = useCallback(
+    (forceFollowup = false) => {
+      if (!isAwake || voiceActive || (pipPhase !== "max" && pipPhase !== "to-max")) {
+        return;
+      }
+      if (pillMode === "idle") {
+        const el = pillInputRef.current;
+        if (!el) return;
+        el.focus({ preventScroll: true });
+        const end = el.value.length;
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          // Ignore if not yet selectable
+        }
+        setSelectionIndex(end);
+        setHasTextSelection(false);
+        window.requestAnimationFrame(() => measureActiveCaret());
+        return;
+      }
+      if (pillMode === "responding" && (forceFollowup || inputTextRef.current.length > 0)) {
+        const el = followupInputRef.current;
+        if (!el) return;
+        el.focus({ preventScroll: true });
+        setIsInputFocused(true);
+        const end = el.value.length;
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          // Ignore if not yet selectable
+        }
+        setSelectionIndex(end);
+        setHasTextSelection(false);
+        window.requestAnimationFrame(() => measureActiveCaret());
+      }
+    },
+    [isAwake, voiceActive, pipPhase, pillMode, measureActiveCaret]
+  );
+
   // Auto-focus input when waking or restoring from PiP so typing works immediately
   useEffect(() => {
     if (!isAwake || voiceActive || (pipPhase !== "max" && pipPhase !== "to-max")) {
       return;
     }
-    if (pillMode === "idle") {
-      const delay = pipPhase === "to-max" ? 45 : 80;
-      const timer = window.setTimeout(() => {
-        pillInputRef.current?.focus();
-        setSelectionIndex(pillInputRef.current?.selectionStart ?? inputText.length);
-      }, delay);
-      return () => clearTimeout(timer);
-    }
-    if (pillMode === "responding" && pipPhase === "max" && inputText.length > 0) {
-      const timer = window.setTimeout(() => {
-        followupInputRef.current?.focus();
-        setSelectionIndex(followupInputRef.current?.selectionStart ?? inputText.length);
-      }, 60);
-      return () => clearTimeout(timer);
-    }
-  }, [isAwake, pillMode, pipPhase, voiceActive]);
+    const t1 = window.setTimeout(() => focusActiveInput(false), pipPhase === "to-max" ? 20 : 40);
+    const t2 = window.setTimeout(() => focusActiveInput(false), pipPhase === "to-max" ? 110 : 120);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isAwake, pillMode, pipPhase, voiceActive, focusActiveInput]);
+
+  // Re-assert DOM focus the exact millisecond WebView2 acquires native OS window focus
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      focusActiveInput(false);
+    };
+    window.addEventListener("focus", handleWindowFocus);
+    return () => window.removeEventListener("focus", handleWindowFocus);
+  }, [focusActiveInput]);
+
+  // Sync with Rust main-thread native focus handoff ("aiden-focus-input")
+  const focusActiveInputRef = useRef(focusActiveInput);
+  focusActiveInputRef.current = focusActiveInput;
+  useEffect(() => {
+    let disposed = false;
+    let unlistenFocus: (() => void) | undefined;
+
+    const setupFocusListener = async () => {
+      try {
+        const unlisten = await listen("aiden-focus-input", () => {
+          focusActiveInputRef.current(false);
+        });
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenFocus = unlisten;
+        }
+      } catch {
+        // Fallback outside Tauri
+      }
+    };
+
+    setupFocusListener();
+    return () => {
+      disposed = true;
+      if (unlistenFocus) unlistenFocus();
+    };
+  }, []);
 
   const triggerMinimizeToPipRef = useRef<() => void>(() => {});
+  const closeSearchDrawerRef = useRef<() => boolean>(() => false);
 
   const sleepUi = useCallback(() => {
+    setDrawerForceOpen(false);
+    setDrawerSelectedIndex(-1);
+    setSearchResult(null);
+    invoke("sync_search_drawer", { visible: false }).catch(() => {});
     setIsHovered(false);
     setIsInputFocused(false);
     pillInputRef.current?.blur();
@@ -1465,7 +1572,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isAwake, onToggleSleep]);
 
-  // Global key listener: Ctrl+M to minimize responding mode, Space to exit voice, Escape to sleep
+  // Global key listener: Ctrl+M to minimize, Space to exit voice, Escape to sleep,
+  // plus zero-click Type-Anywhere & Ctrl+V capture into Search/Ask or Ask Aiden
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (
@@ -1491,14 +1599,105 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         e.preventDefault();
         if (voiceActive) {
           toggleVoiceMode(false);
+        } else if (closeSearchDrawerRef.current()) {
+          return;
         } else {
           sleepUi();
         }
+        return;
+      }
+
+      // Zero-click Type-Anywhere / Paste-Anywhere while AIDEN is awake & open
+      if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        !isAwake ||
+        voiceActive ||
+        (pipPhase !== "max" && pipPhase !== "to-max") ||
+        (pillMode !== "idle" && pillMode !== "responding")
+      ) {
+        return;
+      }
+
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active &&
+        (active === pillInputRef.current ||
+          active === followupInputRef.current ||
+          active.tagName === "TEXTAREA" ||
+          active.tagName === "INPUT" ||
+          active.isContentEditable)
+      ) {
+        return;
+      }
+
+      const targetEl = pillMode === "responding" ? followupInputRef.current : pillInputRef.current;
+      if (!targetEl) return;
+
+      // Ctrl+V / Cmd+V directly focuses input so native clipboard paste lands inside it
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "v") {
+        if (pillMode === "responding") {
+          setIsInputFocused(true);
+        }
+        targetEl.focus({ preventScroll: true });
+        return;
+      }
+
+      // Preserve all other modifier shortcuts (Ctrl+C to copy reply text, Ctrl+A, etc.)
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+
+      // Backspace when a draft exists while blurred
+      if (e.key === "Backspace" && inputTextRef.current.length > 0) {
+        e.preventDefault();
+        const nextVal = inputTextRef.current.slice(0, -1);
+        inputTextRef.current = nextVal;
+        targetEl.value = nextVal;
+        if (pillMode === "responding") {
+          setIsInputFocused(true);
+        }
+        targetEl.focus({ preventScroll: true });
+        try {
+          targetEl.setSelectionRange(nextVal.length, nextVal.length);
+        } catch {
+          // Ignore
+        }
+        setInputText(nextVal);
+        setSelectionIndex(nextVal.length);
+        setHasTextSelection(false);
+        window.requestAnimationFrame(() => measureActiveCaret());
+        return;
+      }
+
+      // Single printable character -> capture synchronously with zero dropped/reordered keystrokes
+      if (e.key.length === 1) {
+        // Don't hijack Space on an empty maximized reading card (user may press Space to scroll)
+        if (pillMode === "responding" && inputTextRef.current.length === 0 && e.key === " ") {
+          return;
+        }
+        e.preventDefault();
+        const nextVal = inputTextRef.current + e.key;
+        inputTextRef.current = nextVal;
+        targetEl.value = nextVal;
+        if (pillMode === "responding") {
+          setIsInputFocused(true);
+        }
+        targetEl.focus({ preventScroll: true });
+        try {
+          targetEl.setSelectionRange(nextVal.length, nextVal.length);
+        } catch {
+          // Ignore
+        }
+        setInputText(nextVal);
+        setSelectionIndex(nextVal.length);
+        setHasTextSelection(false);
+        window.requestAnimationFrame(() => measureActiveCaret());
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [voiceActive, pillMode, isAwake, pipPhase, sleepUi]);
+  }, [voiceActive, pillMode, isAwake, pipPhase, sleepUi, measureActiveCaret]);
 
   // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
@@ -1808,20 +2007,266 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [inputText, showReplyWindow, isAwake, userPrompt, pillMode, voiceActive]);
 
+  // =========================================================================
+  // DETACHED RAYCAST-STYLE SEARCH DRAWER (4-char threshold + ↓ force-open)
+  // =========================================================================
+  const isSearchEligible = Boolean(
+    isAwake && pipPhase === "max" && pillMode === "idle" && !voiceActive && !isSubmitting
+  );
+  const trimmedSearchQuery = inputText.trim();
+  const drawerItems: SearchItem[] = searchResult
+    ? searchResult.mode === "recents"
+      ? searchResult.recents
+      : [...searchResult.apps, ...searchResult.files]
+    : [];
+  const searchMatchesCurrentQuery = Boolean(
+    searchResult &&
+      ((trimmedSearchQuery.length === 0 && searchResult.mode === "recents") ||
+        (trimmedSearchQuery.length > 0 &&
+          searchResult.mode === "search" &&
+          searchResult.query.toLowerCase() === trimmedSearchQuery.toLowerCase()))
+  );
+  const shouldShowSearchDrawer = Boolean(
+    isSearchEligible &&
+      searchMatchesCurrentQuery &&
+      (trimmedSearchQuery.length === 0
+        ? drawerForceOpen
+        : trimmedSearchQuery.length < SEARCH_AUTO_THRESHOLD
+        ? drawerForceOpen && drawerItems.length > 0
+        : drawerItems.length > 0)
+  );
+
+  const runUnifiedSearch = useCallback(
+    async (queryStr: string, includeFiles: boolean, autoSelectFirst: boolean) => {
+      const gen = ++searchReqGenRef.current;
+      try {
+        const res = await invoke<UnifiedSearchResponse>("search_unified", {
+          query: queryStr,
+          includeFiles,
+        });
+        if (gen !== searchReqGenRef.current) return;
+        setSearchResult(res);
+        const total =
+          res.mode === "recents" ? res.recents.length : res.apps.length + res.files.length;
+        if (autoSelectFirst && total > 0) {
+          setDrawerSelectedIndex(0);
+        } else {
+          setDrawerSelectedIndex((prev) => (prev >= total ? total - 1 : prev));
+        }
+      } catch {
+        // Ignore outside Tauri
+      }
+    },
+    []
+  );
+
+  // Trigger two-phase live search whenever query passes 4-char threshold or drawer is force-opened
+  useEffect(() => {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
+    if (!isSearchEligible) {
+      setDrawerForceOpen(false);
+      setDrawerSelectedIndex(-1);
+      setSearchResult(null);
+      if (drawerVisiblePrevRef.current) {
+        drawerVisiblePrevRef.current = false;
+        invoke("sync_search_drawer", { visible: false }).catch(() => {});
+      }
+      return;
+    }
+
+    const q = trimmedSearchQuery;
+    if (q.length === 0) {
+      if (drawerForceOpen) {
+        runUnifiedSearch("", false, false);
+      } else {
+        setSearchResult(null);
+        setDrawerSelectedIndex(-1);
+      }
+      return;
+    }
+
+    if (q.length < SEARCH_AUTO_THRESHOLD && !drawerForceOpen) {
+      setSearchResult(null);
+      setDrawerSelectedIndex(-1);
+      return;
+    }
+
+    // Phase 1 (0ms): instant in-memory app filtering
+    runUnifiedSearch(q, false, false);
+
+    // Phase 2 (85ms debounced): merge Everything CLI file results smoothly underneath Apps
+    if (q.length >= 2) {
+      searchDebounceRef.current = window.setTimeout(() => {
+        searchDebounceRef.current = null;
+        runUnifiedSearch(q, true, false);
+      }, 85);
+    }
+
+    return () => {
+      if (searchDebounceRef.current !== null) {
+        window.clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+    };
+  }, [isSearchEligible, trimmedSearchQuery, drawerForceOpen, runUnifiedSearch]);
+
+  // Synchronize detached native search_drawer window geometry, theme, and items
+  useEffect(() => {
+    if (!shouldShowSearchDrawer || !searchResult) {
+      if (drawerVisiblePrevRef.current) {
+        drawerVisiblePrevRef.current = false;
+        invoke("sync_search_drawer", { visible: false }).catch(() => {});
+      }
+      return;
+    }
+
+    drawerVisiblePrevRef.current = true;
+    const height = computeSearchDrawerHeight(searchResult);
+    invoke("sync_search_drawer", {
+      visible: true,
+      height,
+      darkMode: isDarkMode,
+      payload: {
+        open: true,
+        darkMode: isDarkMode,
+        query: searchResult.query,
+        mode: searchResult.mode,
+        recents: searchResult.recents,
+        apps: searchResult.apps,
+        files: searchResult.files,
+        selectedIndex: drawerSelectedIndex,
+        everythingAvailable: searchResult.everythingAvailable,
+      },
+    }).catch(() => {});
+  }, [shouldShowSearchDrawer, searchResult, drawerSelectedIndex, isDarkMode, isMultiline]);
+
+  // Listen for mouse hover & click-launch events coming back from search_drawer
+  const sleepUiRef = useRef(sleepUi);
+  sleepUiRef.current = sleepUi;
+  useEffect(() => {
+    let disposed = false;
+    let unlistenHover: (() => void) | undefined;
+    let unlistenLaunched: (() => void) | undefined;
+
+    const setup = async () => {
+      try {
+        const u1 = await listen<{ index?: number }>("search-drawer-hover", (event) => {
+          if (typeof event.payload?.index === "number") {
+            setDrawerSelectedIndex(event.payload.index);
+          }
+        });
+        const u2 = await listen("search-drawer-launched", () => {
+          setInputText("");
+          inputTextRef.current = "";
+          setDrawerForceOpen(false);
+          setDrawerSelectedIndex(-1);
+          setSearchResult(null);
+          resetTextarea();
+          sleepUiRef.current();
+        });
+        if (disposed) {
+          u1();
+          u2();
+        } else {
+          unlistenHover = u1;
+          unlistenLaunched = u2;
+        }
+      } catch {
+        // Fallback outside Tauri
+      }
+    };
+
+    setup();
+    return () => {
+      disposed = true;
+      if (unlistenHover) unlistenHover();
+      if (unlistenLaunched) unlistenLaunched();
+    };
+  }, []);
+
+  closeSearchDrawerRef.current = () => {
+    if (!shouldShowSearchDrawer) return false;
+    setDrawerForceOpen(false);
+    setDrawerSelectedIndex(-1);
+    setSearchResult(null);
+    invoke("sync_search_drawer", { visible: false }).catch(() => {});
+    return true;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Down Arrow: force-open drawer (empty -> Recents, <4 chars -> short query) or step through rows
+    if (e.key === "ArrowDown" && isSearchEligible) {
+      const atEnd = !isMultiline || (e.currentTarget.selectionStart ?? 0) >= inputText.length;
+      if (atEnd) {
+        e.preventDefault();
+        if (!shouldShowSearchDrawer) {
+          setDrawerForceOpen(true);
+          runUnifiedSearch(trimmedSearchQuery, trimmedSearchQuery.length >= 2, true);
+        } else if (drawerItems.length > 0) {
+          setDrawerSelectedIndex((prev) => (prev < drawerItems.length - 1 ? prev + 1 : 0));
+        }
+        return;
+      }
+    }
+
+    // Up Arrow: navigate up rows -> back to "Search or Ask" -> close force-opened drawer
+    if (e.key === "ArrowUp" && shouldShowSearchDrawer) {
       e.preventDefault();
-      handleSend();
-    } else if (e.key === "Escape") {
+      if (drawerSelectedIndex > 0) {
+        setDrawerSelectedIndex((prev) => prev - 1);
+      } else if (drawerSelectedIndex === 0) {
+        setDrawerSelectedIndex(-1);
+      } else if (drawerSelectedIndex === -1 && drawerForceOpen) {
+        setDrawerForceOpen(false);
+      }
+      return;
+    }
+
+    // Enter: launch highlighted app/file if in drawer, OR send directly to AIDEN if in Search/Ask box!
+    if (e.key === "Enter") {
+      if (shouldShowSearchDrawer && drawerSelectedIndex >= 0 && drawerItems[drawerSelectedIndex]) {
+        e.preventDefault();
+        const chosen = drawerItems[drawerSelectedIndex];
+        const reveal = e.ctrlKey || e.metaKey;
+        invoke("launch_search_item", { item: chosen, revealInExplorer: reveal }).catch(() => {});
+        return;
+      }
+      if (!e.shiftKey) {
+        e.preventDefault();
+        setDrawerForceOpen(false);
+        setDrawerSelectedIndex(-1);
+        setSearchResult(null);
+        invoke("sync_search_drawer", { visible: false }).catch(() => {});
+        handleSend();
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      sleepUi();
+      if (shouldShowSearchDrawer) {
+        setDrawerForceOpen(false);
+        setDrawerSelectedIndex(-1);
+        setSearchResult(null);
+        invoke("sync_search_drawer", { visible: false }).catch(() => {});
+      } else {
+        sleepUi();
+      }
     }
   };
 
   const handleSend = () => {
     const trimmed = inputText.trim();
     if (!trimmed || isSubmitting) return;
+    setDrawerForceOpen(false);
+    setDrawerSelectedIndex(-1);
+    setSearchResult(null);
+    invoke("sync_search_drawer", { visible: false }).catch(() => {});
     setIsSubmitting(true);
     if (onSendMessage) {
       onSendMessage(trimmed, showReplyWindow);
@@ -2111,7 +2556,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
                   {!hasTextSelection && caretPos.visible && (
                     <span
-                      className="siri-shining-cursor"
+                      className={`siri-shining-cursor ${
+                        shouldShowSearchDrawer && drawerSelectedIndex >= 0 ? "drawer-dimmed" : ""
+                      }`}
                       style={{
                         transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
                       }}
@@ -2125,14 +2572,22 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     placeholder="Search or Ask"
                     value={inputText}
                     onChange={(e) => {
-                      setInputText(e.target.value);
+                      const val = e.target.value;
+                      setInputText(val);
+                      setDrawerSelectedIndex(-1);
+                      if (val.trim().length === 0) {
+                        setDrawerForceOpen(false);
+                      }
                       updateSelection(e.target);
                       adjustTextareaHeight(e.target);
                     }}
                     onFocus={(e) => updateSelection(e.currentTarget)}
                     onSelect={(e) => updateSelection(e.currentTarget)}
                     onKeyUp={(e) => updateSelection(e.currentTarget)}
-                    onClick={(e) => updateSelection(e.currentTarget)}
+                    onClick={(e) => {
+                      setDrawerSelectedIndex(-1);
+                      updateSelection(e.currentTarget);
+                    }}
                     onScroll={() => measureActiveCaret()}
                     onKeyDown={(e) => {
                       handleKeyDown(e);
@@ -2143,6 +2598,25 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Subtle dynamic Enter-intent pill when Search Drawer is open */}
+              {shouldShowSearchDrawer && (trimmedSearchQuery.length > 0 || drawerSelectedIndex >= 0) && (
+                <span
+                  className={`siri-enter-intent-chip ${
+                    drawerSelectedIndex >= 0 ? "open-mode" : ""
+                  }`}
+                  aria-hidden="true"
+                >
+                  <span className="siri-enter-glyph">↵</span>
+                  <span>
+                    {drawerSelectedIndex >= 0 && drawerItems[drawerSelectedIndex]
+                      ? drawerItems[drawerSelectedIndex].kind === "File"
+                        ? "Open File"
+                        : "Open App"
+                      : "Ask AIDEN"}
+                  </span>
+                </span>
+              )}
 
               {/* Minimalist Bare Mic Icon (No background circle, just clean icon) */}
               <button

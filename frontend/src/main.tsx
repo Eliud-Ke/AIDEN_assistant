@@ -5,6 +5,18 @@ import App from "./App";
 import { ChatPillWindow } from "./components/ChatPill";
 import { PipCommentBubbleWindow } from "./components/PipCommentBubble";
 import { PipHeadphonesWindow } from "./components/PipHeadphones";
+import { SearchDrawerWindow } from "./components/SearchDrawer";
+
+const isSearchDrawerWindow = (() => {
+  try {
+    if (window.location.search.includes("window=search_drawer")) {
+      return true;
+    }
+    return getCurrentWindow().label === "search_drawer";
+  } catch {
+    return window.location.search.includes("window=search_drawer");
+  }
+})();
 
 const isChatPillWindow = (() => {
   try {
@@ -41,7 +53,9 @@ const isPipHeadphonesWindow = (() => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    {isPipHeadphonesWindow ? (
+    {isSearchDrawerWindow ? (
+      <SearchDrawerWindow />
+    ) : isPipHeadphonesWindow ? (
       <PipHeadphonesWindow />
     ) : isPipBubbleWindow ? (
       <PipCommentBubbleWindow />

@@ -13,6 +13,7 @@ use std::os::windows::process::CommandExt;
 mod audio_beat;
 #[cfg(target_os = "windows")]
 mod native_window;
+mod search_index;
 mod win_hotkey;
 
 use tauri::{
@@ -51,6 +52,13 @@ struct PipBopState {
 }
 
 struct PrevForegroundState(Mutex<Option<isize>>);
+
+struct SearchIndexState(Arc<search_index::SearchIndexManager>);
+
+struct SearchDrawerState {
+    visible: Arc<AtomicBool>,
+    last_payload: Mutex<Option<serde_json::Value>>,
+}
 
 #[cfg(target_os = "windows")]
 struct PipPowerState(Mutex<Option<native_window::PowerStatusSnapshot>>);
@@ -253,6 +261,7 @@ fn is_tracked_backend_alive(state: &BackendState) -> bool {
 fn reset_chat_pill_on_stop(app: &AppHandle) {
     stop_pip_cursor_watcher(app);
     hide_pip_bubble_immediately(app);
+    hide_search_drawer_immediately(app);
     #[cfg(target_os = "windows")]
     {
         let morph_state = app.state::<MorpherState>();
@@ -991,6 +1000,11 @@ fn set_pill_theme(
                 let _ = native_window::apply_native_pill_chrome(hwnd, dark_mode);
             }
         }
+        if let Some(drawer_win) = app.get_webview_window("search_drawer") {
+            if let Ok(hwnd) = drawer_win.hwnd() {
+                let _ = native_window::apply_native_drawer_chrome(hwnd, dark_mode);
+            }
+        }
     }
     Ok(())
 }
@@ -1048,6 +1062,7 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
     stop_pip_bop_immediately(&app);
     hide_pip_bubble_immediately(&app);
     hide_pip_headphones_immediately(&app);
+    hide_search_drawer_immediately(&app);
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_ignore_cursor_events(true);
         let _ = pill_win.hide();
@@ -1722,7 +1737,7 @@ fn capture_previous_foreground(app: &AppHandle) {
             return;
         };
         let mut is_own = false;
-        for label in ["main", "chat_pill", "pip_bubble", "pip_headphones"] {
+        for label in ["main", "chat_pill", "pip_bubble", "pip_headphones", "search_drawer"] {
             if let Some(w) = app.get_webview_window(label) {
                 if let Ok(h) = w.hwnd() {
                     if (h.0 as isize) == fg_raw {
@@ -1763,14 +1778,19 @@ fn restore_previous_foreground(app: &AppHandle) {
 }
 
 fn focus_chat_pill_native(app: &AppHandle) {
-    if let Some(pill_win) = app.get_webview_window("chat_pill") {
-        let _ = pill_win.set_always_on_top(true);
-        #[cfg(target_os = "windows")]
-        if let Ok(hwnd) = pill_win.hwnd() {
-            native_window::force_foreground_window(hwnd);
+    let app_for_main = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(pill_win) = app_for_main.get_webview_window("chat_pill") {
+            let _ = pill_win.set_always_on_top(true);
+            #[cfg(target_os = "windows")]
+            if let Ok(hwnd) = pill_win.hwnd() {
+                native_window::force_foreground_window(hwnd);
+            }
+            // Calls WebView2's MoveFocus so Chromium's inner renderer HWND receives keyboard focus
+            let _ = pill_win.set_focus();
+            let _ = app_for_main.emit_to("chat_pill", "aiden-focus-input", serde_json::json!({}));
         }
-        let _ = pill_win.set_focus();
-    }
+    });
 }
 
 #[tauri::command]
@@ -1782,6 +1802,180 @@ fn set_win_key_override(enabled: bool) -> Result<bool, String> {
 #[tauri::command]
 fn get_win_key_override() -> Result<bool, String> {
     Ok(win_hotkey::is_enabled())
+}
+
+fn hide_search_drawer_immediately(app: &AppHandle) {
+    let drawer_state = app.state::<SearchDrawerState>();
+    drawer_state.visible.store(false, Ordering::Release);
+    if let Ok(mut guard) = drawer_state.last_payload.lock() {
+        *guard = Some(serde_json::json!({ "open": false }));
+    }
+    let _ = app.emit_to(
+        "search_drawer",
+        "search-drawer-sync",
+        serde_json::json!({ "open": false }),
+    );
+    if let Some(drawer_win) = app.get_webview_window("search_drawer") {
+        #[cfg(target_os = "windows")]
+        if let Ok(hwnd) = drawer_win.hwnd() {
+            native_window::hide_window_clean(hwnd);
+            return;
+        }
+        let _ = drawer_win.hide();
+    }
+}
+
+#[tauri::command]
+fn get_search_drawer_state(state: State<'_, SearchDrawerState>) -> Result<serde_json::Value, String> {
+    if let Ok(guard) = state.last_payload.lock() {
+        if let Some(val) = guard.as_ref() {
+            return Ok(val.clone());
+        }
+    }
+    Ok(serde_json::json!({ "open": false }))
+}
+
+#[tauri::command]
+async fn search_unified(
+    state: State<'_, SearchIndexState>,
+    query: String,
+    include_files: Option<bool>,
+) -> Result<search_index::SearchResponse, String> {
+    let mgr = Arc::clone(&state.0);
+    let want_files = include_files.unwrap_or(true);
+    tauri::async_runtime::spawn_blocking(move || mgr.search(&query, want_files))
+        .await
+        .map_err(|e| format!("Search worker failed: {}", e))
+}
+
+#[tauri::command]
+async fn launch_search_item(
+    app: AppHandle,
+    state: State<'_, SearchIndexState>,
+    item: search_index::SearchItem,
+    reveal_in_explorer: Option<bool>,
+) -> Result<(), String> {
+    hide_search_drawer_immediately(&app);
+    // Clear previous foreground HWND so collapsing AIDEN into her cube never steals focus
+    // away from the newly launched app/file back to the old window!
+    if let Ok(mut prev) = app.state::<PrevForegroundState>().0.lock() {
+        *prev = None;
+    }
+
+    let mgr = Arc::clone(&state.0);
+    let reveal = reveal_in_explorer.unwrap_or(false);
+    let launched_name = item.name.clone();
+    let res = tauri::async_runtime::spawn_blocking(move || mgr.launch_item(&item, reveal))
+        .await
+        .map_err(|e| format!("Launch worker failed: {}", e))?;
+    res?;
+
+    let _ = app.emit_to(
+        "chat_pill",
+        "search-drawer-launched",
+        serde_json::json!({ "name": launched_name }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+fn sync_search_drawer(
+    app: AppHandle,
+    visible: bool,
+    height: Option<f64>,
+    dark_mode: Option<bool>,
+    payload: Option<serde_json::Value>,
+) -> Result<(), String> {
+    let drawer_state = app.state::<SearchDrawerState>();
+    let Some(drawer_win) = app.get_webview_window("search_drawer") else {
+        return Ok(());
+    };
+
+    if !visible {
+        hide_search_drawer_immediately(&app);
+        return Ok(());
+    }
+
+    let target_h_log = height.unwrap_or(240.0).clamp(110.0, 440.0);
+    let is_dark = dark_mode.unwrap_or(true);
+    let Some(pill_win) = app.get_webview_window("chat_pill") else {
+        return Ok(());
+    };
+
+    let scale = pill_win.scale_factor().unwrap_or(1.0);
+    let gap_phys = (11.0 * scale).round() as i32;
+    let w_phys = (466.0 * scale).round() as i32;
+    let h_phys = (target_h_log * scale).round() as i32;
+
+    #[cfg(target_os = "windows")]
+    let (dx, dy, dw, dh) = {
+        let pill_rect = app
+            .state::<MorpherState>()
+            .0
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|m| m.live_rect()));
+
+        let (px, py, pw, ph) = if let Some(r) = pill_rect {
+            (r.x, r.y, r.width.max(w_phys), r.height.max((56.0 * scale).round() as i32))
+        } else if let Some((rx, ry, rw, rh, _)) = compute_upper_third_pill_rect(&app, &pill_win) {
+            (rx, ry, rw, rh)
+        } else {
+            (480, 140, w_phys, (60.0 * scale).round() as i32)
+        };
+
+        let bounds = native_window::get_virtual_screen_bounds();
+        let max_h = (bounds.1 + bounds.3 - (py + ph + gap_phys) - (16.0 * scale).round() as i32)
+            .clamp((110.0 * scale).round() as i32, h_phys);
+        (px, py + ph + gap_phys, pw, max_h)
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let (dx, dy, dw, dh) = (480, 212, w_phys, h_phys);
+
+    if let Some(p) = payload {
+        if let Ok(mut guard) = drawer_state.last_payload.lock() {
+            *guard = Some(p.clone());
+        }
+        let _ = app.emit_to("search_drawer", "search-drawer-sync", p);
+    }
+
+    drawer_state.visible.store(true, Ordering::Release);
+    let _ = drawer_win.set_always_on_top(true);
+    let _ = drawer_win.set_ignore_cursor_events(false);
+
+    #[cfg(target_os = "windows")]
+    if let Ok(hwnd) = drawer_win.hwnd() {
+        native_window::make_noactivate_interactive_tool_window(hwnd);
+        let _ = native_window::apply_native_drawer_chrome(hwnd, is_dark);
+        native_window::move_window_topmost_noactivate(hwnd, dx, dy, dw, dh);
+        native_window::show_window_noactivate(hwnd);
+        return Ok(());
+    }
+
+    let _ = drawer_win.set_position(Position::Physical(PhysicalPosition { x: dx, y: dy }));
+    let _ = drawer_win.set_size(LogicalSize::new(466.0, target_h_log));
+    let _ = drawer_win.show();
+    Ok(())
+}
+
+#[tauri::command]
+fn notify_search_drawer_hover(app: AppHandle, index: i32) -> Result<(), String> {
+    let _ = app.emit_to(
+        "chat_pill",
+        "search-drawer-hover",
+        serde_json::json!({ "index": index }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+fn refresh_search_index(state: State<'_, SearchIndexState>) -> Result<(), String> {
+    let mgr = Arc::clone(&state.0);
+    std::thread::spawn(move || {
+        mgr.rebuild_app_index();
+    });
+    Ok(())
 }
 
 fn compute_upper_third_pill_rect(app: &AppHandle, pill_win: &WebviewWindow) -> Option<(i32, i32, i32, i32, f64)> {
@@ -2023,6 +2217,7 @@ fn compute_pip_dock_rect(
 
 #[tauri::command]
 fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    hide_search_drawer_immediately(&app);
     let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
     let pill_win = app
         .get_webview_window("chat_pill")
@@ -2084,6 +2279,7 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
 
 #[tauri::command]
 fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    hide_search_drawer_immediately(&app);
     let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
     let pill_win = app
         .get_webview_window("chat_pill")
@@ -2485,6 +2681,13 @@ pub fn run() {
             home_pos: Arc::new(Mutex::new(None)),
         })
         .manage(PrevForegroundState(Mutex::new(None)))
+        .manage(SearchIndexState(search_index::SearchIndexManager::new(
+            get_user_data_dir(),
+        )))
+        .manage(SearchDrawerState {
+            visible: Arc::new(AtomicBool::new(false)),
+            last_payload: Mutex::new(None),
+        })
         .manage(PipPowerState(Mutex::new(None)))
         .manage(PipSpotifyState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
@@ -2546,6 +2749,19 @@ pub fn run() {
                 {
                     if let Ok(hwnd) = hp_win.hwnd() {
                         native_window::make_noactivate_tool_window(hwnd);
+                    }
+                }
+            }
+
+            if let Some(drawer_win) = app.get_webview_window("search_drawer") {
+                let _ = drawer_win.set_always_on_top(true);
+                let _ = drawer_win.set_ignore_cursor_events(false);
+                let _ = drawer_win.hide();
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = drawer_win.hwnd() {
+                        native_window::make_noactivate_interactive_tool_window(hwnd);
+                        let _ = native_window::apply_native_drawer_chrome(hwnd, true);
                     }
                 }
             }
@@ -2632,9 +2848,13 @@ pub fn run() {
                         stop_pip_bop_immediately(app);
                         stop_pip_cursor_watcher(app);
                         hide_pip_bubble_immediately(app);
+                        hide_search_drawer_immediately(app);
                         hide_pip_headphones_immediately(app);
                         let state = app.state::<BackendState>();
                         stop_all_aiden_processes(&state);
+                        if let Some(drawer_win) = app.get_webview_window("search_drawer") {
+                            let _ = drawer_win.destroy();
+                        }
                         if let Some(hp_win) = app.get_webview_window("pip_headphones") {
                             let _ = hp_win.destroy();
                         }
@@ -2717,6 +2937,12 @@ pub fn run() {
             set_pip_music_bop,
             set_win_key_override,
             get_win_key_override,
+            search_unified,
+            launch_search_item,
+            sync_search_drawer,
+            get_search_drawer_state,
+            notify_search_drawer_hover,
+            refresh_search_index,
             get_pip_power_status,
             get_pip_spotify_status,
             boot_aiden,

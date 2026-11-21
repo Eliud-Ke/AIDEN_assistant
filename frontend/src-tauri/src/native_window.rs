@@ -21,22 +21,104 @@ use windows::{
             WinRT::{RoInitialize, RO_INIT_MULTITHREADED},
         },
         UI::Controls::MARGINS,
+        UI::Input::KeyboardAndMouse::{SetActiveWindow, SetFocus},
         UI::WindowsAndMessaging::{
-            BeginDeferWindowPos, BringWindowToTop, CallWindowProcW, DefWindowProcW,
-            DeferWindowPos, EndDeferWindowPos, GetCursorPos, GetForegroundWindow,
+            AllowSetForegroundWindow, BeginDeferWindowPos, BringWindowToTop, CallWindowProcW,
+            DefWindowProcW, DeferWindowPos, EndDeferWindowPos, GetCursorPos, GetForegroundWindow,
             GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
             IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow, SetLayeredWindowAttributes,
-            SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWLP_WNDPROC, HWND_TOPMOST,
-            LWA_ALPHA, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-            SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE,
-            SW_SHOWNOACTIVATE, WM_NCACTIVATE, WNDPROC, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-            WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+            SetWindowLongPtrW, SetWindowPos, ShowWindow, ASFW_ANY, GWL_EXSTYLE, GWLP_WNDPROC,
+            HWND_TOPMOST, LWA_ALPHA, MA_NOACTIVATE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+            SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, WM_MOUSEACTIVATE, WM_NCACTIVATE, WNDPROC,
+            WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
         },
     },
 };
 
 #[cfg(target_os = "windows")]
 static PREV_WNDPROC: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(target_os = "windows")]
+static DRAWER_PREV_WNDPROC: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn drawer_subclass_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    // Keep Windows 11 Acrylic vibrant while unfocused, and ensure clicks/scrolls inside
+    // the detached search drawer never steal keyboard focus from the Search or Ask pill.
+    if msg == WM_NCACTIVATE {
+        return unsafe { DefWindowProcW(hwnd, WM_NCACTIVATE, WPARAM(1), lparam) };
+    }
+    if msg == WM_MOUSEACTIVATE {
+        return LRESULT(MA_NOACTIVATE as isize);
+    }
+
+    let prev = DRAWER_PREV_WNDPROC.load(Ordering::Relaxed);
+    if prev != 0 {
+        let prev_fn: WNDPROC = unsafe { std::mem::transmute(prev) };
+        unsafe { CallWindowProcW(prev_fn, hwnd, msg, wparam, lparam) }
+    } else {
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn apply_native_drawer_chrome(hwnd: HWND, dark_mode: bool) -> Result<()> {
+    unsafe {
+        let margins = MARGINS {
+            cxLeftWidth: -1,
+            cxRightWidth: -1,
+            cyTopHeight: -1,
+            cyBottomHeight: -1,
+        };
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+        let backdrop = DWM_SYSTEMBACKDROP_TYPE(3); // DWMSBT_TRANSIENTWINDOW (Acrylic)
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(38),
+            &backdrop as *const _ as *const _,
+            std::mem::size_of_val(&backdrop) as u32,
+        );
+
+        let corner = DWM_WINDOW_CORNER_PREFERENCE(2); // DWMWCP_ROUND
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(33),
+            &corner as *const _ as *const _,
+            std::mem::size_of_val(&corner) as u32,
+        );
+
+        let border_color: u32 = if dark_mode { 0x00383838 } else { 0x00D0D0D0 };
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(34),
+            &border_color as *const _ as *const _,
+            std::mem::size_of_val(&border_color) as u32,
+        );
+
+        let dark = windows::core::BOOL(if dark_mode { 1 } else { 0 });
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(20),
+            &dark as *const _ as *const _,
+            std::mem::size_of_val(&dark) as u32,
+        );
+
+        let prev = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+        let my_proc = drawer_subclass_wndproc as *const () as usize as isize;
+        if prev != 0 && prev != my_proc {
+            DRAWER_PREV_WNDPROC.store(prev as usize, Ordering::Relaxed);
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, my_proc);
+        }
+    }
+    Ok(())
+}
 
 #[cfg(target_os = "windows")]
 unsafe extern "system" fn pill_subclass_wndproc(
@@ -941,6 +1023,20 @@ pub fn make_noactivate_tool_window(hwnd: HWND) {
     }
 }
 
+/// Interactive non-activating tool window (for the detached search drawer):
+/// receives mouse hover, wheel scrolling, and row clicks WITHOUT stealing keyboard focus.
+#[cfg(target_os = "windows")]
+pub fn make_noactivate_interactive_tool_window(hwnd: HWND) {
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let desired = (ex | (WS_EX_NOACTIVATE.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize))
+            & !(WS_EX_TRANSPARENT.0 as isize);
+        if desired != ex {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, desired);
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn move_window_topmost_noactivate(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
     unsafe {
@@ -1061,13 +1157,15 @@ pub fn get_foreground_hwnd_raw() -> Option<isize> {
 /// Reliably transfers Windows foreground keyboard focus to `target_hwnd`, bypassing
 /// Windows' foreground lock when waking AIDEN from Terminal, Chrome, or VS Code.
 #[cfg(target_os = "windows")]
-pub fn force_foreground_window(target_hwnd: HWND) {
+fn force_foreground_window_inner(target_hwnd: HWND, reassert_topmost: bool) {
     unsafe {
         if !IsWindow(Some(target_hwnd)).as_bool() {
             return;
         }
         let fg = GetForegroundWindow();
         if fg == target_hwnd {
+            let _ = SetActiveWindow(target_hwnd);
+            let _ = SetFocus(Some(target_hwnd));
             return;
         }
         let fg_tid = if !fg.0.is_null() {
@@ -1078,14 +1176,35 @@ pub fn force_foreground_window(target_hwnd: HWND) {
         let my_tid = GetCurrentThreadId();
         let target_tid = GetWindowThreadProcessId(target_hwnd, None);
 
-        let attached_fg = fg_tid != 0 && fg_tid != my_tid && AttachThreadInput(my_tid, fg_tid, true).as_bool();
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+
+        let attached_fg =
+            fg_tid != 0 && fg_tid != my_tid && AttachThreadInput(my_tid, fg_tid, true).as_bool();
         let attached_target = target_tid != 0
             && target_tid != my_tid
             && target_tid != fg_tid
             && AttachThreadInput(my_tid, target_tid, true).as_bool();
 
         let _ = BringWindowToTop(target_hwnd);
-        let _ = SetForegroundWindow(target_hwnd);
+        let ok = SetForegroundWindow(target_hwnd).as_bool();
+        let _ = SetActiveWindow(target_hwnd);
+        let _ = SetFocus(Some(target_hwnd));
+
+        if !ok && reassert_topmost {
+            // Re-assert topmost activation for AIDEN's pill if foreground lock resisted once
+            let _ = SetWindowPos(
+                target_hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE,
+            );
+            let _ = SetForegroundWindow(target_hwnd);
+            let _ = SetActiveWindow(target_hwnd);
+            let _ = SetFocus(Some(target_hwnd));
+        }
 
         if attached_target {
             let _ = AttachThreadInput(my_tid, target_tid, false);
@@ -1094,6 +1213,11 @@ pub fn force_foreground_window(target_hwnd: HWND) {
             let _ = AttachThreadInput(my_tid, fg_tid, false);
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+pub fn force_foreground_window(target_hwnd: HWND) {
+    force_foreground_window_inner(target_hwnd, true);
 }
 
 /// Hands keyboard focus cleanly back to the window the user was working in before waking AIDEN.
@@ -1108,7 +1232,7 @@ pub fn restore_foreground_window(hwnd_raw: isize) {
             && IsWindowVisible(hwnd).as_bool()
             && !IsIconic(hwnd).as_bool()
         {
-            force_foreground_window(hwnd);
+            force_foreground_window_inner(hwnd, false);
         }
     }
 }

@@ -70,6 +70,22 @@
         "skipTaskbar": true,
         "focusable": false,
         "visible": false
+      },
+      {
+        "title": "AIDEN Search",
+        "label": "search_drawer",
+        "url": "index.html?window=search_drawer",
+        "width": 466,
+        "height": 260,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "maximizable": false,
+        "shadow": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focusable": false,
+        "visible": false
       }
     ],
     "security": {
