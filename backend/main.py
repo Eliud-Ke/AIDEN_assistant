@@ -227,6 +227,12 @@ def execute_and_intercept(tc_id, func_name, arguments_str):
     if func_name == "connect_service":
         raw_service = args.get("service_name") or args.get("service") or ""
         resolved_key = resolve_connector_key(raw_service)
+        if resolved_key == "gmail":
+            try:
+                import tools_gmail
+                tools_gmail.warm_gmail_connection()
+            except Exception:
+                pass
         if resolved_key and CONNECTORS_SCHEMA.get(resolved_key, {}).get("tools"):
             if resolved_key not in active_connectors:
                 print(f"   🔌 [MCP HANDSHAKE] Mounting connector stack: {resolved_key}")
@@ -422,6 +428,11 @@ async def main_loop():
     session_history = []   # Current wake cycle tracker
 
     print("🟢 Boot Sequence: Core Logic Online (Dormant Sleep Mode).")
+    try:
+        import tools_gmail
+        tools_gmail.warm_gmail_connection()
+    except Exception:
+        pass
 
     # 💤 THE SLEEP ⟷ AWAKE MASTER STATE MACHINE
     while not stop_event.is_set():
