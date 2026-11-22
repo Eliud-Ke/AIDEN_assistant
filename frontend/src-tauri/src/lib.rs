@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use std::os::windows::process::CommandExt;
 
 mod audio_beat;
+mod bookmarks;
 #[cfg(target_os = "windows")]
 mod native_window;
 mod search_index;

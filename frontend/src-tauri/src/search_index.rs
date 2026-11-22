@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(target_os = "windows")]
@@ -20,7 +21,8 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub const MAX_APPS_RESULTS: usize = 5;
-pub const MAX_FILES_RESULTS: usize = 5;
+pub const MAX_BOOKMARKS_RESULTS: usize = 4;
+pub const MAX_FILES_RESULTS: usize = 6;
 pub const MAX_RECENTS: usize = 8;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -29,9 +31,9 @@ pub struct SearchItem {
     pub id: String,
     pub name: String,
     pub subtitle: String,
-    /// `"App" | "System" | "File" | "Program"`
+    /// `"App" | "System" | "Bookmark" | "Folder" | "File" | "Program"`
     pub kind: String,
-    /// `"path" | "aumid"`
+    /// `"path" | "aumid" | "url"`
     pub launch_kind: String,
     pub target: String,
     pub icon_key: String,
@@ -48,6 +50,7 @@ pub struct SearchResponse {
     pub mode: String,
     pub recents: Vec<SearchItem>,
     pub apps: Vec<SearchItem>,
+    pub bookmarks: Vec<SearchItem>,
     pub files: Vec<SearchItem>,
     pub everything_available: bool,
 }
@@ -60,8 +63,10 @@ struct PersistedRecents {
 
 pub struct SearchIndexManager {
     apps: Mutex<Vec<SearchItem>>,
+    bookmarks: Arc<Mutex<Vec<SearchItem>>>,
+    bookmark_watcher: Mutex<crate::bookmarks::BookmarkWatcherState>,
     recents: Mutex<PersistedRecents>,
-    icon_cache: Mutex<HashMap<String, Option<String>>>,
+    icon_cache: Arc<Mutex<HashMap<String, Option<String>>>>,
     data_dir: PathBuf,
     icon_cache_dir: PathBuf,
 }
@@ -74,8 +79,10 @@ impl SearchIndexManager {
 
         let mgr = Arc::new(Self {
             apps: Mutex::new(Vec::new()),
+            bookmarks: Arc::new(Mutex::new(Vec::new())),
+            bookmark_watcher: Mutex::new(crate::bookmarks::BookmarkWatcherState::new()),
             recents: Mutex::new(persisted),
-            icon_cache: Mutex::new(HashMap::new()),
+            icon_cache: Arc::new(Mutex::new(HashMap::new())),
             data_dir,
             icon_cache_dir,
         });
@@ -87,7 +94,59 @@ impl SearchIndexManager {
             bg.rebuild_app_index();
         });
 
+        // Load cross-browser bookmarks & extract offline cached favicons in parallel (< 40ms)
+        let bg_bm = Arc::clone(&mgr);
+        std::thread::spawn(move || {
+            bg_bm.refresh_bookmarks_sync();
+        });
+
         mgr
+    }
+
+    pub fn refresh_bookmarks_sync(&self) {
+        let (loaded, fp) = crate::bookmarks::load_all_bookmarks(&self.icon_cache_dir);
+        let count = loaded.len();
+        if let Ok(mut guard) = self.bookmarks.lock() {
+            *guard = loaded;
+        }
+        if let Ok(mut watcher) = self.bookmark_watcher.lock() {
+            watcher.update_fingerprint(fp);
+        }
+        if let Ok(mut cache) = self.icon_cache.lock() {
+            cache.retain(|k, _| !k.starts_with("bmicon:"));
+        }
+        println!(
+            "[SEARCH_INDEX] Browser bookmark index ready: {} deduplicated bookmarks.",
+            count
+        );
+    }
+
+    fn maybe_refresh_bookmarks(&self) {
+        let (should_reload, flag) = {
+            let Ok(mut watcher) = self.bookmark_watcher.lock() else {
+                return;
+            };
+            (watcher.check_for_changes(), Arc::clone(&watcher.reloading))
+        };
+        if !should_reload {
+            return;
+        }
+        if flag.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let bookmarks_arc = Arc::clone(&self.bookmarks);
+        let icon_cache_arc = Arc::clone(&self.icon_cache);
+        let icon_cache_dir = self.icon_cache_dir.clone();
+        std::thread::spawn(move || {
+            let (loaded, _fp) = crate::bookmarks::load_all_bookmarks(&icon_cache_dir);
+            if let Ok(mut guard) = bookmarks_arc.lock() {
+                *guard = loaded;
+            }
+            if let Ok(mut cache) = icon_cache_arc.lock() {
+                cache.retain(|k, _| !k.starts_with("bmicon:"));
+            }
+            flag.store(false, Ordering::Release);
+        });
     }
 
     pub fn rebuild_app_index(&self) {
@@ -157,8 +216,9 @@ impl SearchIndexManager {
 
     /// Runs a unified search:
     /// - Empty query -> returns Recents (up to 6).
-    /// - Non-empty query -> strictly matched Apps (max 5) + optional Everything CLI Files (max 5).
+    /// - Non-empty query -> strictly matched Apps (max 5) + Browser Bookmarks (max 4) + optional Everything CLI Files (max 5).
     pub fn search(&self, raw_query: &str, include_files: bool) -> SearchResponse {
+        self.maybe_refresh_bookmarks();
         let trimmed = raw_query.trim();
         let frecency_snap = self
             .recents
@@ -180,6 +240,7 @@ impl SearchIndexManager {
                 mode: "recents".to_string(),
                 recents: recent_items,
                 apps: Vec::new(),
+                bookmarks: Vec::new(),
                 files: Vec::new(),
                 everything_available: is_es_installed(),
             };
@@ -212,15 +273,45 @@ impl SearchIndexManager {
             .map(|(_, item)| item)
             .collect();
 
-        // 2. Everything CLI (`es.exe /a-d`) file search (files only, zero folders, skipped for AI sentences)
+        // 2. Sub-millisecond in-memory browser bookmark filtering (Edge, Zen, Chrome, Brave, Firefox...)
+        let mut matched_bookmarks: Vec<(i32, SearchItem)> = {
+            let guard = self.bookmarks.lock().ok();
+            match guard {
+                Some(list) => list
+                    .iter()
+                    .filter_map(|item| {
+                        let frec = *frecency_snap.get(&item.id).unwrap_or(&0);
+                        let score = score_search_item(item, trimmed, frec);
+                        if score > 0 {
+                            Some((score, item.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                None => Vec::new(),
+            }
+        };
+
+        matched_bookmarks.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
+        let mut top_bookmarks: Vec<SearchItem> = matched_bookmarks
+            .into_iter()
+            .take(MAX_BOOKMARKS_RESULTS)
+            .map(|(_, item)| item)
+            .collect();
+
+        // 3. Everything CLI parallel file (`/a-d`) + folder (`/ad`) search (skipped for AI sentences)
         let (mut top_files, everything_ok) = if include_files && should_query_files(trimmed) {
-            query_everything_files(trimmed, &frecency_snap)
+            query_everything_files_and_folders(trimmed, &frecency_snap)
         } else {
             (Vec::new(), is_es_installed())
         };
 
-        // 3. Populate crisp native icons for ONLY the <= 10 visible results
+        // 4. Populate crisp native icons & cached favicons for ONLY the visible results
         for item in &mut top_apps {
+            item.icon_data_url = self.resolve_icon(item);
+        }
+        for item in &mut top_bookmarks {
             item.icon_data_url = self.resolve_icon(item);
         }
         for item in &mut top_files {
@@ -232,6 +323,7 @@ impl SearchIndexManager {
             mode: "search".to_string(),
             recents: Vec::new(),
             apps: top_apps,
+            bookmarks: top_bookmarks,
             files: top_files,
             everything_available: everything_ok,
         }
@@ -245,12 +337,17 @@ impl SearchIndexManager {
     ) -> Result<(), String> {
         #[cfg(target_os = "windows")]
         {
-            if reveal_in_explorer && item.launch_kind == "path" {
-                let mut cmd = Command::new("explorer.exe");
-                cmd.arg(format!("/select,{}", item.target));
-                cmd.creation_flags(CREATE_NO_WINDOW);
-                cmd.spawn()
-                    .map_err(|e| format!("Failed to reveal in Explorer: {}", e))?;
+            if reveal_in_explorer && item.launch_kind == "url" {
+                copy_text_to_clipboard_windows(&item.target)?;
+            } else if reveal_in_explorer && item.launch_kind == "path" {
+                let reveal_target = if item.target.to_ascii_lowercase().ends_with(".lnk") {
+                    resolve_lnk_target_windows(&item.target)
+                        .filter(|p| Path::new(p).exists())
+                        .unwrap_or_else(|| item.target.clone())
+                } else {
+                    item.target.clone()
+                };
+                reveal_in_explorer_windows(&reveal_target)?;
             } else {
                 shell_launch_windows(&item.launch_kind, &item.target, &item.kind, run_as_admin)?;
             }
@@ -260,11 +357,16 @@ impl SearchIndexManager {
             let _ = (item, reveal_in_explorer, run_as_admin);
         }
 
-        self.record_launch(item);
+        if !(reveal_in_explorer && item.launch_kind == "url") {
+            self.record_launch(item);
+        }
 
-        // Teach Everything's native run-count ranking when launching files
+        // Teach Everything's native run-count ranking when launching files & folders
         #[cfg(target_os = "windows")]
-        if item.launch_kind == "path" && !reveal_in_explorer && (item.kind == "File" || item.kind == "Program") {
+        if item.launch_kind == "path"
+            && !reveal_in_explorer
+            && (item.kind == "File" || item.kind == "Program" || item.kind == "Folder")
+        {
             let target_path = item.target.clone();
             std::thread::spawn(move || {
                 if let Some(es) = find_es_exe() {
@@ -305,6 +407,19 @@ impl SearchIndexManager {
             }
         }
 
+        // Bookmark favicons are pre-extracted offline into `{hash}.favicon` (PNG/SVG/ICO/JPEG/WebP)
+        if item.launch_kind == "url" || key.starts_with("bmicon:") {
+            let fav_file = crate::bookmarks::favicon_cache_path(&self.icon_cache_dir, key);
+            let data_url = std::fs::read(&fav_file)
+                .ok()
+                .filter(|b| !b.is_empty())
+                .and_then(|bytes| encode_image_data_url(&bytes));
+            if let Ok(mut cache) = self.icon_cache.lock() {
+                cache.insert(key.clone(), data_url.clone());
+            }
+            return data_url;
+        }
+
         // Check on-disk PNG cache first
         let cache_file = self.icon_cache_dir.join(format!("{:016x}.png", fnv1a_64(key.as_bytes())));
         if let Ok(bytes) = std::fs::read(&cache_file) {
@@ -340,7 +455,13 @@ fn encode_png_data_url(png_bytes: &[u8]) -> String {
     format!("data:image/png;base64,{}", STANDARD.encode(png_bytes))
 }
 
-fn fnv1a_64(bytes: &[u8]) -> u64 {
+fn encode_image_data_url(bytes: &[u8]) -> Option<String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let mime = crate::bookmarks::sniff_image_mime(bytes)?;
+    Some(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
+}
+
+pub(crate) fn fnv1a_64(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in bytes {
         hash ^= b as u64;
@@ -640,13 +761,19 @@ pub fn score_search_item(item: &SearchItem, query: &str, frecency: u32) -> i32 {
         return 760 + frec_boost;
     }
 
-    // 5. Multi-word token-prefix & typo-tolerant match (e.g. "mic edg" -> "Microsoft Edge")
+    // 5. Multi-word token-prefix & typo-tolerant match (e.g. "mic edg" -> "Microsoft Edge", "kra tax" -> bookmark)
     if !is_single_token {
         let q_tokens: Vec<&str> = q.split_whitespace().collect();
         if q_tokens.len() <= 3 {
+            let alias_words: Vec<String> = item
+                .aliases
+                .iter()
+                .flat_map(|a| split_search_words(a))
+                .collect();
             if q_tokens.iter().all(|qt| {
                 raw_words.iter().any(|w| w.starts_with(qt))
                     || words.iter().any(|w| w.starts_with(qt))
+                    || alias_words.iter().any(|w| w.starts_with(qt))
             }) {
                 return 700 + frec_boost;
             }
@@ -655,6 +782,9 @@ pub fn score_search_item(item: &SearchItem, query: &str, frecency: u32) -> i32 {
                     .iter()
                     .any(|w| w.starts_with(qt) || score_fuzzy_typo_token(qt, w) > 0)
                     || words
+                        .iter()
+                        .any(|w| w.starts_with(qt) || score_fuzzy_typo_token(qt, w) > 0)
+                    || alias_words
                         .iter()
                         .any(|w| w.starts_with(qt) || score_fuzzy_typo_token(qt, w) > 0)
             }) {
@@ -701,12 +831,13 @@ pub fn score_search_item(item: &SearchItem, query: &str, frecency: u32) -> i32 {
         return best_fuzzy + frec_boost;
     }
 
-    // 8. Substring fallback (only for 5+ char app queries; files strictly require word-prefix match)
-    if q.len() >= 5 && item.kind != "File" && name.contains(&q) {
+    // 8. Substring fallback (only for 5+ char app/bookmark queries; files & folders strictly require word-prefix match)
+    let is_fs_item = item.kind == "File" || item.kind == "Folder";
+    if q.len() >= 5 && !is_fs_item && name.contains(&q) {
         return 540 + frec_boost;
     }
     if q.len() >= 5
-        && item.kind != "File"
+        && !is_fs_item
         && item
             .aliases
             .iter()
@@ -824,6 +955,184 @@ pub fn file_priority_adjustment(path: &str, ext: &str) -> i32 {
     }
 
     ext_bonus + path_bonus
+}
+
+/// Counts non-empty path segments (e.g. `C:\My Projects\AIDEN_assistant` -> 3).
+fn path_depth(path: &str) -> usize {
+    path.split(['\\', '/'])
+        .filter(|seg| !seg.is_empty())
+        .count()
+}
+
+/// Filters noisy Windows system, cache, hidden dot-folders, and deep dev-boilerplate folders
+/// returned by Everything CLI `/ad`.
+pub fn is_noisy_folder_path(path: &str) -> bool {
+    let trimmed = path.trim().trim_end_matches(['\\', '/']);
+    let depth = path_depth(trimmed);
+    // Reject bare drive roots like `C:` / `C:\`
+    if depth <= 1 {
+        return true;
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    let lower_slashed = format!("{}\\", lower);
+
+    // Reject any hidden dot-folder (e.g. `.git`, `.vscode`, `.cargo`, `.venv`, `.next`)
+    if lower_slashed.contains("\\.") {
+        return true;
+    }
+
+    let blocked_segments = [
+        "\\$recycle.bin\\",
+        "\\system volume information\\",
+        "\\windows\\",
+        "\\programdata\\",
+        "\\appdata\\",
+        "\\program files\\",
+        "\\program files (x86)\\",
+        "\\recovery\\",
+        "\\perflogs\\",
+        "\\msocache\\",
+        "\\intel\\",
+        "\\amd\\",
+        "\\nvidia\\",
+        "\\node_modules\\",
+        "\\__pycache__\\",
+        "\\venv\\",
+        "\\site-packages\\",
+        "\\dist-packages\\",
+        "\\anaconda3\\",
+        "\\miniconda3\\",
+        "\\miniconda\\",
+        "\\pkgs\\",
+        "\\target\\debug\\",
+        "\\target\\release\\",
+        "\\bin\\debug\\",
+        "\\bin\\release\\",
+        "\\obj\\debug\\",
+        "\\obj\\release\\",
+    ];
+    if blocked_segments.iter().any(|seg| lower_slashed.contains(seg)) {
+        return true;
+    }
+
+    // Block generic build/asset boilerplate subfolders when nested inside projects (depth >= 4)
+    let leaf = Path::new(trimmed)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.to_ascii_lowercase())
+        .unwrap_or_default();
+    if leaf.is_empty() {
+        return true;
+    }
+    if depth >= 4 {
+        let boilerplate_deep = [
+            "dist", "build", "out", "obj", "target", "cache", "tmp", "temp", "logs", "chunks",
+            "blobs", "vendor", "locales", "locale", "assets", "static", "fonts", "icons", "img",
+            "css", "js", "lib", "libs", "types", "typings", "fixtures", "mocks", "__tests__",
+            "migrations", "templates", "coverage",
+        ];
+        if boilerplate_deep.contains(&leaf.as_str()) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Detects special Windows shell library folders (Downloads, Desktop, Documents, OneDrive...)
+/// so we extract their custom Windows 11 folder icons rather than the generic yellow folder icon.
+fn is_special_shell_folder(path: &str) -> bool {
+    let trimmed = path.trim().trim_end_matches(['\\', '/']);
+    let depth = path_depth(trimmed);
+    if depth > 4 {
+        return false;
+    }
+    let leaf = Path::new(trimmed)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.to_ascii_lowercase())
+        .unwrap_or_default();
+    matches!(
+        leaf.as_str(),
+        "desktop"
+            | "downloads"
+            | "documents"
+            | "pictures"
+            | "videos"
+            | "music"
+            | "onedrive"
+            | "contacts"
+            | "favorites"
+            | "links"
+            | "saved games"
+            | "searches"
+    )
+}
+
+/// Scores folder usefulness by user-library signal and shallow path depth so primary project
+/// and document folders rank naturally alongside/above Tier 1 documents while deep subfolders drop.
+pub fn folder_priority_adjustment(path: &str) -> i32 {
+    let trimmed = path.trim().trim_end_matches(['\\', '/']);
+    let depth = path_depth(trimmed);
+    let lower = trimmed.to_ascii_lowercase();
+    let lower_slashed = format!("{}\\", lower);
+
+    let leaf = Path::new(trimmed)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    let is_primary_library = depth <= 4
+        && matches!(
+            leaf.as_str(),
+            "desktop"
+                | "downloads"
+                | "documents"
+                | "my documents"
+                | "my projects"
+                | "projects"
+                | "pictures"
+                | "videos"
+                | "music"
+                | "onedrive"
+        );
+    if is_primary_library {
+        return 295;
+    }
+
+    let user_roots = [
+        "\\documents\\",
+        "\\my documents\\",
+        "\\desktop\\",
+        "\\downloads\\",
+        "\\my projects\\",
+        "\\projects\\",
+        "\\pictures\\",
+        "\\videos\\",
+        "\\music\\",
+        "\\onedrive\\",
+    ];
+    let in_user_root = user_roots.iter().any(|seg| lower_slashed.contains(seg));
+
+    if in_user_root {
+        let depth_adj = match depth {
+            0..=3 => 115,
+            4 => 95,
+            5 => 45,
+            d => -25 * ((d - 5) as i32),
+        };
+        165 + depth_adj
+    } else {
+        let depth_adj = match depth {
+            0..=3 => 60,
+            4 => 20,
+            5 => -15,
+            d => -35 * ((d - 5) as i32),
+        };
+        120 + depth_adj
+    }
 }
 
 fn app_priority(item: &SearchItem) -> u8 {
@@ -1130,9 +1439,14 @@ fn is_es_installed() -> bool {
     find_es_exe().is_some()
 }
 
-fn run_es_command(es_path: &Path, args_tokens: &[String]) -> Option<String> {
+fn run_es_command(
+    es_path: &Path,
+    attr_flag: &str,
+    limit: &str,
+    args_tokens: &[String],
+) -> Option<String> {
     let mut cmd = Command::new(es_path);
-    cmd.args(["/a-d", "-prefix", "-n", "60", "-sort", "run-count-descending"]);
+    cmd.args([attr_flag, "-prefix", "-n", limit, "-sort", "run-count-descending"]);
     for tok in args_tokens {
         cmd.arg(tok);
     }
@@ -1213,7 +1527,135 @@ fn collect_es_candidates(
     candidates
 }
 
-fn query_everything_files(
+fn collect_es_folder_candidates(
+    stdout: &str,
+    query: &str,
+    frecency: &HashMap<String, u32>,
+) -> Vec<(i32, SearchItem)> {
+    let mut candidates: Vec<(i32, SearchItem)> = Vec::new();
+    let mut seen_paths: HashSet<String> = HashSet::new();
+
+    for line in stdout.lines() {
+        let full = line.trim().trim_end_matches(['\\', '/']);
+        if full.is_empty() || is_noisy_folder_path(full) {
+            continue;
+        }
+        let lower_full = full.to_ascii_lowercase();
+        if !seen_paths.insert(lower_full.clone()) {
+            continue;
+        }
+        let p = Path::new(full);
+        let Some(folder_name) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let parent_str = p
+            .parent()
+            .map(|par| par.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let icon_key = if is_special_shell_folder(full) {
+            format!("path:{}", lower_full)
+        } else {
+            "ext:folder".to_string()
+        };
+
+        let item = SearchItem {
+            id: format!("folder:{}", lower_full),
+            name: folder_name.to_string(),
+            subtitle: parent_str,
+            kind: "Folder".to_string(),
+            launch_kind: "path".to_string(),
+            target: full.to_string(),
+            icon_key,
+            icon_data_url: None,
+            aliases: Vec::new(),
+        };
+
+        let frec = *frecency.get(&item.id).unwrap_or(&0);
+        let base_score = score_search_item(&item, query, frec);
+        if base_score == 0 {
+            continue;
+        }
+        let priority_adj = folder_priority_adjustment(full);
+        let final_score = base_score + priority_adj;
+        candidates.push((final_score, item));
+    }
+
+    candidates
+}
+
+/// Merges scored folder & file candidates into the combined Option B bottom tier (`MAX_FILES_RESULTS`):
+/// sorts strictly by score, keeping at most 3 folders when files also match so neither crowds the other out.
+pub fn merge_files_and_folders(
+    file_candidates: Vec<(i32, SearchItem)>,
+    folder_candidates: Vec<(i32, SearchItem)>,
+    max_total: usize,
+) -> Vec<SearchItem> {
+    let has_files = !file_candidates.is_empty();
+    let mut combined = Vec::with_capacity(file_candidates.len() + folder_candidates.len());
+    combined.extend(file_candidates);
+    combined.extend(folder_candidates);
+    combined.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
+
+    if !has_files {
+        return combined
+            .into_iter()
+            .take(max_total)
+            .map(|(_, item)| item)
+            .collect();
+    }
+
+    let max_folders_when_mixed = 3usize.min(max_total);
+    let mut selected: Vec<SearchItem> = Vec::with_capacity(max_total);
+    let mut overflow_folders: Vec<SearchItem> = Vec::new();
+    let mut folder_count = 0usize;
+
+    for (_, item) in combined {
+        if selected.len() >= max_total {
+            break;
+        }
+        if item.kind == "Folder" {
+            if folder_count < max_folders_when_mixed {
+                folder_count += 1;
+                selected.push(item);
+            } else {
+                overflow_folders.push(item);
+            }
+        } else {
+            selected.push(item);
+        }
+    }
+
+    // Never waste open slots if fewer files matched than expected
+    for extra in overflow_folders {
+        if selected.len() >= max_total {
+            break;
+        }
+        selected.push(extra);
+    }
+
+    selected
+}
+
+fn build_typo_prefix_tokens(tokens: &[&str]) -> Option<Vec<String>> {
+    if !tokens.iter().any(|t| t.len() >= 5 && t.is_ascii()) {
+        return None;
+    }
+    Some(
+        tokens
+            .iter()
+            .map(|t| {
+                if t.len() >= 5 && t.is_ascii() {
+                    t[..4].to_string()
+                } else {
+                    (*t).to_string()
+                }
+            })
+            .collect(),
+    )
+}
+
+fn query_everything_files_and_folders(
     query: &str,
     frecency: &HashMap<String, u32>,
 ) -> (Vec<SearchItem>, bool) {
@@ -1227,37 +1669,52 @@ fn query_everything_files(
     }
 
     let exact_tokens: Vec<String> = tokens.iter().map(|t| (*t).to_string()).collect();
-    let Some(stdout) = run_es_command(&es_path, &exact_tokens) else {
-        // Error 8 (Everything IPC not running) or similar -> fail silently without disrupting app search
-        return (Vec::new(), false);
-    };
+    let prefix_tokens = build_typo_prefix_tokens(&tokens);
 
-    let mut candidates = collect_es_candidates(&stdout, query, frecency);
-
-    // Typo-prefix fallback: if exact tokens matched 0 files and a token >= 5 ASCII chars has a typo
-    // (e.g. "databeses"), query Everything by its 4-char prefix and let Damerau-Levenshtein rank hits.
-    if candidates.is_empty() && tokens.iter().any(|t| t.len() >= 5 && t.is_ascii()) {
-        let prefix_tokens: Vec<String> = tokens
-            .iter()
-            .map(|t| {
-                if t.len() >= 5 && t.is_ascii() {
-                    t[..4].to_string()
-                } else {
-                    (*t).to_string()
+    // Run Everything `/a-d` (files) and `/ad` (folders) in parallel so wall-clock latency stays ~15-25ms
+    let (file_res, folder_res) = std::thread::scope(|s| {
+        let f_handle = s.spawn(|| -> Option<Vec<(i32, SearchItem)>> {
+            let stdout = run_es_command(&es_path, "/a-d", "60", &exact_tokens)?;
+            let mut cands = collect_es_candidates(&stdout, query, frecency);
+            if cands.is_empty() {
+                if let Some(ref ptoks) = prefix_tokens {
+                    if let Some(pref_out) = run_es_command(&es_path, "/a-d", "60", ptoks) {
+                        cands = collect_es_candidates(&pref_out, query, frecency);
+                    }
                 }
-            })
-            .collect();
-        if let Some(pref_out) = run_es_command(&es_path, &prefix_tokens) {
-            candidates = collect_es_candidates(&pref_out, query, frecency);
-        }
+            }
+            Some(cands)
+        });
+
+        let d_handle = s.spawn(|| -> Option<Vec<(i32, SearchItem)>> {
+            let stdout = run_es_command(&es_path, "/ad", "45", &exact_tokens)?;
+            let mut cands = collect_es_folder_candidates(&stdout, query, frecency);
+            if cands.is_empty() {
+                if let Some(ref ptoks) = prefix_tokens {
+                    if let Some(pref_out) = run_es_command(&es_path, "/ad", "45", ptoks) {
+                        cands = collect_es_folder_candidates(&pref_out, query, frecency);
+                    }
+                }
+            }
+            Some(cands)
+        });
+
+        (
+            f_handle.join().ok().flatten(),
+            d_handle.join().ok().flatten(),
+        )
+    });
+
+    if file_res.is_none() && folder_res.is_none() {
+        // Error 8 (Everything IPC not running) -> fail silently without disrupting app/bookmark search
+        return (Vec::new(), false);
     }
 
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
-    let top = candidates
-        .into_iter()
-        .take(MAX_FILES_RESULTS)
-        .map(|(_, item)| item)
-        .collect();
+    let top = merge_files_and_folders(
+        file_res.unwrap_or_default(),
+        folder_res.unwrap_or_default(),
+        MAX_FILES_RESULTS,
+    );
     (top, true)
 }
 
@@ -1294,6 +1751,141 @@ unsafe fn exec_shell_verb(
 }
 
 #[cfg(target_os = "windows")]
+fn copy_text_to_clipboard_windows(text: &str) -> Result<(), String> {
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{
+        GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+    };
+
+    const CF_UNICODETEXT: u32 = 13;
+    let wide = to_wide_null(text);
+    let byte_len = wide.len() * std::mem::size_of::<u16>();
+
+    unsafe {
+        let mut opened = false;
+        for _ in 0..5 {
+            if OpenClipboard(None).is_ok() {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(8));
+        }
+        if !opened {
+            return Err("Failed to open Windows clipboard".to_string());
+        }
+
+        let res = (|| -> Result<(), String> {
+            EmptyClipboard().map_err(|e| format!("EmptyClipboard failed: {}", e))?;
+            let hmem: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, byte_len)
+                .map_err(|e| format!("GlobalAlloc failed: {}", e))?;
+            let ptr = GlobalLock(hmem);
+            if ptr.is_null() {
+                let _ = GlobalFree(Some(hmem));
+                return Err("GlobalLock returned null".to_string());
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr() as *const u8, ptr as *mut u8, byte_len);
+            let _ = GlobalUnlock(hmem);
+
+            if let Err(e) = SetClipboardData(CF_UNICODETEXT, Some(HANDLE(hmem.0))) {
+                let _ = GlobalFree(Some(hmem));
+                return Err(format!("SetClipboardData failed: {}", e));
+            }
+            Ok(())
+        })();
+
+        let _ = CloseClipboard();
+        res
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_lnk_target_windows(lnk_path: &str) -> Option<String> {
+    use windows::core::{Interface, PCWSTR};
+    use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, STGM_READ,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let did_init = hr.is_ok();
+
+        let resolved = (|| -> Option<String> {
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+            let persist: IPersistFile = link.cast().ok()?;
+            let wide_lnk = to_wide_null(lnk_path);
+            persist.Load(PCWSTR(wide_lnk.as_ptr()), STGM_READ).ok()?;
+
+            let mut buf = [0u16; 1024];
+            let mut find_data = WIN32_FIND_DATAW::default();
+            link.GetPath(&mut buf, &mut find_data, 0).ok()?;
+            let nul_pos = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            if nul_pos == 0 {
+                return None;
+            }
+            let target = String::from_utf16_lossy(&buf[..nul_pos]).trim().to_string();
+            if target.is_empty() {
+                None
+            } else {
+                Some(target)
+            }
+        })();
+
+        if did_init {
+            CoUninitialize();
+        }
+        resolved
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn reveal_in_explorer_windows(target_path: &str) -> Result<(), String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+    };
+    use windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems};
+    use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let did_init = hr.is_ok();
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+
+        let wide = to_wide_null(target_path);
+        let pidl = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
+        let native_ok = if !pidl.is_null() {
+            let res = SHOpenFolderAndSelectItems(pidl, None, 0).is_ok();
+            ILFree(Some(pidl));
+            res
+        } else {
+            false
+        };
+
+        if did_init {
+            CoUninitialize();
+        }
+        if native_ok {
+            return Ok(());
+        }
+    }
+
+    // Quoted fallback if PIDL lookup failed (e.g. disconnected network path)
+    let mut cmd = Command::new("explorer.exe");
+    cmd.raw_arg(format!("/select,\"{}\"", target_path));
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.spawn()
+        .map_err(|e| format!("Failed to reveal in Explorer: {}", e))?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn shell_launch_windows(
     launch_kind: &str,
     target: &str,
@@ -1316,7 +1908,10 @@ fn shell_launch_windows(
         || lower_target.ends_with(".bat")
         || lower_target.ends_with(".cmd")
         || lower_target.ends_with(".ps1");
-    let want_admin = run_as_admin && (item_kind != "File" || is_elevatable_file);
+    let want_admin = run_as_admin
+        && launch_kind != "url"
+        && item_kind != "Folder"
+        && (item_kind != "File" || is_elevatable_file);
 
     unsafe {
         let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -1345,7 +1940,7 @@ fn shell_launch_windows(
             return Ok(());
         }
 
-        let dir_w = if launch_kind == "path" {
+        let dir_w = if launch_kind == "path" && item_kind != "Folder" {
             Path::new(target)
                 .parent()
                 .map(|p| to_wide_null(&p.to_string_lossy()))
@@ -1513,23 +2108,25 @@ unsafe fn extract_shell_item_png(parsing_name: &str) -> Option<Vec<u8>> {
 unsafe fn extract_ext_icon_png(ext: &str) -> Option<Vec<u8>> {
     use windows::core::PCWSTR;
     use windows::Win32::Graphics::Gdi::{DeleteObject, HGDIOBJ};
-    use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+    use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL};
     use windows::Win32::UI::Shell::{
         SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_USEFILEATTRIBUTES,
     };
     use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
-    let dummy = if ext.starts_with('.') {
-        format!("file{}", ext)
+    let (dummy, attrs) = if ext == "folder" {
+        ("folder".to_string(), FILE_ATTRIBUTE_DIRECTORY)
+    } else if ext.starts_with('.') {
+        (format!("file{}", ext), FILE_ATTRIBUTE_NORMAL)
     } else {
-        "file.bin".to_string()
+        ("file.bin".to_string(), FILE_ATTRIBUTE_NORMAL)
     };
     let wide = to_wide_null(&dummy);
     let mut shfi = SHFILEINFOW::default();
     let ok = unsafe {
         SHGetFileInfoW(
             PCWSTR(wide.as_ptr()),
-            FILE_ATTRIBUTE_NORMAL,
+            attrs,
             Some(&mut shfi),
             std::mem::size_of::<SHFILEINFOW>() as u32,
             SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES,
@@ -1694,8 +2291,9 @@ unsafe fn hbitmap_to_png(
 #[cfg(test)]
 mod tests {
     use super::{
-        clean_app_name, deduplicate_apps, file_priority_adjustment, is_noisy_file_path,
-        is_noisy_shortcut_name, score_search_item, should_query_files, SearchItem,
+        clean_app_name, deduplicate_apps, file_priority_adjustment, folder_priority_adjustment,
+        is_noisy_file_path, is_noisy_folder_path, is_noisy_shortcut_name, merge_files_and_folders,
+        score_search_item, should_query_files, SearchItem,
     };
 
     fn dummy_app(name: &str, kind: &str, launch_kind: &str, target: &str, aliases: &[&str]) -> SearchItem {
@@ -1796,5 +2394,75 @@ mod tests {
         assert_eq!(score_search_item(&layout_file, "yout", 0), 0);
         assert_eq!(score_search_item(&layout_file, "youtune", 0), 0);
         assert!(score_search_item(&layout_file, "layout", 0) > 0);
+    }
+
+    #[test]
+    fn folder_hygiene_priority_and_option_b_merge_work_cleanly() {
+        // Noise folders blocked
+        assert!(is_noisy_folder_path(r"C:\"));
+        assert!(is_noisy_folder_path(r"C:\Windows"));
+        assert!(is_noisy_folder_path(r"C:\Windows\System32"));
+        assert!(is_noisy_folder_path(r"C:\Users\eliud\AppData\Local\Temp"));
+        assert!(is_noisy_folder_path(r"C:\My Projects\app\node_modules"));
+        assert!(is_noisy_folder_path(r"C:\My Projects\app\.git"));
+        assert!(is_noisy_folder_path(r"C:\My Projects\app\frontend\dist"));
+        assert!(is_noisy_folder_path(r"C:\My Projects\app\src\assets"));
+
+        // Real user folders allowed
+        assert!(!is_noisy_folder_path(r"C:\Users\eliud\Downloads"));
+        assert!(!is_noisy_folder_path(r"C:\My Projects\AIDEN_assistant"));
+        assert!(!is_noisy_folder_path(
+            r"C:\My Documents\Introduction to database systems"
+        ));
+
+        // Priority: primary libraries & shallow user folders strongly outrank deep nested folders
+        assert!(
+            folder_priority_adjustment(r"C:\Users\eliud\Downloads")
+                > folder_priority_adjustment(r"C:\My Projects\a\b\c\d\Downloads")
+        );
+        assert!(
+            folder_priority_adjustment(r"C:\My Documents\Introduction to database systems")
+                > folder_priority_adjustment(r"C:\Other\a\b\c\d\database")
+        );
+
+        // Folders follow strict word-prefix & typo rules (no mid-word false positives)
+        let db_folder = dummy_app(
+            "Introduction to database systems",
+            "Folder",
+            "path",
+            r"C:\My Documents\Introduction to database systems",
+            &[],
+        );
+        let layout_folder = dummy_app(
+            "my_layout_pack",
+            "Folder",
+            "path",
+            r"C:\My Projects\my_layout_pack",
+            &[],
+        );
+        assert!(score_search_item(&db_folder, "database", 0) >= 760);
+        assert!(score_search_item(&db_folder, "databeses", 0) >= 550);
+        assert_eq!(score_search_item(&layout_folder, "yout", 0), 0);
+        assert_eq!(score_search_item(&layout_folder, "youtune", 0), 0);
+
+        // Option B merge: max 6 total, caps folders at 3 when files also exist
+        let folders = vec![
+            (1100, dummy_app("F1", "Folder", "path", r"C:\My Projects\F1", &[])),
+            (1090, dummy_app("F2", "Folder", "path", r"C:\My Projects\F2", &[])),
+            (1080, dummy_app("F3", "Folder", "path", r"C:\My Projects\F3", &[])),
+            (1070, dummy_app("F4", "Folder", "path", r"C:\My Projects\F4", &[])),
+        ];
+        let files = vec![
+            (1060, dummy_app("Doc1.pdf", "File", "path", r"C:\Docs\Doc1.pdf", &[])),
+            (1050, dummy_app("Doc2.pdf", "File", "path", r"C:\Docs\Doc2.pdf", &[])),
+            (1040, dummy_app("Doc3.pdf", "File", "path", r"C:\Docs\Doc3.pdf", &[])),
+            (1030, dummy_app("Doc4.pdf", "File", "path", r"C:\Docs\Doc4.pdf", &[])),
+        ];
+        let merged = merge_files_and_folders(files, folders, 6);
+        assert_eq!(merged.len(), 6);
+        let folder_cnt = merged.iter().filter(|i| i.kind == "Folder").count();
+        let file_cnt = merged.iter().filter(|i| i.kind == "File").count();
+        assert_eq!(folder_cnt, 3);
+        assert_eq!(file_cnt, 3);
     }
 }

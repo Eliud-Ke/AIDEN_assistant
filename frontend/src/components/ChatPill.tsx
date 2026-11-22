@@ -21,6 +21,7 @@ interface UnifiedSearchResponse {
   mode: "recents" | "search";
   recents: SearchItem[];
   apps: SearchItem[];
+  bookmarks: SearchItem[];
   files: SearchItem[];
   everythingAvailable: boolean;
 }
@@ -32,10 +33,13 @@ function computeSearchDrawerHeight(res: UnifiedSearchResponse): number {
     if (res.recents.length === 0) return 146;
     return Math.min(360, Math.max(56, 16 + res.recents.length * 40));
   }
-  const hasApps = res.apps.length > 0;
-  const hasFiles = res.files.length > 0;
-  const rows = res.apps.length + res.files.length;
-  const dividerGap = hasApps && hasFiles ? 9 : 0;
+  const apps = res.apps ?? [];
+  const bookmarks = res.bookmarks ?? [];
+  const files = res.files ?? [];
+  const groupCount =
+    (apps.length > 0 ? 1 : 0) + (bookmarks.length > 0 ? 1 : 0) + (files.length > 0 ? 1 : 0);
+  const rows = apps.length + bookmarks.length + files.length;
+  const dividerGap = groupCount > 1 ? (groupCount - 1) * 9 : 0;
   return Math.min(380, Math.max(56, 16 + rows * 40 + dividerGap));
 }
 
@@ -2024,7 +2028,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const drawerItems: SearchItem[] = searchResult
     ? searchResult.mode === "recents"
       ? searchResult.recents
-      : [...searchResult.apps, ...searchResult.files]
+      : [...searchResult.apps, ...(searchResult.bookmarks ?? []), ...searchResult.files]
     : [];
   const searchMatchesCurrentQuery = Boolean(
     searchResult &&
@@ -2054,7 +2058,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         if (gen !== searchReqGenRef.current) return;
         setSearchResult(res);
         const total =
-          res.mode === "recents" ? res.recents.length : res.apps.length + res.files.length;
+          res.mode === "recents"
+            ? res.recents.length
+            : res.apps.length + (res.bookmarks?.length ?? 0) + res.files.length;
         if (autoSelectFirst && total > 0) {
           setDrawerSelectedIndex(0);
         } else {
@@ -2615,6 +2621,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     mode={searchResult?.mode ?? "recents"}
                     recents={searchResult?.recents ?? []}
                     apps={searchResult?.apps ?? []}
+                    bookmarks={searchResult?.bookmarks ?? []}
                     files={searchResult?.files ?? []}
                     selectedIndex={drawerSelectedIndex}
                     onSelectIndex={setDrawerSelectedIndex}

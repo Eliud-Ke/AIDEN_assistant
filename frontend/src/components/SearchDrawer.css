@@ -136,11 +136,25 @@
   background: transparent;
 }
 
+.sd-icon-wrap.has-native-img.is-bookmark {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.siri-unified-pill.light-mode .sd-icon-wrap.has-native-img.is-bookmark {
+  background: rgba(15, 23, 32, 0.05);
+}
+
 .sd-icon-img {
   width: 28px;
   height: 28px;
   object-fit: contain;
   display: block;
+}
+
+.sd-icon-img.is-bookmark-favicon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
 }
 
 .sd-icon-fallback {
@@ -163,6 +177,16 @@
 
 .sd-icon-fallback.kind-system {
   background: linear-gradient(135deg, #06b6d4, #0369a1);
+}
+
+.sd-icon-fallback.kind-bookmark {
+  background: linear-gradient(135deg, #10b981, #0d9488);
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.sd-icon-fallback.kind-folder {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .sd-icon-fallback.kind-file {

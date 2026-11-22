@@ -19,6 +19,7 @@ export interface ConjoinedSearchTrayProps {
   mode: "recents" | "search";
   recents: SearchItem[];
   apps: SearchItem[];
+  bookmarks: SearchItem[];
   files: SearchItem[];
   selectedIndex: number;
   onSelectIndex: (index: number) => void;
@@ -88,6 +89,7 @@ export const ConjoinedSearchTray: React.FC<ConjoinedSearchTrayProps> = ({
   mode,
   recents,
   apps,
+  bookmarks,
   files,
   selectedIndex,
   onSelectIndex,
@@ -117,9 +119,15 @@ export const ConjoinedSearchTray: React.FC<ConjoinedSearchTrayProps> = ({
   const renderRow = (item: SearchItem, q: string) => {
     const idx = runningIdx++;
     const isSel = idx === selectedIndex;
+    const isBookmark = item.kind === "Bookmark";
+    const isFolder = item.kind === "Folder";
     const kindClass =
       item.kind === "System"
         ? "kind-system"
+        : isBookmark
+        ? "kind-bookmark"
+        : isFolder
+        ? "kind-folder"
         : item.kind === "File"
         ? "kind-file"
         : "kind-app";
@@ -137,9 +145,50 @@ export const ConjoinedSearchTray: React.FC<ConjoinedSearchTrayProps> = ({
         }}
         onMouseDown={(e) => handleRowMouseDown(e, item)}
       >
-        <div className={`sd-icon-wrap ${item.iconDataUrl ? "has-native-img" : ""}`}>
+        <div
+          className={`sd-icon-wrap ${item.iconDataUrl ? "has-native-img" : ""} ${
+            isBookmark ? "is-bookmark" : ""
+          }`}
+        >
           {item.iconDataUrl ? (
-            <img src={item.iconDataUrl} alt="" className="sd-icon-img" draggable={false} />
+            <img
+              src={item.iconDataUrl}
+              alt=""
+              className={`sd-icon-img ${isBookmark ? "is-bookmark-favicon" : ""}`}
+              draggable={false}
+            />
+          ) : isBookmark ? (
+            <div className="sd-icon-fallback kind-bookmark" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="9.5" />
+                <line x1="2.5" y1="12" x2="21.5" y2="12" />
+                <path d="M12 2.5a14.5 14.5 0 0 1 0 19 14.5 14.5 0 0 1 0-19z" />
+              </svg>
+            </div>
+          ) : isFolder ? (
+            <div className="sd-icon-fallback kind-folder" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2.5h7.5A2.5 2.5 0 0 1 21 9v8.5A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5V6.5z" />
+              </svg>
+            </div>
           ) : (
             <div className={`sd-icon-fallback ${kindClass}`}>{getFallbackLabel(item)}</div>
           )}
@@ -176,8 +225,8 @@ export const ConjoinedSearchTray: React.FC<ConjoinedSearchTrayProps> = ({
               </div>
               <div className="sd-empty-title">Your recent searches will appear here</div>
               <div className="sd-empty-hint">
-                Type 4+ characters to search apps &amp; files automatically, or press ↓ anytime for
-                short queries like <strong>svc</strong>.
+                Type 4+ characters to search apps, bookmarks &amp; files automatically, or press ↓
+                anytime for short queries like <strong>svc</strong>.
               </div>
             </div>
           ) : (
@@ -186,7 +235,11 @@ export const ConjoinedSearchTray: React.FC<ConjoinedSearchTrayProps> = ({
         ) : (
           <>
             {apps.map((item) => renderRow(item, query))}
-            {apps.length > 0 && files.length > 0 && <div className="sd-group-divider" />}
+            {apps.length > 0 && (bookmarks.length > 0 || files.length > 0) && (
+              <div className="sd-group-divider" />
+            )}
+            {bookmarks.map((item) => renderRow(item, query))}
+            {bookmarks.length > 0 && files.length > 0 && <div className="sd-group-divider" />}
             {files.map((item) => renderRow(item, query))}
           </>
         )}
