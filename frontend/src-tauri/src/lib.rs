@@ -263,8 +263,10 @@ fn is_tracked_backend_alive(state: &BackendState) -> bool {
 }
 
 fn reset_chat_pill_on_stop(app: &AppHandle) {
+    stop_pip_bop_immediately(app);
     stop_pip_cursor_watcher(app);
     hide_pip_bubble_immediately(app);
+    hide_pip_headphones_immediately(app);
     hide_search_drawer_immediately(app);
     #[cfg(target_os = "windows")]
     {
@@ -342,230 +344,268 @@ fn perform_restart_aiden(app: &AppHandle, state: &BackendState) -> Result<serde_
 }
 
 #[tauri::command]
-fn boot_aiden(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
-    perform_boot_aiden(&state)
+async fn boot_aiden(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<BackendState>();
+        perform_boot_aiden(&state)
+    })
+    .await
+    .map_err(|e| format!("Boot background task error: {}", e))?
 }
 
 #[tauri::command]
-fn shutdown_aiden(
-    app: AppHandle,
-    state: State<'_, BackendState>,
-) -> Result<serde_json::Value, String> {
-    Ok(perform_shutdown_aiden(&app, &state))
+async fn shutdown_aiden(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<BackendState>();
+        Ok(perform_shutdown_aiden(&app, &state))
+    })
+    .await
+    .map_err(|e| format!("Shutdown background task error: {}", e))?
 }
 
 #[tauri::command]
-fn restart_aiden(
-    app: AppHandle,
-    state: State<'_, BackendState>,
-) -> Result<serde_json::Value, String> {
-    perform_restart_aiden(&app, &state)
+async fn restart_aiden(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<BackendState>();
+        perform_restart_aiden(&app, &state)
+    })
+    .await
+    .map_err(|e| format!("Restart background task error: {}", e))?
 }
 
 #[tauri::command]
-fn get_aiden_status(state: State<'_, BackendState>) -> Result<serde_json::Value, String> {
-    let tracked_alive = is_tracked_backend_alive(&state);
-    let ws_online = is_port_8765_active();
-    Ok(serde_json::json!({
-        "running": tracked_alive || ws_online,
-        "wsOnline": ws_online
-    }))
+async fn get_aiden_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<BackendState>();
+        let tracked_alive = is_tracked_backend_alive(&state);
+        let ws_online = is_port_8765_active();
+        Ok(serde_json::json!({
+            "running": tracked_alive || ws_online,
+            "wsOnline": ws_online
+        }))
+    })
+    .await
+    .map_err(|e| format!("Status background task error: {}", e))?
 }
 
 #[tauri::command]
-fn get_windows_accent_color() -> Result<String, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut cmd = Command::new("reg");
-        cmd.args(["query", "HKCU\\Software\\Microsoft\\Windows\\DWM", "/v", "AccentColor"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(output) = cmd.output() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            for line in text.lines() {
-                if line.contains("AccentColor") && line.contains("REG_DWORD") {
-                    if let Some(hex_part) = line.split_whitespace().last() {
-                        let clean = hex_part.trim_start_matches("0x");
-                        if let Ok(val) = u32::from_str_radix(clean, 16) {
-                            let r = val & 0xFF;
-                            let g = (val >> 8) & 0xFF;
-                            let b = (val >> 16) & 0xFF;
-                            return Ok(format!("#{:02x}{:02x}{:02x}", r, g, b));
+async fn get_windows_accent_color() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            let mut cmd = Command::new("reg");
+            cmd.args(["query", "HKCU\\Software\\Microsoft\\Windows\\DWM", "/v", "AccentColor"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            if let Ok(output) = cmd.output() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    if line.contains("AccentColor") && line.contains("REG_DWORD") {
+                        if let Some(hex_part) = line.split_whitespace().last() {
+                            let clean = hex_part.trim_start_matches("0x");
+                            if let Ok(val) = u32::from_str_radix(clean, 16) {
+                                let r = val & 0xFF;
+                                let g = (val >> 8) & 0xFF;
+                                let b = (val >> 16) & 0xFF;
+                                return Ok(format!("#{:02x}{:02x}{:02x}", r, g, b));
+                            }
                         }
                     }
                 }
             }
         }
-    }
-    Ok("#258292".to_string())
+        Ok("#258292".to_string())
+    })
+    .await
+    .map_err(|e| format!("Accent color background task error: {}", e))?
 }
 
 #[tauri::command]
-fn save_openai_key(api_key: String) -> Result<String, String> {
-    let trimmed = api_key.trim();
-    if trimmed.is_empty() {
-        return Err("API key cannot be empty.".to_string());
-    }
+async fn save_openai_key(api_key: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let trimmed = api_key.trim();
+        if trimmed.is_empty() {
+            return Err("API key cannot be empty.".to_string());
+        }
 
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--save-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--save-stdin")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(trimmed.as_bytes())
-            .map_err(|e| format!("Failed to pass API key to backend: {}", e))?;
-    }
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(trimmed.as_bytes())
+                .map_err(|e| format!("Failed to pass API key to backend: {}", e))?;
+        }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
 
-    if output.status.success() {
-        Ok("API Key saved to Windows Credential Manager.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Err(format!(
-            "Backend failed to save key: {} {}",
-            stdout.trim(),
-            stderr.trim()
-        ))
-    }
+        if output.status.success() {
+            Ok("API Key saved to Windows Credential Manager.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            Err(format!(
+                "Backend failed to save key: {} {}",
+                stdout.trim(),
+                stderr.trim()
+            ))
+        }
+    })
+    .await
+    .map_err(|e| format!("Save API key background task error: {}", e))?
 }
 
 #[tauri::command]
-fn check_openai_key() -> Result<bool, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--check")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+async fn check_openai_key() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--check")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to check key status: {}", e))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to check key status: {}", e))?;
 
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
-            if let Some(has_key) = parsed.get("has_key").and_then(|v| v.as_bool()) {
-                return Ok(has_key);
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                if let Some(has_key) = parsed.get("has_key").and_then(|v| v.as_bool()) {
+                    return Ok(has_key);
+                }
+            }
+            Ok(false)
+        } else {
+            Ok(false)
+        }
+    })
+    .await
+    .map_err(|e| format!("Check API key background task error: {}", e))?
+}
+
+#[tauri::command]
+async fn save_gmail_credentials(email: String, app_password: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let clean_email = email.trim();
+        let clean_pwd = app_password.trim().replace(" ", "");
+        if clean_email.is_empty() || clean_pwd.is_empty() {
+            return Err("Email and App Password cannot be empty.".to_string());
+        }
+
+        let payload = serde_json::json!({
+            "email": clean_email,
+            "app_password": clean_pwd,
+        });
+
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--save-gmail-stdin")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(payload.to_string().as_bytes())
+                .map_err(|e| format!("Failed to pass Gmail credentials to backend: {}", e))?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+
+        if output.status.success() {
+            Ok("Gmail credentials saved to Windows Credential Manager.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            Err(format!("Backend failed to save Gmail credentials: {} {}", stdout.trim(), stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Save Gmail credentials background task error: {}", e))?
+}
+
+#[tauri::command]
+async fn get_gmail_status() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--get-gmail")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to check Gmail status: {}", e))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                return Ok(parsed);
             }
         }
-        Ok(false)
-    } else {
-        Ok(false)
-    }
+        Ok(serde_json::json!({ "has_credentials": false, "email": "" }))
+    })
+    .await
+    .map_err(|e| format!("Gmail status background task error: {}", e))?
 }
 
 #[tauri::command]
-fn save_gmail_credentials(email: String, app_password: String) -> Result<String, String> {
-    let clean_email = email.trim();
-    let clean_pwd = app_password.trim().replace(" ", "");
-    if clean_email.is_empty() || clean_pwd.is_empty() {
-        return Err("Email and App Password cannot be empty.".to_string());
-    }
+async fn get_calendar_status() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--get-calendar")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    let payload = serde_json::json!({
-        "email": clean_email,
-        "app_password": clean_pwd,
-    });
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--save-gmail-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to check Calendar status: {}", e))?;
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.to_string().as_bytes())
-            .map_err(|e| format!("Failed to pass Gmail credentials to backend: {}", e))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
-
-    if output.status.success() {
-        Ok("Gmail credentials saved to Windows Credential Manager.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Err(format!("Backend failed to save Gmail credentials: {} {}", stdout.trim(), stderr.trim()))
-    }
-}
-
-#[tauri::command]
-fn get_gmail_status() -> Result<serde_json::Value, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--get-gmail")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to check Gmail status: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
-            return Ok(parsed);
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                return Ok(parsed);
+            }
         }
-    }
-    Ok(serde_json::json!({ "has_credentials": false, "email": "" }))
-}
-
-#[tauri::command]
-fn get_calendar_status() -> Result<serde_json::Value, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--get-calendar")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to check Calendar status: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
-            return Ok(parsed);
-        }
-    }
-    Ok(serde_json::json!({
-        "ok": false,
-        "has_token": false,
-        "has_client_config": false,
-        "email": "",
-        "client_source": "none"
-    }))
+        Ok(serde_json::json!({
+            "ok": false,
+            "has_token": false,
+            "has_client_config": false,
+            "email": "",
+            "client_source": "none"
+        }))
+    })
+    .await
+    .map_err(|e| format!("Calendar status background task error: {}", e))?
 }
 
 #[tauri::command]
@@ -602,123 +642,139 @@ async fn start_calendar_oauth() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn save_calendar_client_credentials(client_id: String, client_secret: String) -> Result<String, String> {
-    let clean_cid = client_id.trim();
-    let clean_sec = client_secret.trim();
-    if clean_cid.is_empty() || clean_sec.is_empty() {
-        return Err("Client ID and Client Secret cannot be empty.".to_string());
-    }
-
-    let payload = serde_json::json!({
-        "client_id": clean_cid,
-        "client_secret": clean_sec,
-    });
-
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--save-calendar-client-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.to_string().as_bytes())
-            .map_err(|e| format!("Failed to pass custom credentials to backend: {}", e))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
-
-    if output.status.success() {
-        Ok("Custom Google Cloud credentials saved to Windows Credential Manager.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Err(format!("Backend failed to save custom credentials: {} {}", stdout.trim(), stderr.trim()))
-    }
-}
-
-#[tauri::command]
-fn disconnect_calendar() -> Result<String, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--delete-calendar")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to disconnect calendar: {}", e))?;
-
-    if output.status.success() {
-        Ok("Google Calendar disconnected successfully.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed to disconnect calendar: {}", stderr.trim()))
-    }
-}
-
-#[tauri::command]
-fn delete_calendar_client_credentials() -> Result<String, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--delete-calendar-client")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to remove custom credentials: {}", e))?;
-
-    if output.status.success() {
-        Ok("Custom credentials removed successfully.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed to remove custom credentials: {}", stderr.trim()))
-    }
-}
-
-#[tauri::command]
-fn get_spotify_status() -> Result<serde_json::Value, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--get-spotify")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to check Spotify status: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
-            return Ok(parsed);
+async fn save_calendar_client_credentials(client_id: String, client_secret: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let clean_cid = client_id.trim();
+        let clean_sec = client_secret.trim();
+        if clean_cid.is_empty() || clean_sec.is_empty() {
+            return Err("Client ID and Client Secret cannot be empty.".to_string());
         }
-    }
-    Ok(serde_json::json!({
-        "ok": false,
-        "has_token": false,
-        "has_client_config": false,
-        "display_name": "",
-        "email": "",
-        "product": "",
-        "client_source": "none"
-    }))
+
+        let payload = serde_json::json!({
+            "client_id": clean_cid,
+            "client_secret": clean_sec,
+        });
+
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--save-calendar-client-stdin")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(payload.to_string().as_bytes())
+                .map_err(|e| format!("Failed to pass custom credentials to backend: {}", e))?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+
+        if output.status.success() {
+            Ok("Custom Google Cloud credentials saved to Windows Credential Manager.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            Err(format!("Backend failed to save custom credentials: {} {}", stdout.trim(), stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Save Calendar credentials background task error: {}", e))?
+}
+
+#[tauri::command]
+async fn disconnect_calendar() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--delete-calendar")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to disconnect calendar: {}", e))?;
+
+        if output.status.success() {
+            Ok("Google Calendar disconnected successfully.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(format!("Failed to disconnect calendar: {}", stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Disconnect Calendar background task error: {}", e))?
+}
+
+#[tauri::command]
+async fn delete_calendar_client_credentials() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--delete-calendar-client")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to remove custom credentials: {}", e))?;
+
+        if output.status.success() {
+            Ok("Custom credentials removed successfully.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(format!("Failed to remove custom credentials: {}", stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Delete Calendar credentials background task error: {}", e))?
+}
+
+#[tauri::command]
+async fn get_spotify_status() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--get-spotify")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to check Spotify status: {}", e))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                return Ok(parsed);
+            }
+        }
+        Ok(serde_json::json!({
+            "ok": false,
+            "has_token": false,
+            "has_client_config": false,
+            "display_name": "",
+            "email": "",
+            "product": "",
+            "client_source": "none"
+        }))
+    })
+    .await
+    .map_err(|e| format!("Spotify status background task error: {}", e))?
 }
 
 #[tauri::command]
@@ -755,92 +811,104 @@ async fn start_spotify_oauth() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn save_spotify_client_credentials(client_id: String, client_secret: String) -> Result<String, String> {
-    let clean_cid = client_id.trim();
-    let clean_sec = client_secret.trim();
-    if clean_cid.is_empty() || clean_sec.is_empty() {
-        return Err("Client ID and Client Secret cannot be empty.".to_string());
-    }
+async fn save_spotify_client_credentials(client_id: String, client_secret: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let clean_cid = client_id.trim();
+        let clean_sec = client_secret.trim();
+        if clean_cid.is_empty() || clean_sec.is_empty() {
+            return Err("Client ID and Client Secret cannot be empty.".to_string());
+        }
 
-    let payload = serde_json::json!({
-        "client_id": clean_cid,
-        "client_secret": clean_sec,
-    });
+        let payload = serde_json::json!({
+            "client_id": clean_cid,
+            "client_secret": clean_sec,
+        });
 
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--save-spotify-client-stdin")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--save-spotify-client-stdin")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to launch backend auth manager: {}", e))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.to_string().as_bytes())
-            .map_err(|e| format!("Failed to pass Spotify credentials to backend: {}", e))?;
-    }
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(payload.to_string().as_bytes())
+                .map_err(|e| format!("Failed to pass Spotify credentials to backend: {}", e))?;
+        }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("Failed waiting for backend auth manager: {}", e))?;
 
-    if output.status.success() {
-        Ok("Custom Spotify Developer credentials saved to Windows Credential Manager.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Err(format!("Backend failed to save custom Spotify credentials: {} {}", stdout.trim(), stderr.trim()))
-    }
+        if output.status.success() {
+            Ok("Custom Spotify Developer credentials saved to Windows Credential Manager.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            Err(format!("Backend failed to save custom Spotify credentials: {} {}", stdout.trim(), stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Save Spotify credentials background task error: {}", e))?
 }
 
 #[tauri::command]
-fn disconnect_spotify() -> Result<String, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--disconnect-spotify")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+async fn disconnect_spotify() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--disconnect-spotify")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to disconnect Spotify: {}", e))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to disconnect Spotify: {}", e))?;
 
-    if output.status.success() {
-        Ok("Spotify disconnected successfully.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed to disconnect Spotify: {}", stderr.trim()))
-    }
+        if output.status.success() {
+            Ok("Spotify disconnected successfully.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(format!("Failed to disconnect Spotify: {}", stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Disconnect Spotify background task error: {}", e))?
 }
 
 #[tauri::command]
-fn delete_spotify_client_credentials() -> Result<String, String> {
-    let mut cmd = build_backend_command("auth_manager.py")?;
-    cmd.arg("--delete-spotify-client")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+async fn delete_spotify_client_credentials() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = build_backend_command("auth_manager.py")?;
+        cmd.arg("--delete-spotify-client")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to remove custom Spotify credentials: {}", e))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to remove custom Spotify credentials: {}", e))?;
 
-    if output.status.success() {
-        Ok("Custom Spotify credentials removed successfully.".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(format!("Failed to remove custom Spotify credentials: {}", stderr.trim()))
-    }
+        if output.status.success() {
+            Ok("Custom Spotify credentials removed successfully.".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(format!("Failed to remove custom Spotify credentials: {}", stderr.trim()))
+        }
+    })
+    .await
+    .map_err(|e| format!("Delete Spotify credentials background task error: {}", e))?
 }
 
 fn get_user_data_dir() -> PathBuf {
@@ -1225,29 +1293,33 @@ fn set_pip_bubble(
 }
 
 #[tauri::command]
-fn get_pip_power_status(app: AppHandle) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(curr) = native_window::get_system_power_snapshot() {
-            let power_state = app.state::<PipPowerState>();
-            if let Ok(mut guard) = power_state.0.lock() {
-                if guard.is_none() {
-                    *guard = Some(curr);
+async fn get_pip_power_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(curr) = native_window::get_system_power_snapshot() {
+                let power_state = app.state::<PipPowerState>();
+                if let Ok(mut guard) = power_state.0.lock() {
+                    if guard.is_none() {
+                        *guard = Some(curr);
+                    }
                 }
+                return Ok(serde_json::json!({
+                    "hasBattery": curr.has_battery,
+                    "pluggedIn": curr.plugged_in,
+                    "percent": curr.percent,
+                }));
             }
-            return Ok(serde_json::json!({
-                "hasBattery": curr.has_battery,
-                "pluggedIn": curr.plugged_in,
-                "percent": curr.percent,
-            }));
         }
-    }
-    let _ = app;
-    Ok(serde_json::json!({
-        "hasBattery": false,
-        "pluggedIn": true,
-        "percent": 100,
-    }))
+        let _ = app;
+        Ok(serde_json::json!({
+            "hasBattery": false,
+            "pluggedIn": true,
+            "percent": 100,
+        }))
+    })
+    .await
+    .map_err(|e| format!("Power status background task error: {}", e))?
 }
 
 fn compute_headphones_placement(app: &AppHandle) -> Option<(i32, i32, i32, i32)> {
@@ -1411,33 +1483,37 @@ fn set_pip_headphones(
 }
 
 #[tauri::command]
-fn get_pip_spotify_status(app: AppHandle) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let curr = native_window::get_spotify_media_snapshot();
-        let sp_state = app.state::<PipSpotifyState>();
-        if let Ok(mut guard) = sp_state.0.lock() {
-            *guard = Some(curr.clone());
+async fn get_pip_spotify_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            let curr = native_window::get_spotify_media_snapshot();
+            let sp_state = app.state::<PipSpotifyState>();
+            if let Ok(mut guard) = sp_state.0.lock() {
+                *guard = Some(curr.clone());
+            }
+            return Ok(serde_json::json!({
+                "running": curr.running,
+                "playing": curr.playing,
+                "paused": curr.paused,
+                "hasTrack": curr.has_track,
+                "trackKey": curr.track_key,
+            }));
         }
-        return Ok(serde_json::json!({
-            "running": curr.running,
-            "playing": curr.playing,
-            "paused": curr.paused,
-            "hasTrack": curr.has_track,
-            "trackKey": curr.track_key,
-        }));
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = app;
-        Ok(serde_json::json!({
-            "running": false,
-            "playing": false,
-            "paused": false,
-            "hasTrack": false,
-            "trackKey": "",
-        }))
-    }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = app;
+            Ok(serde_json::json!({
+                "running": false,
+                "playing": false,
+                "paused": false,
+                "hasTrack": false,
+                "trackKey": "",
+            }))
+        }
+    })
+    .await
+    .map_err(|e| format!("Spotify media status background task error: {}", e))?
 }
 
 fn stop_pip_bop_immediately(app: &AppHandle) {
@@ -2144,12 +2220,60 @@ fn spawn_pip_cursor_watcher(app: AppHandle, hwnd_raw: isize, scale: f64) {
     let gen_arc = Arc::clone(&pip_watch.generation);
     let dragging_arc = Arc::clone(&pip_watch.is_dragging);
 
+    // Dedicated low-frequency Spotify GSMTC poller (decoupled from the 45fps cursor/eye loop
+    // so a sluggish or wedged Windows NPSMSvc can never stall eye tracking or battery alerts).
+    let spotify_app = app.clone();
+    let spotify_gen = Arc::clone(&gen_arc);
+    std::thread::spawn(move || {
+        let _winrt_mta = native_window::WinRtMtaGuard::enter();
+        while spotify_gen.load(Ordering::Acquire) == gen_id {
+            let curr = native_window::get_spotify_media_snapshot();
+            if spotify_gen.load(Ordering::Acquire) != gen_id {
+                break;
+            }
+            let (changed, evt) = {
+                let sp_state = spotify_app.state::<PipSpotifyState>();
+                let mut guard = sp_state.0.lock().unwrap();
+                let chg = guard.as_ref() != Some(&curr);
+                let event = if chg {
+                    native_window::classify_spotify_event(guard.as_ref(), &curr)
+                } else {
+                    None
+                };
+                if chg {
+                    *guard = Some(curr.clone());
+                }
+                (chg, event)
+            };
+            if changed {
+                let _ = spotify_app.emit_to(
+                    "chat_pill",
+                    "pip-spotify-update",
+                    serde_json::json!({
+                        "running": curr.running,
+                        "playing": curr.playing,
+                        "paused": curr.paused,
+                        "hasTrack": curr.has_track,
+                        "trackKey": curr.track_key,
+                        "event": evt,
+                    }),
+                );
+            }
+            // Sleep in short slices so stop_pip_cursor_watcher exits promptly
+            for _ in 0..9 {
+                if spotify_gen.load(Ordering::Acquire) != gen_id {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    });
+
     std::thread::spawn(move || {
         let mut last_dx = f64::NAN;
         let mut last_dy = f64::NAN;
         let mut was_near = false;
         let mut power_ticks: u32 = 20;
-        let mut spotify_ticks: u32 = 0;
         let mut last_overlay_pos: Option<(i32, i32)> = None;
 
         while gen_arc.load(Ordering::Acquire) == gen_id {
@@ -2229,40 +2353,6 @@ fn spawn_pip_cursor_watcher(app: AppHandle, hwnd_raw: isize, scale: f64) {
                             }),
                         );
                     }
-                }
-            }
-
-            spotify_ticks = spotify_ticks.saturating_add(1);
-            if spotify_ticks >= 18 {
-                spotify_ticks = 0;
-                let curr = native_window::get_spotify_media_snapshot();
-                let (changed, evt) = {
-                    let sp_state = app.state::<PipSpotifyState>();
-                    let mut guard = sp_state.0.lock().unwrap();
-                    let chg = guard.as_ref() != Some(&curr);
-                    let event = if chg {
-                        native_window::classify_spotify_event(guard.as_ref(), &curr)
-                    } else {
-                        None
-                    };
-                    if chg {
-                        *guard = Some(curr.clone());
-                    }
-                    (chg, event)
-                };
-                if changed {
-                    let _ = app.emit_to(
-                        "chat_pill",
-                        "pip-spotify-update",
-                        serde_json::json!({
-                            "running": curr.running,
-                            "playing": curr.playing,
-                            "paused": curr.paused,
-                            "hasTrack": curr.has_track,
-                            "trackKey": curr.track_key,
-                            "event": evt,
-                        }),
-                    );
                 }
             }
 
@@ -2396,6 +2486,7 @@ fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::
         let morph_state = app.state::<MorpherState>();
         let mut hwnd_raw: isize = 0;
         let mut morphed_from_open_pill = false;
+        let mut should_show_window = false;
 
         if let Ok(guard) = morph_state.0.lock() {
             if let Some(morpher) = guard.as_ref() {
@@ -2428,11 +2519,17 @@ fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::
                         width: pip_w,
                         height: pip_h,
                     });
-                    let _ = pill_win.show();
-                    let _ = pill_win.set_always_on_top(true);
+                    should_show_window = true;
                 }
                 hwnd_raw = morpher.hwnd_raw();
             }
+        }
+
+        // Release MorpherState BEFORE showing/raising the window so background watcher/bop
+        // threads can never collide with Win32 ShowWindow/SetWindowPos message dispatch.
+        if should_show_window {
+            let _ = pill_win.show();
+            let _ = pill_win.set_always_on_top(true);
         }
 
         if hwnd_raw != 0 {

@@ -18,7 +18,7 @@ use windows::{
         System::{
             Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
             Threading::{AttachThreadInput, GetCurrentThreadId},
-            WinRT::{RoInitialize, RO_INIT_MULTITHREADED},
+            WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED},
         },
         UI::Controls::MARGINS,
         UI::Input::KeyboardAndMouse::{SetActiveWindow, SetFocus},
@@ -1334,32 +1334,130 @@ pub fn is_valid_music_track(title: &str, artist: &str) -> bool {
     true
 }
 
+/// RAII guard for entering a WinRT Multi-Threaded Apartment (MTA) on the current thread.
+/// Automatically balances `RoInitialize(RO_INIT_MULTITHREADED)` with `RoUninitialize()`
+/// so pooled worker threads (such as Tokio's `spawn_blocking` pool) are never left
+/// permanently bound to MTA when other tasks on the pool need STA (e.g. Shell COM).
 #[cfg(target_os = "windows")]
-fn ensure_winrt_initialized() {
-    thread_local! {
-        static INIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    }
-    INIT.with(|done| {
-        if !done.get() {
-            unsafe {
-                let _ = RoInitialize(RO_INIT_MULTITHREADED);
-            }
-            done.set(true);
+pub struct WinRtMtaGuard {
+    active: bool,
+}
+
+#[cfg(target_os = "windows")]
+impl WinRtMtaGuard {
+    /// Returns `Some(guard)` if the current thread is now in WinRT MTA (`S_OK` or `S_FALSE`).
+    /// Returns `None` if the current thread is already an STA (`RPC_E_CHANGED_MODE`) or
+    /// initialization failed; in that case `RoUninitialize` must not be called.
+    pub fn enter() -> Option<Self> {
+        let hr = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        if hr.is_ok() {
+            Some(Self { active: true })
+        } else {
+            None
         }
-    });
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for WinRtMtaGuard {
+    fn drop(&mut self) {
+        if self.active {
+            unsafe { RoUninitialize() };
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+static GSMTC_COOLDOWN_UNTIL: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+#[cfg(target_os = "windows")]
+fn is_gsmtc_in_cooldown() -> bool {
+    if let Ok(mut guard) = GSMTC_COOLDOWN_UNTIL.lock() {
+        if let Some(until) = *guard {
+            if std::time::Instant::now() < until {
+                return true;
+            }
+            *guard = None;
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn mark_gsmtc_timed_out() {
+    if let Ok(mut guard) = GSMTC_COOLDOWN_UNTIL.lock() {
+        *guard = Some(std::time::Instant::now() + std::time::Duration::from_secs(10));
+    }
 }
 
 /// Polls Windows GSMTC (`GlobalSystemMediaTransportControlsSessionManager`) filtered
 /// strictly to Spotify Desktop / Microsoft Store sessions.
+///
+/// Safe on EVERY thread and resilient to wedged Windows `NPSMSvc` sessions:
+/// 1. If invoked from an STA thread (such as Tauri's main UI thread), offloads to a clean
+///    MTA thread so WinRT async completion can never deadlock the Win32 message loop.
+/// 2. Never calls `IAsyncOperation::join()` (which waits `INFINITE`); every WinRT async
+///    call uses `when()` with a bounded timeout + `Cancel()`, plus a 10-second circuit-
+///    breaker cooldown if Windows' Now Playing Session Manager (`NPSMSvc`) is stalled.
+/// 3. Balances `RoInitialize`/`RoUninitialize` via `WinRtMtaGuard` so pooled worker threads
+///    are never left permanently bound to MTA.
 #[cfg(target_os = "windows")]
 pub fn get_spotify_media_snapshot() -> SpotifyMediaSnapshot {
-    ensure_winrt_initialized();
+    if is_gsmtc_in_cooldown() {
+        return SpotifyMediaSnapshot::default();
+    }
+    if let Some(_guard) = WinRtMtaGuard::enter() {
+        return get_spotify_media_snapshot_mta();
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _guard = WinRtMtaGuard::enter();
+        let snap = get_spotify_media_snapshot_mta();
+        drop(_guard);
+        let _ = tx.send(snap);
+    });
+    rx.recv_timeout(std::time::Duration::from_millis(900))
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "windows")]
+fn get_spotify_media_snapshot_mta() -> SpotifyMediaSnapshot {
+    use std::time::Duration;
+
+    macro_rules! await_winrt_timeout {
+        ($op:expr, $timeout:expr) => {{
+            let (tx, rx) = std::sync::mpsc::channel();
+            if $op
+                .when(move |res| {
+                    let _ = tx.send(res);
+                })
+                .is_ok()
+            {
+                match rx.recv_timeout($timeout) {
+                    Ok(Ok(val)) => Ok(val),
+                    Ok(Err(_)) => Err(false),
+                    Err(_) => {
+                        let _ = $op.Cancel();
+                        Err(true)
+                    }
+                }
+            } else {
+                Err(false)
+            }
+        }};
+    }
 
     let Ok(op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() else {
         return SpotifyMediaSnapshot::default();
     };
-    let Ok(manager) = op.join() else {
-        return SpotifyMediaSnapshot::default();
+    let manager = match await_winrt_timeout!(op, Duration::from_millis(500)) {
+        Ok(m) => m,
+        Err(timed_out) => {
+            if timed_out {
+                mark_gsmtc_timed_out();
+            }
+            return SpotifyMediaSnapshot::default();
+        }
     };
     let Ok(sessions) = manager.GetSessions() else {
         return SpotifyMediaSnapshot::default();
@@ -1393,7 +1491,7 @@ pub fn get_spotify_media_snapshot() -> SpotifyMediaSnapshot {
         let (title, artist) = session
             .TryGetMediaPropertiesAsync()
             .ok()
-            .and_then(|props_op| props_op.join().ok())
+            .and_then(|props_op| await_winrt_timeout!(props_op, Duration::from_millis(400)).ok())
             .map(|props| {
                 let t = props.Title().map(|h| h.to_string_lossy()).unwrap_or_default();
                 let a = props.Artist().map(|h| h.to_string_lossy()).unwrap_or_default();
@@ -1644,5 +1742,66 @@ mod tests {
         assert_eq!(classify_spotify_event(Some(&paused_b), &closed), Some("stop"));
         assert_eq!(classify_spotify_event(Some(&playing_b), &closed), Some("stop"));
         assert_eq!(classify_spotify_event(Some(&playing_b), &playing_b), None);
+    }
+
+    #[test]
+    fn get_spotify_media_snapshot_never_deadlocks_on_sta_thread() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            // Simulate Tauri's main Win32 UI thread: COM STA with no message pump running
+            // during a synchronous WinRT call. Previously this deadlocked forever inside
+            // IAsyncOperation::join() -> WaitForSingleObject(INFINITE).
+            let init_ok = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
+            let snap = super::get_spotify_media_snapshot();
+            if init_ok {
+                unsafe { CoUninitialize() };
+            }
+            let _ = tx.send(snap);
+        });
+
+        let snap = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("get_spotify_media_snapshot deadlocked on an STA thread!");
+        // Snapshot should be a valid, well-formed struct (playing implies running & has_track)
+        if snap.playing {
+            assert!(snap.running && snap.has_track);
+        }
+    }
+
+    #[test]
+    fn get_spotify_media_snapshot_leaves_pooled_thread_clean_for_sta() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _ = super::get_spotify_media_snapshot();
+            // After returning, a pooled worker thread must not be stuck in MTA mode
+            let sta_hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            let ok = sta_hr.is_ok();
+            if ok {
+                unsafe { CoUninitialize() };
+            }
+            let _ = tx.send((ok, sta_hr));
+        });
+
+        let (ok, sta_hr) = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("get_spotify_media_snapshot hung on a clean worker thread!");
+        handle.join().expect("worker thread panicked");
+        assert!(
+            ok,
+            "Thread was left poisoned in MTA mode after get_spotify_media_snapshot: {:?}",
+            sta_hr
+        );
     }
 }
