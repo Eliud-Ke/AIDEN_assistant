@@ -1237,6 +1237,14 @@ pub fn restore_foreground_window(hwnd_raw: isize) {
     }
 }
 
+/// Grants foreground activation permission to newly launched external apps/files immediately.
+#[cfg(target_os = "windows")]
+pub fn allow_any_foreground_activation() {
+    unsafe {
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+    }
+}
+
 /// Computes physical `(x, y, width, height, flip_right)` for the 76x64 transparent
 /// comment bubble positioned beside the cube's top-left corner, auto-flipping to
 /// top-right when near the virtual screen's left boundary.

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -237,7 +237,12 @@ impl SearchIndexManager {
         }
     }
 
-    pub fn launch_item(&self, item: &SearchItem, reveal_in_explorer: bool) -> Result<(), String> {
+    pub fn launch_item(
+        &self,
+        item: &SearchItem,
+        reveal_in_explorer: bool,
+        run_as_admin: bool,
+    ) -> Result<(), String> {
         #[cfg(target_os = "windows")]
         {
             if reveal_in_explorer && item.launch_kind == "path" {
@@ -247,12 +252,12 @@ impl SearchIndexManager {
                 cmd.spawn()
                     .map_err(|e| format!("Failed to reveal in Explorer: {}", e))?;
             } else {
-                shell_launch_windows(&item.launch_kind, &item.target)?;
+                shell_launch_windows(&item.launch_kind, &item.target, &item.kind, run_as_admin)?;
             }
         }
         #[cfg(not(target_os = "windows"))]
         {
-            let _ = (item, reveal_in_explorer);
+            let _ = (item, reveal_in_explorer, run_as_admin);
         }
 
         self.record_launch(item);
@@ -421,10 +426,182 @@ pub fn should_query_files(query: &str) -> bool {
     word_count <= 4
 }
 
+fn split_search_words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut prev_was_lower = false;
+
+    for ch in text.chars() {
+        if !ch.is_ascii_alphanumeric() {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+            prev_was_lower = false;
+            continue;
+        }
+        let is_upper = ch.is_ascii_uppercase();
+        if is_upper && prev_was_lower && !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+        current.push(ch.to_ascii_lowercase());
+        prev_was_lower = ch.is_ascii_lowercase();
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+/// Optimal string alignment Damerau-Levenshtein edit distance (insertion, deletion,
+/// substitution, and adjacent character transposition each cost 1).
+pub fn damerau_levenshtein_ascii(a: &str, b: &str) -> usize {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let m = a_bytes.len();
+    let n = b_bytes.len();
+    if m == 0 {
+        return n;
+    }
+    if n == 0 {
+        return m;
+    }
+
+    let width = n + 1;
+    let mut dp = vec![0usize; (m + 1) * width];
+    for i in 0..=m {
+        dp[i * width] = i;
+    }
+    for j in 0..=n {
+        dp[j] = j;
+    }
+
+    for i in 1..=m {
+        for j in 1..=n {
+            let cost = usize::from(a_bytes[i - 1] != b_bytes[j - 1]);
+            let del = dp[(i - 1) * width + j] + 1;
+            let ins = dp[i * width + (j - 1)] + 1;
+            let sub = dp[(i - 1) * width + (j - 1)] + cost;
+            let mut best = del.min(ins).min(sub);
+
+            if i > 1
+                && j > 1
+                && a_bytes[i - 1] == b_bytes[j - 2]
+                && a_bytes[i - 2] == b_bytes[j - 1]
+            {
+                best = best.min(dp[(i - 2) * width + (j - 2)] + 1);
+            }
+            dp[i * width + j] = best;
+        }
+    }
+    dp[m * width + n]
+}
+
+/// Word-start anchored subsequence match (e.g. "ytube" -> "youtube", "pwsh" -> "powershell").
+/// Requires the first character to anchor at the start of the candidate word and high contiguous density.
+fn score_subsequence_word(q: &str, candidate: &str) -> i32 {
+    let qb = q.as_bytes();
+    let cb = candidate.as_bytes();
+    if qb.len() < 3 || cb.len() <= qb.len() || qb[0] != cb[0] {
+        return 0;
+    }
+    // Coverage guard: prevent short queries from matching very long unrelated filenames
+    if (qb.len() * 100) / cb.len() < 45 {
+        return 0;
+    }
+
+    let mut qi = 0usize;
+    let mut prev_match_ci: Option<usize> = None;
+    let mut consecutive = 0usize;
+
+    for (ci, &c) in cb.iter().enumerate() {
+        if qi < qb.len() && c == qb[qi] {
+            if let Some(prev) = prev_match_ci {
+                if ci == prev + 1 {
+                    consecutive += 1;
+                }
+            }
+            prev_match_ci = Some(ci);
+            qi += 1;
+        }
+    }
+
+    if qi == qb.len() && consecutive + 1 >= qb.len().saturating_sub(1) {
+        555 + (consecutive.min(6) as i32) * 6
+    } else {
+        0
+    }
+}
+
+/// Typo-tolerant token matcher against a single candidate word or alias.
+/// Handles substitutions ("youtune" -> "youtube"), transpositions ("spoitfy" -> "spotify"),
+/// missing/extra chars ("calclator" -> "calculator"), and in-progress prefix typos ("youtun" -> "youtub").
+fn score_fuzzy_typo_token(q: &str, candidate: &str) -> i32 {
+    if !q.is_ascii() || !candidate.is_ascii() {
+        return 0;
+    }
+    let qlen = q.len();
+    let clen = candidate.len();
+    if qlen < 4 || clen < 3 {
+        return 0;
+    }
+
+    let qb = q.as_bytes();
+    let cb = candidate.as_bytes();
+    let common_prefix = qb
+        .iter()
+        .zip(cb.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let first_two_transposed = qlen >= 5
+        && clen >= 5
+        && qb[0] == cb[1]
+        && qb[1] == cb[0]
+        && qb[2] == cb[2];
+
+    // Anchor start of word so mid-word substrings like "yout" vs "layout" never match
+    if common_prefix < 2 && !first_two_transposed {
+        return 0;
+    }
+
+    // 1. Full word edit distance
+    if qlen.abs_diff(clen) <= 2 {
+        let dist = damerau_levenshtein_ascii(q, candidate);
+        if dist == 1 {
+            return 615 + (common_prefix.min(6) as i32) * 6;
+        }
+        if dist == 2 && qlen >= 6 && common_prefix >= 3 {
+            return 525 + (common_prefix.min(6) as i32) * 5;
+        }
+    }
+
+    // 2. Prefix edit distance (user is mid-typing a longer word with a 1-char slip, e.g. "youtun" -> "youtube")
+    if clen > qlen {
+        let cand_pref = &candidate[..qlen];
+        let dist_pref = damerau_levenshtein_ascii(q, cand_pref);
+        if dist_pref == 1 && common_prefix >= 2 {
+            return 585 + (common_prefix.min(6) as i32) * 5;
+        }
+        if dist_pref == 2 && qlen >= 7 && common_prefix >= 3 {
+            return 505 + (common_prefix.min(6) as i32) * 4;
+        }
+    }
+
+    // 3. Prefix with 1 skipped letter (e.g. "calcl" -> "calcul" prefix of "calculator")
+    if qlen >= 5 && clen > qlen + 1 && common_prefix >= 3 {
+        let cand_pref_plus = &candidate[..qlen + 1];
+        if damerau_levenshtein_ascii(q, cand_pref_plus) == 1 {
+            return 560 + (common_prefix.min(6) as i32) * 4;
+        }
+    }
+
+    0
+}
+
 /// Strict relevance scorer (returns `0` on non-match — never pads fake filler rows!).
 pub fn score_search_item(item: &SearchItem, query: &str, frecency: u32) -> i32 {
     let q = query.trim().to_ascii_lowercase();
-    if q.is_empty() || q.contains('?') {
+    if q.is_empty() || q.contains('?') || q.contains('\n') {
         return 0;
     }
 
@@ -451,41 +628,85 @@ pub fn score_search_item(item: &SearchItem, query: &str, frecency: u32) -> i32 {
         return 820 + frec_boost;
     }
 
-    // 4. Word-start match (e.g. "edge" -> "Microsoft Edge", "term" -> "Windows Terminal")
-    let words: Vec<&str> = name
+    // 4. Word-start match (e.g. "edge" -> "Microsoft Edge", "tube" -> "YouTube")
+    let raw_words: Vec<&str> = name
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();
-    if is_single_token && words.iter().any(|w| w.starts_with(&q)) {
+    let words = split_search_words(&item.name);
+    if is_single_token
+        && (raw_words.iter().any(|w| w.starts_with(&q)) || words.iter().any(|w| w.starts_with(&q)))
+    {
         return 760 + frec_boost;
     }
 
-    // 5. Multi-word token-prefix match (e.g. "mic edg" -> "Microsoft Edge", "task man" -> "Task Manager")
+    // 5. Multi-word token-prefix & typo-tolerant match (e.g. "mic edg" -> "Microsoft Edge")
     if !is_single_token {
         let q_tokens: Vec<&str> = q.split_whitespace().collect();
-        if q_tokens.len() <= 3
-            && q_tokens
-                .iter()
-                .all(|qt| words.iter().any(|w| w.starts_with(qt)) || name.contains(qt))
-        {
-            return 700 + frec_boost;
+        if q_tokens.len() <= 3 {
+            if q_tokens.iter().all(|qt| {
+                raw_words.iter().any(|w| w.starts_with(qt))
+                    || words.iter().any(|w| w.starts_with(qt))
+            }) {
+                return 700 + frec_boost;
+            }
+            if q_tokens.iter().all(|qt| {
+                raw_words
+                    .iter()
+                    .any(|w| w.starts_with(qt) || score_fuzzy_typo_token(qt, w) > 0)
+                    || words
+                        .iter()
+                        .any(|w| w.starts_with(qt) || score_fuzzy_typo_token(qt, w) > 0)
+            }) {
+                return 570 + frec_boost;
+            }
         }
         return 0;
     }
 
     // 6. Acronym match for short queries (e.g. "vsc" -> Visual Studio Code, "wt" -> Windows Terminal)
     if q.len() >= 2 && q.len() <= 5 {
-        let initials: String = words.iter().filter_map(|w| w.chars().next()).collect();
-        if initials.starts_with(&q) {
+        let initials: String = raw_words.iter().filter_map(|w| w.chars().next()).collect();
+        let camel_initials: String = words.iter().filter_map(|w| w.chars().next()).collect();
+        if initials.starts_with(&q) || camel_initials.starts_with(&q) {
             return 660 + frec_boost;
         }
     }
 
-    // 7. Clean substring match (only for single-word queries >= 3 chars)
-    if q.len() >= 3 && name.contains(&q) {
+    // 7. Typo-tolerant Damerau-Levenshtein & word-anchored subsequence fuzzy match
+    //    (e.g. "youtune" -> "YouTube", "spoitfy" -> "Spotify", "databeses" -> "...DATABASES.pdf")
+    let mut best_fuzzy = 0;
+    for w in &raw_words {
+        best_fuzzy = best_fuzzy
+            .max(score_fuzzy_typo_token(&q, w))
+            .max(score_subsequence_word(&q, w));
+    }
+    for w in &words {
+        best_fuzzy = best_fuzzy
+            .max(score_fuzzy_typo_token(&q, w))
+            .max(score_subsequence_word(&q, w));
+    }
+    for alias in &item.aliases {
+        let al = alias.to_ascii_lowercase();
+        for aw in al
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter(|s| !s.is_empty())
+        {
+            best_fuzzy = best_fuzzy
+                .max(score_fuzzy_typo_token(&q, aw))
+                .max(score_subsequence_word(&q, aw));
+        }
+    }
+    if best_fuzzy > 0 {
+        return best_fuzzy + frec_boost;
+    }
+
+    // 8. Substring fallback (only for 5+ char app queries; files strictly require word-prefix match)
+    if q.len() >= 5 && item.kind != "File" && name.contains(&q) {
         return 540 + frec_boost;
     }
-    if q.len() >= 3
+    if q.len() >= 5
+        && item.kind != "File"
         && item
             .aliases
             .iter()
@@ -503,6 +724,20 @@ pub fn is_noisy_file_path(path: &str) -> bool {
     let blocked_segments = [
         "\\$recycle.bin\\",
         "\\system volume information\\",
+        "\\windows\\",
+        "\\programdata\\",
+        "\\appdata\\",
+        "\\.vscode\\extensions\\",
+        "\\.cursor\\extensions\\",
+        "\\site-packages\\",
+        "\\dist-packages\\",
+        "\\anaconda3\\",
+        "\\miniconda3\\",
+        "\\pkgs\\",
+        "\\.rustup\\",
+        "\\.gradle\\",
+        "\\.m2\\",
+        "\\.nuget\\",
         "\\windows\\winsxs\\",
         "\\windows\\servicing\\",
         "\\windows\\installer\\",
@@ -535,10 +770,60 @@ pub fn is_noisy_file_path(path: &str) -> bool {
 
     let blocked_exts = [
         ".tmp", ".temp", ".log", ".etl", ".pf", ".mui", ".dll", ".sys", ".cat", ".cab", ".lnk",
-        ".ini", ".dat", ".db", ".db-wal", ".db-shm", ".sqlite-wal", ".manifest", ".mum", ".cdf-ms",
-        ".pyc", ".pyo", ".o", ".obj", ".pdb", ".d", ".rmeta", ".rlib",
+        ".ini", ".dat", ".db", ".db-wal", ".db-shm", ".db-journal", ".sqlite-wal",
+        ".sqlite-journal", ".journal", ".lock", ".idx", ".pack", ".toc", ".bak", ".old", ".orig",
+        ".cache", ".map", ".d.ts", ".min.js", ".min.css", ".manifest", ".mum", ".cdf-ms", ".pyc",
+        ".pyo", ".o", ".obj", ".pdb", ".d", ".rmeta", ".rlib",
     ];
     blocked_exts.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Scores file usefulness by extension tier and directory signal so real documents
+/// (PDFs, Office files, notes, user folders) outrank extension SVGs and clutter.
+pub fn file_priority_adjustment(path: &str, ext: &str) -> i32 {
+    let lower_ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
+    let lower_path = path.to_ascii_lowercase();
+
+    let ext_bonus = match lower_ext.as_str() {
+        // Tier 1: Primary documents, spreadsheets, presentations & e-books
+        "pdf" | "docx" | "doc" | "xlsx" | "xls" | "pptx" | "ppt" | "odt" | "ods" | "odp"
+        | "epub" => 180,
+        // Tier 2: Notes, text, notebooks & data tables
+        "md" | "txt" | "csv" | "rtf" | "ipynb" | "tex" => 135,
+        // Tier 3: Programs, source code & scripts
+        "exe" | "msi" | "py" | "rs" | "ts" | "tsx" | "js" | "jsx" | "go" | "java" | "c"
+        | "cpp" | "h" | "cs" | "sql" | "sh" | "ps1" | "bat" | "html" | "css" | "json"
+        | "yaml" | "yml" | "toml" => 95,
+        // Tier 4: User photos, videos, audio & archives
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "mp4" | "mkv" | "mov" | "mp3" | "wav"
+        | "flac" | "m4a" | "zip" | "7z" | "rar" | "tar" | "gz" => 65,
+        // Tier 5: Vector/icon/font/XML asset files
+        "svg" | "ico" | "cur" | "ttf" | "otf" | "woff" | "woff2" | "eot" | "xml"
+        | "plist" => -120,
+        _ => 0,
+    };
+
+    let user_folders = [
+        "\\documents\\",
+        "\\my documents\\",
+        "\\desktop\\",
+        "\\downloads\\",
+        "\\my projects\\",
+        "\\projects\\",
+        "\\pictures\\",
+        "\\videos\\",
+        "\\music\\",
+        "\\onedrive\\",
+    ];
+    let mut path_bonus = 0;
+    if user_folders.iter().any(|seg| lower_path.contains(seg)) {
+        path_bonus += 95;
+    }
+    if lower_path.contains("\\.") {
+        path_bonus -= 160;
+    }
+
+    ext_bonus + path_bonus
 }
 
 fn app_priority(item: &SearchItem) -> u8 {
@@ -802,74 +1087,71 @@ $list | ConvertTo-Json -Compress
     items
 }
 
+static ES_EXE_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
 fn find_es_exe() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            let winapps = PathBuf::from(local)
-                .join("Microsoft")
-                .join("WindowsApps")
-                .join("es.exe");
-            if winapps.exists() {
-                return Some(winapps);
-            }
-        }
-        if let Ok(path_var) = std::env::var("PATH") {
-            for dir in std::env::split_paths(&path_var) {
-                let candidate = dir.join("es.exe");
-                if candidate.exists() {
-                    return Some(candidate);
+    ES_EXE_CACHE
+        .get_or_init(|| {
+            #[cfg(target_os = "windows")]
+            {
+                if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                    let winapps = PathBuf::from(local)
+                        .join("Microsoft")
+                        .join("WindowsApps")
+                        .join("es.exe");
+                    if winapps.exists() {
+                        return Some(winapps);
+                    }
+                }
+                if let Ok(path_var) = std::env::var("PATH") {
+                    for dir in std::env::split_paths(&path_var) {
+                        let candidate = dir.join("es.exe");
+                        if candidate.exists() {
+                            return Some(candidate);
+                        }
+                    }
+                }
+                for fallback in [
+                    r"C:\Program Files\Everything\es.exe",
+                    r"C:\Program Files (x86)\Everything\es.exe",
+                ] {
+                    let p = PathBuf::from(fallback);
+                    if p.exists() {
+                        return Some(p);
+                    }
                 }
             }
-        }
-        for fallback in [
-            r"C:\Program Files\Everything\es.exe",
-            r"C:\Program Files (x86)\Everything\es.exe",
-        ] {
-            let p = PathBuf::from(fallback);
-            if p.exists() {
-                return Some(p);
-            }
-        }
-    }
-    None
+            None
+        })
+        .clone()
 }
 
 fn is_es_installed() -> bool {
     find_es_exe().is_some()
 }
 
-fn query_everything_files(
-    query: &str,
-    frecency: &HashMap<String, u32>,
-) -> (Vec<SearchItem>, bool) {
-    let Some(es_path) = find_es_exe() else {
-        return (Vec::new(), false);
-    };
-
-    let tokens: Vec<&str> = query.split_whitespace().collect();
-    if tokens.is_empty() {
-        return (Vec::new(), true);
-    }
-
+fn run_es_command(es_path: &Path, args_tokens: &[String]) -> Option<String> {
     let mut cmd = Command::new(es_path);
-    cmd.args(["/a-d", "-n", "30", "-sort", "run-count-descending"]);
-    for tok in &tokens {
+    cmd.args(["/a-d", "-prefix", "-n", "60", "-sort", "run-count-descending"]);
+    for tok in args_tokens {
         cmd.arg(tok);
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let Ok(output) = cmd.output() else {
-        return (Vec::new(), false);
-    };
+    let output = cmd.output().ok()?;
     if !output.status.success() {
-        // Error 8 (Everything IPC not running) or similar -> fail silently without disrupting app search
-        return (Vec::new(), false);
+        return None;
     }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn collect_es_candidates(
+    stdout: &str,
+    query: &str,
+    frecency: &HashMap<String, u32>,
+) -> Vec<(i32, SearchItem)> {
     let mut candidates: Vec<(i32, SearchItem)> = Vec::new();
     let mut seen_paths: HashSet<String> = HashSet::new();
 
@@ -920,9 +1202,54 @@ fn query_everything_files(
 
         let frec = *frecency.get(&item.id).unwrap_or(&0);
         let base_score = score_search_item(&item, query, frec);
-        // Preserve Everything's run-count match even if query matched across path/stem
-        let final_score = if base_score > 0 { base_score } else { 420 + (frec.min(10) as i32) * 8 };
+        if base_score == 0 {
+            continue;
+        }
+        let priority_adj = file_priority_adjustment(full, &ext);
+        let final_score = base_score + priority_adj;
         candidates.push((final_score, item));
+    }
+
+    candidates
+}
+
+fn query_everything_files(
+    query: &str,
+    frecency: &HashMap<String, u32>,
+) -> (Vec<SearchItem>, bool) {
+    let Some(es_path) = find_es_exe() else {
+        return (Vec::new(), false);
+    };
+
+    let tokens: Vec<&str> = query.split_whitespace().collect();
+    if tokens.is_empty() {
+        return (Vec::new(), true);
+    }
+
+    let exact_tokens: Vec<String> = tokens.iter().map(|t| (*t).to_string()).collect();
+    let Some(stdout) = run_es_command(&es_path, &exact_tokens) else {
+        // Error 8 (Everything IPC not running) or similar -> fail silently without disrupting app search
+        return (Vec::new(), false);
+    };
+
+    let mut candidates = collect_es_candidates(&stdout, query, frecency);
+
+    // Typo-prefix fallback: if exact tokens matched 0 files and a token >= 5 ASCII chars has a typo
+    // (e.g. "databeses"), query Everything by its 4-char prefix and let Damerau-Levenshtein rank hits.
+    if candidates.is_empty() && tokens.iter().any(|t| t.len() >= 5 && t.is_ascii()) {
+        let prefix_tokens: Vec<String> = tokens
+            .iter()
+            .map(|t| {
+                if t.len() >= 5 && t.is_ascii() {
+                    t[..4].to_string()
+                } else {
+                    (*t).to_string()
+                }
+            })
+            .collect();
+        if let Some(pref_out) = run_es_command(&es_path, &prefix_tokens) {
+            candidates = collect_es_candidates(&pref_out, query, frecency);
+        }
     }
 
     candidates.sort_by(|a, b| b.0.cmp(&a.0));
@@ -940,45 +1267,137 @@ fn to_wide_null(s: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
-fn shell_launch_windows(launch_kind: &str, target: &str) -> Result<(), String> {
-    use windows::core::{w, PCWSTR};
-    use windows::Win32::UI::Shell::ShellExecuteW;
+unsafe fn exec_shell_verb(
+    verb: windows::core::PCWSTR,
+    file: windows::core::PCWSTR,
+    params: windows::core::PCWSTR,
+    dir: windows::core::PCWSTR,
+) -> windows::core::Result<()> {
+    use windows::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_ASYNCOK, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOZONECHECKS,
+        SHELLEXECUTEINFOW,
+    };
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-    let open_target = if launch_kind == "aumid" {
-        format!("shell:AppsFolder\\{}", target)
-    } else {
-        target.to_string()
+    let mut sei = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_ASYNCOK | SEE_MASK_NOZONECHECKS | SEE_MASK_FLAG_NO_UI,
+        hwnd: windows::Win32::Foundation::HWND::default(),
+        lpVerb: verb,
+        lpFile: file,
+        lpParameters: params,
+        lpDirectory: dir,
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
     };
+    unsafe { ShellExecuteExW(&mut sei) }
+}
 
-    let target_w = to_wide_null(&open_target);
-    let dir_w = if launch_kind == "path" {
-        Path::new(target)
-            .parent()
-            .map(|p| to_wide_null(&p.to_string_lossy()))
-    } else {
-        None
+#[cfg(target_os = "windows")]
+fn shell_launch_windows(
+    launch_kind: &str,
+    target: &str,
+    item_kind: &str,
+    run_as_admin: bool,
+) -> Result<(), String> {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+        COINIT_DISABLE_OLE1DDE,
     };
+    use windows::Win32::UI::Shell::{ApplicationActivationManager, IApplicationActivationManager, AO_NONE};
+    use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
 
-    let hinst = unsafe {
-        ShellExecuteW(
-            None,
-            w!("open"),
-            PCWSTR(target_w.as_ptr()),
-            PCWSTR::null(),
-            dir_w
-                .as_ref()
-                .map(|w| PCWSTR(w.as_ptr()))
-                .unwrap_or(PCWSTR::null()),
-            SW_SHOWNORMAL,
-        )
-    };
+    let lower_target = target.to_ascii_lowercase();
+    let is_elevatable_file = lower_target.ends_with(".exe")
+        || lower_target.ends_with(".lnk")
+        || lower_target.ends_with(".msc")
+        || lower_target.ends_with(".msi")
+        || lower_target.ends_with(".bat")
+        || lower_target.ends_with(".cmd")
+        || lower_target.ends_with(".ps1");
+    let want_admin = run_as_admin && (item_kind != "File" || is_elevatable_file);
 
-    if (hinst.0 as isize) <= 32 {
-        return Err(format!(
-            "Windows ShellExecuteW failed (code {}) for {}",
-            hinst.0 as isize, open_target
-        ));
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let did_init = hr.is_ok();
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+
+        let try_activate_aumid = || -> bool {
+            let aumid_w = to_wide_null(target);
+            if let Ok(activator) = CoCreateInstance::<_, IApplicationActivationManager>(
+                &ApplicationActivationManager,
+                None,
+                CLSCTX_ALL,
+            ) {
+                return activator
+                    .ActivateApplication(PCWSTR(aumid_w.as_ptr()), PCWSTR::null(), AO_NONE)
+                    .is_ok();
+            }
+            false
+        };
+
+        // Fast path 1: direct IApplicationActivationManager for Store/UWP/PWA apps when not elevating
+        if !want_admin && launch_kind == "aumid" && try_activate_aumid() {
+            if did_init {
+                CoUninitialize();
+            }
+            return Ok(());
+        }
+
+        let dir_w = if launch_kind == "path" {
+            Path::new(target)
+                .parent()
+                .map(|p| to_wide_null(&p.to_string_lossy()))
+        } else {
+            None
+        };
+        let dir_ptr = dir_w
+            .as_ref()
+            .map(|d| PCWSTR(d.as_ptr()))
+            .unwrap_or(PCWSTR::null());
+
+        // Administrative snap-ins (.msc) must be launched via elevated mmc.exe
+        if want_admin && launch_kind == "path" && lower_target.ends_with(".msc") {
+            let params_w = to_wide_null(&format!("\"{}\"", target));
+            let res = exec_shell_verb(
+                w!("runas"),
+                w!("mmc.exe"),
+                PCWSTR(params_w.as_ptr()),
+                dir_ptr,
+            );
+            if did_init {
+                CoUninitialize();
+            }
+            res.map_err(|e| format!("Elevated mmc.exe launch failed for {}: {}", target, e))?;
+            return Ok(());
+        }
+
+        let open_target = if launch_kind == "aumid" {
+            format!("shell:AppsFolder\\{}", target)
+        } else {
+            target.to_string()
+        };
+        let target_w = to_wide_null(&open_target);
+        let verb = if want_admin { w!("runas") } else { w!("open") };
+
+        let mut launch_res = exec_shell_verb(verb, PCWSTR(target_w.as_ptr()), PCWSTR::null(), dir_ptr);
+
+        // Pure UWP/PWA apps may reject "runas"; fall back gracefully to normal launch
+        if launch_res.is_err() && want_admin && launch_kind == "aumid" {
+            if try_activate_aumid() {
+                launch_res = Ok(());
+            } else {
+                launch_res =
+                    exec_shell_verb(w!("open"), PCWSTR(target_w.as_ptr()), PCWSTR::null(), dir_ptr);
+            }
+        }
+
+        if did_init {
+            CoUninitialize();
+        }
+        launch_res
+            .map_err(|e| format!("Windows ShellExecuteExW failed for {}: {}", open_target, e))?;
     }
     Ok(())
 }
@@ -1275,8 +1694,8 @@ unsafe fn hbitmap_to_png(
 #[cfg(test)]
 mod tests {
     use super::{
-        clean_app_name, deduplicate_apps, is_noisy_file_path, is_noisy_shortcut_name,
-        score_search_item, should_query_files, SearchItem,
+        clean_app_name, deduplicate_apps, file_priority_adjustment, is_noisy_file_path,
+        is_noisy_shortcut_name, score_search_item, should_query_files, SearchItem,
     };
 
     fn dummy_app(name: &str, kind: &str, launch_kind: &str, target: &str, aliases: &[&str]) -> SearchItem {
@@ -1338,5 +1757,44 @@ mod tests {
         assert!(is_noisy_file_path(r"C:\Users\eliud\AppData\Local\Temp\cache.tmp"));
         assert!(!is_noisy_file_path(r"C:\Users\eliud\Documents\Q4_Report.pdf"));
         assert!(!is_noisy_file_path(r"C:\Tools\ffmpeg\ffmpeg.exe"));
+    }
+
+    #[test]
+    fn file_priority_ranks_pdfs_and_user_docs_above_svgs_and_filters_journals() {
+        assert!(is_noisy_file_path(
+            r"C:\ProgramData\Windhawk\UIData\user-data\databases\Databases.db-journal"
+        ));
+        assert!(is_noisy_file_path(
+            r"C:\Users\eliud\.vscode\extensions\hediet.vscode-drawio-1.19.0\drawio\src\main\webapp\img\lib\mscae\Databases.svg"
+        ));
+        assert!(
+            file_priority_adjustment(
+                r"C:\My Documents\Introduction to database systems\INTRODUCTION TO DATABASES.pdf",
+                "pdf",
+            ) > file_priority_adjustment(r"C:\Assets\databases.svg", "svg") + 250
+        );
+
+        let youtube = dummy_app("YouTube", "App", "aumid", "YouTube", &["youtube"]);
+        let spotify = dummy_app("Spotify", "App", "aumid", "Spotify", &["spotify"]);
+        let calculator = dummy_app("Calculator", "App", "aumid", "Calc", &["calculator"]);
+        let db_pdf = dummy_app(
+            "INTRODUCTION TO DATABASES.pdf",
+            "File",
+            "path",
+            r"C:\My Documents\INTRODUCTION TO DATABASES.pdf",
+            &[],
+        );
+        let layout_file = dummy_app("_constrained_layout.py", "File", "path", r"C:\Docs\_constrained_layout.py", &[]);
+        assert!(score_search_item(&youtube, "yout", 0) >= 880);
+        assert!(score_search_item(&youtube, "youtune", 0) >= 550);
+        assert!(score_search_item(&youtube, "youtun", 0) >= 550);
+        assert!(score_search_item(&youtube, "yotuube", 0) >= 550);
+        assert!(score_search_item(&youtube, "ytube", 0) >= 550);
+        assert!(score_search_item(&spotify, "spoitfy", 0) >= 550);
+        assert!(score_search_item(&calculator, "calclator", 0) >= 550);
+        assert!(score_search_item(&db_pdf, "databeses", 0) >= 550);
+        assert_eq!(score_search_item(&layout_file, "yout", 0), 0);
+        assert_eq!(score_search_item(&layout_file, "youtune", 0), 0);
+        assert!(score_search_item(&layout_file, "layout", 0) > 0);
     }
 }

@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import React, { useEffect, useRef } from "react";
 import "./SearchDrawer.css";
 
 export interface SearchItem {
@@ -15,16 +13,16 @@ export interface SearchItem {
   aliases?: string[];
 }
 
-export interface SearchDrawerSyncPayload {
+export interface ConjoinedSearchTrayProps {
   open: boolean;
-  darkMode?: boolean;
-  query?: string;
-  mode?: "recents" | "search";
-  recents?: SearchItem[];
-  apps?: SearchItem[];
-  files?: SearchItem[];
-  selectedIndex?: number;
-  everythingAvailable?: boolean;
+  query: string;
+  mode: "recents" | "search";
+  recents: SearchItem[];
+  apps: SearchItem[];
+  files: SearchItem[];
+  selectedIndex: number;
+  onSelectIndex: (index: number) => void;
+  onLaunchItem: (item: SearchItem, revealInExplorer: boolean, runAsAdmin: boolean) => void;
 }
 
 function getFallbackLabel(item: SearchItem): string {
@@ -40,104 +38,78 @@ function getFallbackLabel(item: SearchItem): string {
 function renderHighlightedTitle(text: string, query: string): React.ReactNode {
   const q = query.trim();
   if (!q || q.includes(" ")) return text;
-  const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return text;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark>{text.slice(idx, idx + q.length)}</mark>
-      {text.slice(idx + q.length)}
-    </>
-  );
+  const lowerText = text.toLowerCase();
+  const lowerQ = q.toLowerCase();
+  const idx = lowerText.indexOf(lowerQ);
+  if (idx !== -1) {
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark>{text.slice(idx, idx + q.length)}</mark>
+        {text.slice(idx + q.length)}
+      </>
+    );
+  }
+
+  // Fuzzy/typo fallback: highlight the longest shared prefix (>= 2 chars) on any matching word
+  let bestStart = -1;
+  let bestLen = 0;
+  const wordRe = /[A-Za-z0-9]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = wordRe.exec(text)) !== null) {
+    const wordLower = match[0].toLowerCase();
+    const maxK = Math.min(wordLower.length, lowerQ.length);
+    let k = 0;
+    while (k < maxK && wordLower[k] === lowerQ[k]) {
+      k++;
+    }
+    if (k >= 2 && k > bestLen) {
+      bestStart = match.index;
+      bestLen = k;
+    }
+  }
+
+  if (bestStart !== -1 && bestLen >= 2) {
+    return (
+      <>
+        {text.slice(0, bestStart)}
+        <mark>{text.slice(bestStart, bestStart + bestLen)}</mark>
+        {text.slice(bestStart + bestLen)}
+      </>
+    );
+  }
+
+  return text;
 }
 
-export const SearchDrawerWindow: React.FC = () => {
-  const [state, setState] = useState<SearchDrawerSyncPayload>({
-    open: false,
-    darkMode: true,
-    query: "",
-    mode: "recents",
-    recents: [],
-    apps: [],
-    files: [],
-    selectedIndex: -1,
-    everythingAvailable: false,
-  });
-
+export const ConjoinedSearchTray: React.FC<ConjoinedSearchTrayProps> = ({
+  open,
+  query,
+  mode,
+  recents,
+  apps,
+  files,
+  selectedIndex,
+  onSelectIndex,
+  onLaunchItem,
+}) => {
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-
-  useEffect(() => {
-    let disposed = false;
-    let unlistenSync: (() => void) | undefined;
-
-    const setup = async () => {
-      try {
-        const unlisten = await listen<SearchDrawerSyncPayload>("search-drawer-sync", (event) => {
-          const payload = event.payload;
-          if (!payload) return;
-          setState((prev) => ({
-            ...prev,
-            ...payload,
-          }));
-        });
-        if (disposed) {
-          unlisten();
-        } else {
-          unlistenSync = unlisten;
-          // Hydrate latest drawer state in case the first sync fired while mounting
-          try {
-            const initial = await invoke<SearchDrawerSyncPayload>("get_search_drawer_state");
-            if (!disposed && initial) {
-              setState((prev) => ({ ...prev, ...initial }));
-            }
-          } catch {
-            // Ignore
-          }
-        }
-      } catch {
-        // Fallback outside Tauri
-      }
-    };
-
-    setup();
-    return () => {
-      disposed = true;
-      if (unlistenSync) unlistenSync();
-    };
-  }, []);
-
-  const selectedIndex = state.selectedIndex ?? -1;
 
   // Keep keyboard-selected row smoothly visible inside the scroll viewport
   useEffect(() => {
-    if (selectedIndex < 0) return;
+    if (!open || selectedIndex < 0) return;
     const el = rowRefs.current.get(selectedIndex);
     if (el) {
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [selectedIndex, state.query, state.mode]);
+  }, [open, selectedIndex, query, mode]);
 
-  const query = state.query || "";
-  const isRecentsMode = state.mode === "recents";
-  const recents = state.recents || [];
-  const apps = state.apps || [];
-  const files = state.files || [];
-  const isDarkMode = state.darkMode !== false;
-
-  const flatItems: SearchItem[] = isRecentsMode ? recents : [...apps, ...files];
-  const selectedItem = selectedIndex >= 0 ? flatItems[selectedIndex] : undefined;
-
-  const handleRowClick = (e: React.MouseEvent, item: SearchItem) => {
+  const handleRowMouseDown = (e: React.MouseEvent, item: SearchItem) => {
     e.preventDefault();
+    e.stopPropagation();
     const reveal = e.ctrlKey || e.metaKey;
-    invoke("launch_search_item", { item, revealInExplorer: reveal }).catch(() => {});
-  };
-
-  const handleRowHover = (idx: number) => {
-    if (idx !== selectedIndex) {
-      setState((prev) => ({ ...prev, selectedIndex: idx }));
-      invoke("notify_search_drawer_hover", { index: idx }).catch(() => {});
-    }
+    const runAsAdmin = e.shiftKey && !reveal;
+    onLaunchItem(item, reveal, runAsAdmin);
   };
 
   let runningIdx = 0;
@@ -145,7 +117,6 @@ export const SearchDrawerWindow: React.FC = () => {
   const renderRow = (item: SearchItem, q: string) => {
     const idx = runningIdx++;
     const isSel = idx === selectedIndex;
-    const enterWord = item.kind === "File" ? "Open" : "Launch";
     const kindClass =
       item.kind === "System"
         ? "kind-system"
@@ -161,8 +132,10 @@ export const SearchDrawerWindow: React.FC = () => {
           else rowRefs.current.delete(idx);
         }}
         className={`sd-row ${isSel ? "selected" : ""}`}
-        onMouseEnter={() => handleRowHover(idx)}
-        onMouseDown={(e) => handleRowClick(e, item)}
+        onMouseEnter={() => {
+          if (idx !== selectedIndex) onSelectIndex(idx);
+        }}
+        onMouseDown={(e) => handleRowMouseDown(e, item)}
       >
         <div className={`sd-icon-wrap ${item.iconDataUrl ? "has-native-img" : ""}`}>
           {item.iconDataUrl ? (
@@ -173,40 +146,15 @@ export const SearchDrawerWindow: React.FC = () => {
         </div>
         <div className="sd-row-main">
           <div className="sd-row-title">{renderHighlightedTitle(item.name, q)}</div>
-          <div className="sd-row-sub">{item.subtitle}</div>
-        </div>
-        <div className="sd-row-right">
-          <span className="sd-kind-tag">{item.kind}</span>
-          <span className="sd-enter-badge">↵ {enterWord}</span>
         </div>
       </div>
     );
   };
 
-  const sourceLabel = isRecentsMode
-    ? recents.length === 0
-      ? "Recent · Empty"
-      : "Recent Launches"
-    : files.length > 0
-    ? "Apps · Everything CLI"
-    : state.everythingAvailable
-    ? "Apps · Unified Index"
-    : "Apps";
-
-  const footerEnterText = selectedItem
-    ? selectedItem.kind === "File"
-      ? "Open File"
-      : "Open App"
-    : query.trim().length > 0
-    ? "Ask AIDEN"
-    : "Open";
+  const isRecentsMode = mode === "recents";
 
   return (
-    <div
-      className={`search-drawer-window ${state.open ? "open" : ""} ${
-        isDarkMode ? "dark-mode" : "light-mode"
-      }`}
-    >
+    <div className={`conjoined-search-tray ${open ? "open" : ""}`} aria-hidden={!open}>
       <div className="search-drawer-scroll">
         {isRecentsMode ? (
           recents.length === 0 ? (
@@ -233,57 +181,15 @@ export const SearchDrawerWindow: React.FC = () => {
               </div>
             </div>
           ) : (
-            <>
-              <div className="sd-section-header">
-                <span>Recent Searches</span>
-                <span className="sd-section-count">{recents.length}</span>
-              </div>
-              {recents.map((item) => renderRow(item, ""))}
-            </>
+            recents.map((item) => renderRow(item, ""))
           )
         ) : (
           <>
-            {apps.length > 0 && (
-              <>
-                <div className="sd-section-header">
-                  <span>Apps</span>
-                  <span className="sd-section-count">{apps.length}</span>
-                </div>
-                {apps.map((item) => renderRow(item, query))}
-              </>
-            )}
-            {files.length > 0 && (
-              <>
-                <div className="sd-section-header">
-                  <span>Files</span>
-                  <span className="sd-section-count">{files.length}</span>
-                </div>
-                {files.map((item) => renderRow(item, query))}
-              </>
-            )}
+            {apps.map((item) => renderRow(item, query))}
+            {apps.length > 0 && files.length > 0 && <div className="sd-group-divider" />}
+            {files.map((item) => renderRow(item, query))}
           </>
         )}
-      </div>
-
-      <div className="sd-footer">
-        <div className="sd-footer-hints">
-          <span className="sd-hint">
-            <span className="sd-keycap">↑</span>
-            <span className="sd-keycap">↓</span> Navigate
-          </span>
-          <span className="sd-hint">
-            <span className="sd-keycap">↵</span> {footerEnterText}
-          </span>
-          {selectedItem && (selectedItem.kind === "File" || selectedItem.kind === "Program") && (
-            <span className="sd-hint">
-              <span className="sd-keycap">Ctrl+↵</span> Folder
-            </span>
-          )}
-          <span className="sd-hint">
-            <span className="sd-keycap">Esc</span> Close
-          </span>
-        </div>
-        <span>{sourceLabel}</span>
       </div>
     </div>
   );

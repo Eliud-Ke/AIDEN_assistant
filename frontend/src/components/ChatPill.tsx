@@ -13,7 +13,7 @@ import { SpotifyPlaylistsCard, SpotifyPlaylistsCardData, SpotifyPlaylistItem } f
 import { SpotifyLibraryPlaylistsCard, SpotifyLibraryPlaylistsCardData } from "./SpotifyLibraryPlaylistsCard";
 import { MarkdownContent } from "./MarkdownContent";
 import { PipSquareEyes } from "./PipSquareEyes";
-import type { SearchItem } from "./SearchDrawer";
+import { ConjoinedSearchTray, SearchItem } from "./SearchDrawer";
 import "./ChatPill.css";
 
 interface UnifiedSearchResponse {
@@ -29,15 +29,14 @@ const SEARCH_AUTO_THRESHOLD = 4;
 
 function computeSearchDrawerHeight(res: UnifiedSearchResponse): number {
   if (res.mode === "recents") {
-    if (res.recents.length === 0) return 182;
-    return Math.min(410, Math.max(124, 18 + 26 + res.recents.length * 46 + 34));
+    if (res.recents.length === 0) return 146;
+    return Math.min(360, Math.max(56, 16 + res.recents.length * 40));
   }
   const hasApps = res.apps.length > 0;
   const hasFiles = res.files.length > 0;
-  const headers = (hasApps ? 1 : 0) + (hasFiles ? 1 : 0);
   const rows = res.apps.length + res.files.length;
-  const dividerGap = hasApps && hasFiles ? 12 : 0;
-  return Math.min(430, Math.max(124, 18 + headers * 26 + rows * 46 + dividerGap + 34));
+  const dividerGap = hasApps && hasFiles ? 9 : 0;
+  return Math.min(380, Math.max(56, 16 + rows * 40 + dividerGap));
 }
 
 export type PipPhase = "max" | "to-pip" | "pip" | "to-max";
@@ -1147,6 +1146,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const followupInputRef = useRef<HTMLTextAreaElement>(null);
   const pillInputRef = useRef<HTMLTextAreaElement>(null);
   const lastIdleReportedHRef = useRef<number>(60);
+  const lastTextareaIdleHRef = useRef<number>(60);
   const [followupExtraH, setFollowupExtraH] = useState<number>(0);
   const pillMirrorRef = useRef<HTMLDivElement>(null);
   const pillMarkerRef = useRef<HTMLSpanElement>(null);
@@ -1562,7 +1562,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setDrawerForceOpen(false);
     setDrawerSelectedIndex(-1);
     setSearchResult(null);
-    invoke("sync_search_drawer", { visible: false }).catch(() => {});
     setIsHovered(false);
     setIsInputFocused(false);
     pillInputRef.current?.blur();
@@ -1941,6 +1940,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const resetTextarea = () => {
     setIsMultiline(false);
     setFollowupExtraH(0);
+    lastTextareaIdleHRef.current = 60;
     if (pillInputRef.current) {
       pillInputRef.current.style.height = "";
       pillInputRef.current.scrollTop = 0;
@@ -1949,7 +1949,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       followupInputRef.current.style.height = "";
       followupInputRef.current.scrollTop = 0;
     }
-    if (lastIdleReportedHRef.current !== 60) {
+    if (!shouldShowSearchDrawer && lastIdleReportedHRef.current !== 60) {
       lastIdleReportedHRef.current = 60;
       if (pillMode === "idle" && !voiceActive && onHeightChange) {
         onHeightChange(60, 160);
@@ -1985,9 +1985,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       requestAnimationFrame(updateScrollMask);
     } else {
       setFollowupExtraH(0);
-      if (pillMode === "idle" && !voiceActive && onHeightChange) {
-        const nextPillH = isMulti ? Math.min(198, Math.max(60, Math.ceil(targetH + 34))) : 60;
-        if (Math.abs(nextPillH - lastIdleReportedHRef.current) >= 4) {
+      const nextPillH = isMulti ? Math.min(198, Math.max(60, Math.ceil(targetH + 34))) : 60;
+      lastTextareaIdleHRef.current = nextPillH;
+      if (!shouldShowSearchDrawer && pillMode === "idle" && !voiceActive && onHeightChange) {
+        if (Math.abs(nextPillH - lastIdleReportedHRef.current) >= 2) {
           lastIdleReportedHRef.current = nextPillH;
           onHeightChange(nextPillH, 160);
         }
@@ -2008,10 +2009,16 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   }, [inputText, showReplyWindow, isAwake, userPrompt, pillMode, voiceActive]);
 
   // =========================================================================
-  // DETACHED RAYCAST-STYLE SEARCH DRAWER (4-char threshold + ↓ force-open)
+  // CONJOINED RAYCAST-STYLE SEARCH TRAY (4-char threshold + ↓ force-open)
   // =========================================================================
   const isSearchEligible = Boolean(
-    isAwake && pipPhase === "max" && pillMode === "idle" && !voiceActive && !isSubmitting
+    isAwake &&
+      pipPhase === "max" &&
+      pillMode === "idle" &&
+      !voiceActive &&
+      !isSubmitting &&
+      !isMultiline &&
+      !inputText.includes("\n")
   );
   const trimmedSearchQuery = inputText.trim();
   const drawerItems: SearchItem[] = searchResult
@@ -2060,7 +2067,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     []
   );
 
-  // Trigger two-phase live search whenever query passes 4-char threshold or drawer is force-opened
+  // Trigger unified single-pass live search whenever query passes 4-char threshold or drawer is force-opened
   useEffect(() => {
     if (searchDebounceRef.current !== null) {
       window.clearTimeout(searchDebounceRef.current);
@@ -2071,10 +2078,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       setDrawerForceOpen(false);
       setDrawerSelectedIndex(-1);
       setSearchResult(null);
-      if (drawerVisiblePrevRef.current) {
-        drawerVisiblePrevRef.current = false;
-        invoke("sync_search_drawer", { visible: false }).catch(() => {});
-      }
       return;
     }
 
@@ -2095,15 +2098,16 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       return;
     }
 
-    // Phase 1 (0ms): instant in-memory app filtering
-    runUnifiedSearch(q, false, false);
-
-    // Phase 2 (85ms debounced): merge Everything CLI file results smoothly underneath Apps
-    if (q.length >= 2) {
+    // Single-pass unified search (Apps + Files arrive together — zero split pop-in):
+    // Immediate when opening; 16ms frame-coalesced while continuing to type.
+    const wantFiles = q.length >= 2;
+    if (!drawerVisiblePrevRef.current) {
+      runUnifiedSearch(q, wantFiles, false);
+    } else {
       searchDebounceRef.current = window.setTimeout(() => {
         searchDebounceRef.current = null;
-        runUnifiedSearch(q, true, false);
-      }, 85);
+        runUnifiedSearch(q, wantFiles, false);
+      }, 16);
     }
 
     return () => {
@@ -2114,86 +2118,52 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [isSearchEligible, trimmedSearchQuery, drawerForceOpen, runUnifiedSearch]);
 
-  // Synchronize detached native search_drawer window geometry, theme, and items
+  // Morph the single conjoined AIDEN HWND height seamlessly when the app tray opens/resizes/closes
   useEffect(() => {
-    if (!shouldShowSearchDrawer || !searchResult) {
-      if (drawerVisiblePrevRef.current) {
-        drawerVisiblePrevRef.current = false;
-        invoke("sync_search_drawer", { visible: false }).catch(() => {});
-      }
-      return;
+    drawerVisiblePrevRef.current = shouldShowSearchDrawer;
+    if (pillMode !== "idle" || voiceActive || !onHeightChange) return;
+    const baseBarH = isMultiline ? Math.max(60, lastTextareaIdleHRef.current) : 60;
+    const desiredH =
+      shouldShowSearchDrawer && searchResult
+        ? 60 + 1 + computeSearchDrawerHeight(searchResult)
+        : baseBarH;
+    if (Math.abs(desiredH - lastIdleReportedHRef.current) >= 2) {
+      lastIdleReportedHRef.current = desiredH;
+      onHeightChange(desiredH, 175);
     }
+  }, [
+    pillMode,
+    voiceActive,
+    isMultiline,
+    shouldShowSearchDrawer,
+    searchResult,
+    onHeightChange,
+  ]);
 
-    drawerVisiblePrevRef.current = true;
-    const height = computeSearchDrawerHeight(searchResult);
-    invoke("sync_search_drawer", {
-      visible: true,
-      height,
-      darkMode: isDarkMode,
-      payload: {
-        open: true,
-        darkMode: isDarkMode,
-        query: searchResult.query,
-        mode: searchResult.mode,
-        recents: searchResult.recents,
-        apps: searchResult.apps,
-        files: searchResult.files,
-        selectedIndex: drawerSelectedIndex,
-        everythingAvailable: searchResult.everythingAvailable,
-      },
-    }).catch(() => {});
-  }, [shouldShowSearchDrawer, searchResult, drawerSelectedIndex, isDarkMode, isMultiline]);
-
-  // Listen for mouse hover & click-launch events coming back from search_drawer
-  const sleepUiRef = useRef(sleepUi);
-  sleepUiRef.current = sleepUi;
-  useEffect(() => {
-    let disposed = false;
-    let unlistenHover: (() => void) | undefined;
-    let unlistenLaunched: (() => void) | undefined;
-
-    const setup = async () => {
-      try {
-        const u1 = await listen<{ index?: number }>("search-drawer-hover", (event) => {
-          if (typeof event.payload?.index === "number") {
-            setDrawerSelectedIndex(event.payload.index);
-          }
-        });
-        const u2 = await listen("search-drawer-launched", () => {
-          setInputText("");
-          inputTextRef.current = "";
-          setDrawerForceOpen(false);
-          setDrawerSelectedIndex(-1);
-          setSearchResult(null);
-          resetTextarea();
-          sleepUiRef.current();
-        });
-        if (disposed) {
-          u1();
-          u2();
-        } else {
-          unlistenHover = u1;
-          unlistenLaunched = u2;
-        }
-      } catch {
-        // Fallback outside Tauri
-      }
-    };
-
-    setup();
-    return () => {
-      disposed = true;
-      if (unlistenHover) unlistenHover();
-      if (unlistenLaunched) unlistenLaunched();
-    };
-  }, []);
+  const triggerLaunchSearchItem = useCallback(
+    (chosen: SearchItem, reveal: boolean, runAsAdmin: boolean) => {
+      const slimItem = { ...chosen, iconDataUrl: null };
+      setInputText("");
+      inputTextRef.current = "";
+      setDrawerForceOpen(false);
+      setDrawerSelectedIndex(-1);
+      setSearchResult(null);
+      resetTextarea();
+      sleepUi();
+      invoke("launch_search_item", {
+        item: slimItem,
+        revealInExplorer: reveal,
+        runAsAdmin,
+      }).catch(() => {});
+    },
+    [sleepUi]
+  );
 
   closeSearchDrawerRef.current = () => {
     if (!shouldShowSearchDrawer) return false;
     setDrawerForceOpen(false);
     setDrawerSelectedIndex(-1);
     setSearchResult(null);
-    invoke("sync_search_drawer", { visible: false }).catch(() => {});
     return true;
   };
 
@@ -2226,23 +2196,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       return;
     }
 
-    // Enter: launch highlighted app/file if in drawer, OR send directly to AIDEN if in Search/Ask box!
+    // Enter: launch/admin-launch highlighted tray item, insert newline + kill tray on Shift+Enter in command bar, or send to AIDEN
     if (e.key === "Enter") {
       if (shouldShowSearchDrawer && drawerSelectedIndex >= 0 && drawerItems[drawerSelectedIndex]) {
         e.preventDefault();
         const chosen = drawerItems[drawerSelectedIndex];
         const reveal = e.ctrlKey || e.metaKey;
-        invoke("launch_search_item", { item: chosen, revealInExplorer: reveal }).catch(() => {});
+        const runAsAdmin = e.shiftKey && !reveal;
+        triggerLaunchSearchItem(chosen, reveal, runAsAdmin);
         return;
       }
-      if (!e.shiftKey) {
-        e.preventDefault();
+      if (e.shiftKey) {
+        // Shift+Enter on "Search or Ask" command bar: insert native newline & immediately kill app tray!
         setDrawerForceOpen(false);
         setDrawerSelectedIndex(-1);
         setSearchResult(null);
-        invoke("sync_search_drawer", { visible: false }).catch(() => {});
-        handleSend();
+        return;
       }
+      e.preventDefault();
+      setDrawerForceOpen(false);
+      setDrawerSelectedIndex(-1);
+      setSearchResult(null);
+      handleSend();
       return;
     }
 
@@ -2253,7 +2228,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         setDrawerForceOpen(false);
         setDrawerSelectedIndex(-1);
         setSearchResult(null);
-        invoke("sync_search_drawer", { visible: false }).catch(() => {});
       } else {
         sleepUi();
       }
@@ -2266,7 +2240,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setDrawerForceOpen(false);
     setDrawerSelectedIndex(-1);
     setSearchResult(null);
-    invoke("sync_search_drawer", { visible: false }).catch(() => {});
     setIsSubmitting(true);
     if (onSendMessage) {
       onSendMessage(trimmed, showReplyWindow);
@@ -2482,6 +2455,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           } ${
             isHovered || isInputFocused || inputText.length > 0 ? "hover-active" : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
+            shouldShowSearchDrawer && pillMode === "idle" ? "search-tray-open" : ""
+          } ${
             isDarkMode ? "dark-mode" : "light-mode"
           } ${pipPhase === "pip" ? "is-pip" : ""} ${
             pipPhase === "to-pip" ? "is-morphing-to-pip" : ""
@@ -2541,112 +2516,112 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           {/* 1. IDLE / INPUT STATE */}
           {(pillMode === "idle" || (effectiveEnteringVoice && pillMode !== "responding")) && (
             <>
-              <div
-                className={`siri-pill-input-wrap ${
-                  effectiveEnteringVoice ? "entering-voice" : ""
-                }`}
-              >
-                <div className="siri-input-track">
-                  <div ref={pillMirrorRef} className="siri-cursor-mirror pill-mirror" aria-hidden="true">
-                    {cursorPrefix}
-                    <span ref={pillMarkerRef} className="siri-caret-marker">
-                      &#8288;
-                    </span>
-                    {cursorSuffix}
-                  </div>
-                  {!hasTextSelection && caretPos.visible && (
-                    <span
-                      className={`siri-shining-cursor ${
-                        shouldShowSearchDrawer && drawerSelectedIndex >= 0 ? "drawer-dimmed" : ""
-                      }`}
-                      style={{
-                        transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
+              <div className="siri-idle-top-bar">
+                <div
+                  className={`siri-pill-input-wrap ${
+                    effectiveEnteringVoice ? "entering-voice" : ""
+                  }`}
+                >
+                  <div className="siri-input-track">
+                    <div ref={pillMirrorRef} className="siri-cursor-mirror pill-mirror" aria-hidden="true">
+                      {cursorPrefix}
+                      <span ref={pillMarkerRef} className="siri-caret-marker">
+                        &#8288;
+                      </span>
+                      {cursorSuffix}
+                    </div>
+                    {!hasTextSelection && caretPos.visible && (
+                      <span
+                        className={`siri-shining-cursor ${
+                          shouldShowSearchDrawer && drawerSelectedIndex >= 0 ? "drawer-dimmed" : ""
+                        }`}
+                        style={{
+                          transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <textarea
+                      ref={pillInputRef}
+                      rows={1}
+                      className={`siri-pill-input ${isMultiline ? "multiline" : ""}`}
+                      placeholder="Search or Ask"
+                      value={inputText}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setInputText(val);
+                        setDrawerSelectedIndex(-1);
+                        if (val.trim().length === 0) {
+                          setDrawerForceOpen(false);
+                        }
+                        updateSelection(e.target);
+                        adjustTextareaHeight(e.target);
                       }}
-                      aria-hidden="true"
+                      onFocus={(e) => updateSelection(e.currentTarget)}
+                      onSelect={(e) => updateSelection(e.currentTarget)}
+                      onKeyUp={(e) => updateSelection(e.currentTarget)}
+                      onClick={(e) => {
+                        setDrawerSelectedIndex(-1);
+                        updateSelection(e.currentTarget);
+                      }}
+                      onScroll={() => measureActiveCaret()}
+                      onKeyDown={(e) => {
+                        handleKeyDown(e);
+                        const target = e.currentTarget;
+                        window.requestAnimationFrame(() => updateSelection(target));
+                      }}
+                      spellCheck={false}
                     />
-                  )}
-                  <textarea
-                    ref={pillInputRef}
-                    rows={1}
-                    className={`siri-pill-input ${isMultiline ? "multiline" : ""}`}
-                    placeholder="Search or Ask"
-                    value={inputText}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setInputText(val);
-                      setDrawerSelectedIndex(-1);
-                      if (val.trim().length === 0) {
-                        setDrawerForceOpen(false);
-                      }
-                      updateSelection(e.target);
-                      adjustTextareaHeight(e.target);
-                    }}
-                    onFocus={(e) => updateSelection(e.currentTarget)}
-                    onSelect={(e) => updateSelection(e.currentTarget)}
-                    onKeyUp={(e) => updateSelection(e.currentTarget)}
-                    onClick={(e) => {
-                      setDrawerSelectedIndex(-1);
-                      updateSelection(e.currentTarget);
-                    }}
-                    onScroll={() => measureActiveCaret()}
-                    onKeyDown={(e) => {
-                      handleKeyDown(e);
-                      const target = e.currentTarget;
-                      window.requestAnimationFrame(() => updateSelection(target));
-                    }}
-                    spellCheck={false}
-                  />
+                  </div>
                 </div>
+
+                {/* Minimalist Bare Mic Icon (No background circle, just clean icon) */}
+                <button
+                  type="button"
+                  className={`siri-idle-bare-mic-btn ${
+                    effectiveEnteringVoice ? "entering-voice" : ""
+                  }`}
+                  title="Voice Input (Click or Hold Shift)"
+                  aria-label="Voice input"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleVoiceMode(true);
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                </button>
               </div>
 
-              {/* Subtle dynamic Enter-intent pill when Search Drawer is open */}
-              {shouldShowSearchDrawer && (trimmedSearchQuery.length > 0 || drawerSelectedIndex >= 0) && (
-                <span
-                  className={`siri-enter-intent-chip ${
-                    drawerSelectedIndex >= 0 ? "open-mode" : ""
-                  }`}
-                  aria-hidden="true"
-                >
-                  <span className="siri-enter-glyph">↵</span>
-                  <span>
-                    {drawerSelectedIndex >= 0 && drawerItems[drawerSelectedIndex]
-                      ? drawerItems[drawerSelectedIndex].kind === "File"
-                        ? "Open File"
-                        : "Open App"
-                      : "Ask AIDEN"}
-                  </span>
-                </span>
+              {pillMode === "idle" && !effectiveEnteringVoice && (
+                <>
+                  <div className="siri-conjoined-divider" aria-hidden="true" />
+                  <ConjoinedSearchTray
+                    open={shouldShowSearchDrawer}
+                    query={trimmedSearchQuery}
+                    mode={searchResult?.mode ?? "recents"}
+                    recents={searchResult?.recents ?? []}
+                    apps={searchResult?.apps ?? []}
+                    files={searchResult?.files ?? []}
+                    selectedIndex={drawerSelectedIndex}
+                    onSelectIndex={setDrawerSelectedIndex}
+                    onLaunchItem={triggerLaunchSearchItem}
+                  />
+                </>
               )}
-
-              {/* Minimalist Bare Mic Icon (No background circle, just clean icon) */}
-              <button
-                type="button"
-                className={`siri-idle-bare-mic-btn ${
-                  effectiveEnteringVoice ? "entering-voice" : ""
-                }`}
-                title="Voice Input (Click or Hold Shift)"
-                aria-label="Voice input"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleVoiceMode(true);
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.1"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
-              </button>
             </>
           )}
 

@@ -3,7 +3,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
@@ -57,6 +57,9 @@ struct SearchIndexState(Arc<search_index::SearchIndexManager>);
 
 struct SearchDrawerState {
     visible: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+    current_h_phys: Arc<AtomicI32>,
+    height_gen: Arc<AtomicU64>,
     last_payload: Mutex<Option<serde_json::Value>>,
 }
 
@@ -1806,14 +1809,17 @@ fn get_win_key_override() -> Result<bool, String> {
 
 fn hide_search_drawer_immediately(app: &AppHandle) {
     let drawer_state = app.state::<SearchDrawerState>();
+    drawer_state.generation.fetch_add(1, Ordering::SeqCst);
+    drawer_state.height_gen.fetch_add(1, Ordering::SeqCst);
+    drawer_state.current_h_phys.store(0, Ordering::Release);
     drawer_state.visible.store(false, Ordering::Release);
     if let Ok(mut guard) = drawer_state.last_payload.lock() {
-        *guard = Some(serde_json::json!({ "open": false }));
+        *guard = Some(serde_json::json!({ "open": false, "closing": false }));
     }
     let _ = app.emit_to(
         "search_drawer",
         "search-drawer-sync",
-        serde_json::json!({ "open": false }),
+        serde_json::json!({ "open": false, "closing": false }),
     );
     if let Some(drawer_win) = app.get_webview_window("search_drawer") {
         #[cfg(target_os = "windows")]
@@ -1832,7 +1838,7 @@ fn get_search_drawer_state(state: State<'_, SearchDrawerState>) -> Result<serde_
             return Ok(val.clone());
         }
     }
-    Ok(serde_json::json!({ "open": false }))
+    Ok(serde_json::json!({ "open": false, "closing": false }))
 }
 
 #[tauri::command]
@@ -1849,11 +1855,12 @@ async fn search_unified(
 }
 
 #[tauri::command]
-async fn launch_search_item(
+fn launch_search_item(
     app: AppHandle,
     state: State<'_, SearchIndexState>,
     item: search_index::SearchItem,
     reveal_in_explorer: Option<bool>,
+    run_as_admin: Option<bool>,
 ) -> Result<(), String> {
     hide_search_drawer_immediately(&app);
     // Clear previous foreground HWND so collapsing AIDEN into her cube never steals focus
@@ -1861,20 +1868,24 @@ async fn launch_search_item(
     if let Ok(mut prev) = app.state::<PrevForegroundState>().0.lock() {
         *prev = None;
     }
+    #[cfg(target_os = "windows")]
+    native_window::allow_any_foreground_activation();
 
-    let mgr = Arc::clone(&state.0);
-    let reveal = reveal_in_explorer.unwrap_or(false);
     let launched_name = item.name.clone();
-    let res = tauri::async_runtime::spawn_blocking(move || mgr.launch_item(&item, reveal))
-        .await
-        .map_err(|e| format!("Launch worker failed: {}", e))?;
-    res?;
-
     let _ = app.emit_to(
         "chat_pill",
         "search-drawer-launched",
         serde_json::json!({ "name": launched_name }),
     );
+
+    let mgr = Arc::clone(&state.0);
+    let reveal = reveal_in_explorer.unwrap_or(false);
+    let as_admin = run_as_admin.unwrap_or(false);
+    std::thread::spawn(move || {
+        if let Err(e) = mgr.launch_item(&item, reveal, as_admin) {
+            eprintln!("[SEARCH_LAUNCH] Failed to launch {}: {}", item.name, e);
+        }
+    });
     Ok(())
 }
 
@@ -1892,11 +1903,60 @@ fn sync_search_drawer(
     };
 
     if !visible {
-        hide_search_drawer_immediately(&app);
+        let gen_id = drawer_state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if !drawer_state.visible.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        if let Ok(mut guard) = drawer_state.last_payload.lock() {
+            if let Some(serde_json::Value::Object(ref mut map)) = *guard {
+                map.insert("open".to_string(), serde_json::json!(false));
+                map.insert("closing".to_string(), serde_json::json!(true));
+            } else {
+                *guard = Some(serde_json::json!({ "open": false, "closing": true }));
+            }
+        }
+        let _ = app.emit_to(
+            "search_drawer",
+            "search-drawer-sync",
+            serde_json::json!({ "open": false, "closing": true }),
+        );
+
+        let app_clone = app.clone();
+        let gen_arc = Arc::clone(&drawer_state.generation);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(170));
+            if gen_arc.load(Ordering::Acquire) == gen_id {
+                let ds = app_clone.state::<SearchDrawerState>();
+                ds.height_gen.fetch_add(1, Ordering::SeqCst);
+                ds.current_h_phys.store(0, Ordering::Release);
+                if let Ok(mut guard) = ds.last_payload.lock() {
+                    if let Some(serde_json::Value::Object(ref mut map)) = *guard {
+                        map.insert("open".to_string(), serde_json::json!(false));
+                        map.insert("closing".to_string(), serde_json::json!(false));
+                    } else {
+                        *guard = Some(serde_json::json!({ "open": false, "closing": false }));
+                    }
+                }
+                let _ = app_clone.emit_to(
+                    "search_drawer",
+                    "search-drawer-sync",
+                    serde_json::json!({ "open": false, "closing": false }),
+                );
+                if let Some(dw) = app_clone.get_webview_window("search_drawer") {
+                    #[cfg(target_os = "windows")]
+                    if let Ok(hwnd) = dw.hwnd() {
+                        native_window::hide_window_clean(hwnd);
+                        return;
+                    }
+                    let _ = dw.hide();
+                }
+            }
+        });
         return Ok(());
     }
 
-    let target_h_log = height.unwrap_or(240.0).clamp(110.0, 440.0);
+    drawer_state.generation.fetch_add(1, Ordering::SeqCst);
+    let target_h_log = height.unwrap_or(200.0).clamp(56.0, 400.0);
     let is_dark = dark_mode.unwrap_or(true);
     let Some(pill_win) = app.get_webview_window("chat_pill") else {
         return Ok(());
@@ -1925,22 +1985,29 @@ fn sync_search_drawer(
         };
 
         let bounds = native_window::get_virtual_screen_bounds();
-        let max_h = (bounds.1 + bounds.3 - (py + ph + gap_phys) - (16.0 * scale).round() as i32)
-            .clamp((110.0 * scale).round() as i32, h_phys);
+        let min_h_phys = (56.0 * scale).round() as i32;
+        let avail_h = bounds.1 + bounds.3 - (py + ph + gap_phys) - (16.0 * scale).round() as i32;
+        let max_h = avail_h.max(min_h_phys).min(h_phys.max(min_h_phys));
         (px, py + ph + gap_phys, pw, max_h)
     };
 
     #[cfg(not(target_os = "windows"))]
     let (dx, dy, dw, dh) = (480, 212, w_phys, h_phys);
 
-    if let Some(p) = payload {
+    if let Some(mut p) = payload {
+        if let Some(map) = p.as_object_mut() {
+            map.insert("open".to_string(), serde_json::json!(true));
+            map.insert("closing".to_string(), serde_json::json!(false));
+        }
         if let Ok(mut guard) = drawer_state.last_payload.lock() {
             *guard = Some(p.clone());
         }
         let _ = app.emit_to("search_drawer", "search-drawer-sync", p);
     }
 
-    drawer_state.visible.store(true, Ordering::Release);
+    let was_visible = drawer_state.visible.swap(true, Ordering::SeqCst);
+    let prev_h = drawer_state.current_h_phys.load(Ordering::Acquire);
+    let h_gen = drawer_state.height_gen.fetch_add(1, Ordering::SeqCst) + 1;
     let _ = drawer_win.set_always_on_top(true);
     let _ = drawer_win.set_ignore_cursor_events(false);
 
@@ -1948,8 +2015,41 @@ fn sync_search_drawer(
     if let Ok(hwnd) = drawer_win.hwnd() {
         native_window::make_noactivate_interactive_tool_window(hwnd);
         let _ = native_window::apply_native_drawer_chrome(hwnd, is_dark);
-        native_window::move_window_topmost_noactivate(hwnd, dx, dy, dw, dh);
-        native_window::show_window_noactivate(hwnd);
+
+        if !was_visible || prev_h <= 0 || (dh - prev_h).abs() <= 2 {
+            drawer_state.current_h_phys.store(dh, Ordering::Release);
+            native_window::move_window_topmost_noactivate(hwnd, dx, dy, dw, dh);
+            native_window::show_window_noactivate(hwnd);
+        } else {
+            native_window::move_window_topmost_noactivate(hwnd, dx, dy, dw, prev_h);
+            native_window::show_window_noactivate(hwnd);
+
+            let hwnd_raw = hwnd.0 as isize;
+            let h_gen_arc = Arc::clone(&drawer_state.height_gen);
+            let h_phys_arc = Arc::clone(&drawer_state.current_h_phys);
+            let vis_arc = Arc::clone(&drawer_state.visible);
+            std::thread::spawn(move || {
+                let start = Instant::now();
+                let dur = Duration::from_millis(135);
+                loop {
+                    std::thread::sleep(Duration::from_millis(8));
+                    if h_gen_arc.load(Ordering::Acquire) != h_gen
+                        || !vis_arc.load(Ordering::Acquire)
+                    {
+                        break;
+                    }
+                    let t = (start.elapsed().as_secs_f64() / dur.as_secs_f64()).clamp(0.0, 1.0);
+                    let eased = 1.0 - (1.0 - t).powi(3);
+                    let cur_h = (prev_h as f64 + (dh - prev_h) as f64 * eased).round() as i32;
+                    h_phys_arc.store(cur_h, Ordering::Release);
+                    let target_hwnd = windows::Win32::Foundation::HWND(hwnd_raw as *mut _);
+                    native_window::move_window_topmost_noactivate(target_hwnd, dx, dy, dw, cur_h);
+                    if t >= 1.0 {
+                        break;
+                    }
+                }
+            });
+        }
         return Ok(());
     }
 
@@ -2686,6 +2786,9 @@ pub fn run() {
         )))
         .manage(SearchDrawerState {
             visible: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
+            current_h_phys: Arc::new(AtomicI32::new(0)),
+            height_gen: Arc::new(AtomicU64::new(0)),
             last_payload: Mutex::new(None),
         })
         .manage(PipPowerState(Mutex::new(None)))

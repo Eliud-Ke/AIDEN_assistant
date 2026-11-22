@@ -1,26 +1,19 @@
-//! Native Win32 low-level keyboard hook (`WH_KEYBOARD_LL`) using **Deferred `VK_LWIN` Down**:
+//! Native Win32 low-level keyboard hook (`WH_KEYBOARD_LL`) for the `Win + Space` global shortcut:
 //!
-//! - On physical Left `Win` (`VK_LWIN`) key-down (with no other modifier already held), the hook
-//!   swallows `VK_LWIN DOWN` so Windows never arms the Start Menu on a solo tap.
-//! - On a clean solo Left `Win` key-up, the hook swallows `VK_LWIN UP` and toggles AIDEN
-//!   (`Awake <-> Minimize`) with zero Start Menu flicker, zero dummy keystrokes, and zero focus races.
-//! - On any `Win+*` combo (`Win+E`, `Win+R`, `Win+D`, `Win+V`, `Win+Shift+S`, `Win+Tab`,
-//!   `Win+Arrows`, etc.), the hook atomically replays `[VK_LWIN DOWN, <key> DOWN]` preserving
-//!   hardware scan codes and extended-key flags, then passes all subsequent keys and key-ups through.
-//! - On `Win+L`, since Windows blocks synthetic `SendInput` workstation locking for security, the
-//!   hook swallows `'L'` and invokes Win32 `LockWorkStation()` directly on its worker thread.
-//! - `Right Win` (`VK_RWIN`), `Ctrl+Esc`, and pre-held chords (`Ctrl+Win+*`, `Alt+Win+*`,
-//!   `Shift+Win+*`) always pass straight through 100% natively.
+//! - Intercepts `Win + Space` (`VK_LWIN` or `VK_RWIN` + `VK_SPACE`) cleanly with zero conflicts
+//!   on solo `Win` taps or any other `Win + *` system shortcuts (`Win+E`, `Win+L`, `Win+Shift+S`,
+//!   `Win+Arrows`, `Ctrl+Win+Left/Right`, etc. all pass straight through 100% natively).
+//! - On `Win + Space` key-down, swallows `VK_SPACE`, injects a harmless `0xFF` key-up chord
+//!   suppressor so releasing `Win` never pops the Windows Start Menu (and suppresses the Windows
+//!   Input Switcher flyout), and toggles AIDEN (`Awake <-> Minimize`).
 
 pub const VK_LWIN_CODE: u32 = 0x5B;
-pub const VK_L_CODE: u32 = 0x4C;
-#[cfg(target_os = "windows")]
-const LWIN_HARDWARE_SCAN: u16 = 0x5B;
+pub const VK_RWIN_CODE: u32 = 0x5C;
+pub const VK_SPACE_CODE: u32 = 0x20;
 #[cfg(target_os = "windows")]
 const AIDEN_INJECTED_TAG: usize = 0x4149_444E; // "AIDN"
 
-const DEBOUNCE_MS: u64 = 180;
-const MAX_TAP_HOLD_MS: u64 = 800;
+const DEBOUNCE_MS: u64 = 160;
 const STALE_HOLD_MS: u64 = 5000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,31 +22,16 @@ pub enum HookAction {
     PassThrough,
     /// Swallow event completely (`return LRESULT(1)`), send nothing.
     Swallow,
-    /// Swallow `VK_LWIN UP` (`return LRESULT(1)`) and toggle AIDEN (`Awake <-> Minimize`).
+    /// Swallow `VK_SPACE DOWN`, suppress Start Menu release on `Win`, and toggle AIDEN.
     SwallowAndTriggerAiden,
-    /// Swallow `<key> DOWN` (`return LRESULT(1)`) and atomically replay `[VK_LWIN DOWN, <key> DOWN]`.
-    ForwardLWinAndKeyDown,
-    /// Swallow `'L' DOWN` (`return LRESULT(1)`) and call `LockWorkStation()` off-hook.
-    SwallowAndLockWorkstation,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-enum LWinPhase {
-    #[default]
-    Idle,
-    /// Physical `VK_LWIN` is held and swallowed; Windows does not know `LWin` is down yet.
-    HeldSuppressed,
-    /// Another key was pressed while holding `LWin`; `[VK_LWIN DOWN, <key> DOWN]` was replayed to Windows.
-    ForwardedCombo,
-    /// `Win+L` triggered `LockWorkStation()` directly; swallow its matching key-ups cleanly.
-    LockedSuppressed,
-}
-
-/// Pure, allocation-free, unit-tested Deferred-`VK_LWIN` state machine.
+/// Pure, allocation-free, unit-tested `Win + Space` state machine.
 #[derive(Debug, Default)]
 pub struct WinKeyStateMachine {
-    phase: LWinPhase,
-    down_at_ms: u64,
+    lwin_down: bool,
+    rwin_down: bool,
+    space_swallowed: bool,
     last_activity_ms: u64,
     last_trigger_ms: u64,
     has_triggered: bool,
@@ -62,8 +40,9 @@ pub struct WinKeyStateMachine {
 impl WinKeyStateMachine {
     pub const fn new() -> Self {
         Self {
-            phase: LWinPhase::Idle,
-            down_at_ms: 0,
+            lwin_down: false,
+            rwin_down: false,
+            space_swallowed: false,
             last_activity_ms: 0,
             last_trigger_ms: 0,
             has_triggered: false,
@@ -71,8 +50,9 @@ impl WinKeyStateMachine {
     }
 
     pub fn reset(&mut self) {
-        self.phase = LWinPhase::Idle;
-        self.down_at_ms = 0;
+        self.lwin_down = false;
+        self.rwin_down = false;
+        self.space_swallowed = false;
         self.last_activity_ms = 0;
     }
 
@@ -83,6 +63,7 @@ impl WinKeyStateMachine {
         vk_code: u32,
         is_down: bool,
         is_injected: bool,
+        win_physically_held: bool,
         other_modifier_held: bool,
         now_ms: u64,
     ) -> HookAction {
@@ -90,103 +71,70 @@ impl WinKeyStateMachine {
             return HookAction::PassThrough;
         }
 
-        // Stale safety recovery if a secure desktop (UAC / Winlogon) swallowed a key-up.
-        if self.phase != LWinPhase::Idle
+        // Stale safety recovery if a secure desktop (UAC / Winlogon) swallowed key-up events.
+        if (self.lwin_down || self.rwin_down || self.space_swallowed)
             && now_ms.saturating_sub(self.last_activity_ms) > STALE_HOLD_MS
         {
-            self.phase = LWinPhase::Idle;
+            self.reset();
         }
 
         if vk_code == VK_LWIN_CODE {
+            self.lwin_down = is_down;
+            self.last_activity_ms = now_ms;
+            if !is_down && !self.rwin_down {
+                self.space_swallowed = false;
+            }
+            return HookAction::PassThrough;
+        }
+
+        if vk_code == VK_RWIN_CODE {
+            self.rwin_down = is_down;
+            self.last_activity_ms = now_ms;
+            if !is_down && !self.lwin_down {
+                self.space_swallowed = false;
+            }
+            return HookAction::PassThrough;
+        }
+
+        if vk_code == VK_SPACE_CODE {
+            let win_active = self.lwin_down || self.rwin_down || win_physically_held;
             if is_down {
-                match self.phase {
-                    LWinPhase::HeldSuppressed => {
-                        // Keyboard auto-repeat while user holds Left Win: keep suppressing Start.
-                        self.last_activity_ms = now_ms;
+                if win_active && !other_modifier_held {
+                    self.last_activity_ms = now_ms;
+                    if self.space_swallowed {
                         return HookAction::Swallow;
                     }
-                    LWinPhase::Idle | LWinPhase::ForwardedCombo | LWinPhase::LockedSuppressed => {
-                        // If Ctrl/Alt/Shift/RightWin is already held before Left Win goes down,
-                        // let Windows handle chords like Ctrl+Win+Left/Right 100% natively.
-                        if other_modifier_held {
-                            self.phase = LWinPhase::Idle;
-                            return HookAction::PassThrough;
-                        }
-                        self.phase = LWinPhase::HeldSuppressed;
-                        self.down_at_ms = now_ms;
-                        self.last_activity_ms = now_ms;
-                        return HookAction::Swallow;
+                    self.space_swallowed = true;
+                    let debounced = self.has_triggered
+                        && now_ms.saturating_sub(self.last_trigger_ms) < DEBOUNCE_MS;
+                    if !debounced {
+                        self.last_trigger_ms = now_ms;
+                        self.has_triggered = true;
+                        return HookAction::SwallowAndTriggerAiden;
                     }
+                    return HookAction::Swallow;
                 }
+                return HookAction::PassThrough;
             } else {
-                // Physical VK_LWIN UP
-                match self.phase {
-                    LWinPhase::HeldSuppressed => {
-                        self.phase = LWinPhase::Idle;
-                        let hold_ms = now_ms.saturating_sub(self.down_at_ms);
-                        let debounced = self.has_triggered
-                            && now_ms.saturating_sub(self.last_trigger_ms) < DEBOUNCE_MS;
-                        if hold_ms <= MAX_TAP_HOLD_MS && !debounced {
-                            self.last_trigger_ms = now_ms;
-                            self.has_triggered = true;
-                            return HookAction::SwallowAndTriggerAiden;
-                        }
-                        return HookAction::Swallow;
-                    }
-                    LWinPhase::LockedSuppressed => {
-                        self.phase = LWinPhase::Idle;
-                        return HookAction::Swallow;
-                    }
-                    LWinPhase::ForwardedCombo => {
-                        self.phase = LWinPhase::Idle;
-                        return HookAction::PassThrough;
-                    }
-                    LWinPhase::Idle => {
-                        return HookAction::PassThrough;
-                    }
+                if self.space_swallowed {
+                    self.space_swallowed = false;
+                    self.last_activity_ms = now_ms;
+                    return HookAction::Swallow;
                 }
+                return HookAction::PassThrough;
             }
         }
 
-        // Non-LWin key event
-        match self.phase {
-            LWinPhase::HeldSuppressed => {
-                if is_down {
-                    self.last_activity_ms = now_ms;
-                    if vk_code == VK_L_CODE && !other_modifier_held {
-                        self.phase = LWinPhase::LockedSuppressed;
-                        return HookAction::SwallowAndLockWorkstation;
-                    }
-                    self.phase = LWinPhase::ForwardedCombo;
-                    return HookAction::ForwardLWinAndKeyDown;
-                }
-                HookAction::PassThrough
-            }
-            LWinPhase::LockedSuppressed => {
-                if !is_down && vk_code == VK_L_CODE {
-                    return HookAction::Swallow;
-                }
-                if is_down {
-                    // User unlocked workstation and pressed another key (Winlogon ate LWin UP).
-                    self.phase = LWinPhase::Idle;
-                }
-                HookAction::PassThrough
-            }
-            LWinPhase::ForwardedCombo => {
-                self.last_activity_ms = now_ms;
-                HookAction::PassThrough
-            }
-            LWinPhase::Idle => HookAction::PassThrough,
+        if self.lwin_down || self.rwin_down {
+            self.last_activity_ms = now_ms;
         }
+        HookAction::PassThrough
     }
 }
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::{
-        HookAction, WinKeyStateMachine, AIDEN_INJECTED_TAG, LWIN_HARDWARE_SCAN, VK_LWIN_CODE,
-        VK_L_CODE,
-    };
+    use super::{HookAction, WinKeyStateMachine, AIDEN_INJECTED_TAG, VK_SPACE_CODE};
     use std::sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Mutex, OnceLock,
@@ -194,33 +142,27 @@ mod platform {
     use std::time::Instant;
     use windows::Win32::{
         Foundation::{LPARAM, LRESULT, WPARAM},
-        System::{Shutdown::LockWorkStation, Threading::GetCurrentThreadId},
+        System::Threading::GetCurrentThreadId,
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_EXTENDEDKEY, VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN,
-                VK_SHIFT,
+                KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW,
                 SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, KBDLLHOOKSTRUCT,
-                LLKHF_EXTENDED, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
-                WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+                LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT,
+                WM_SYSKEYDOWN, WM_SYSKEYUP,
             },
         },
     };
-
-    enum WorkerCmd {
-        ToggleAiden,
-        LockWorkstation,
-    }
 
     static USER_ENABLED: AtomicBool = AtomicBool::new(true);
     static ENGINE_PAUSED: AtomicBool = AtomicBool::new(false);
     static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
     static START_INSTANT: OnceLock<Instant> = OnceLock::new();
     static STATE_MACHINE: Mutex<WinKeyStateMachine> = Mutex::new(WinKeyStateMachine::new());
-    static WORKER_TX: OnceLock<Mutex<Option<mpsc::Sender<WorkerCmd>>>> = OnceLock::new();
+    static WORKER_TX: OnceLock<Mutex<Option<mpsc::Sender<()>>>> = OnceLock::new();
 
     fn now_ms() -> u64 {
         let start = START_INSTANT.get_or_init(Instant::now);
@@ -231,60 +173,47 @@ mod platform {
         USER_ENABLED.load(Ordering::Acquire) && !ENGINE_PAUSED.load(Ordering::Acquire)
     }
 
-    fn other_modifier_is_held() -> bool {
+    fn win_is_physically_held() -> bool {
         unsafe {
             let is_down = |vk: VIRTUAL_KEY| ((GetAsyncKeyState(vk.0 as i32) as u16) & 0x8000) != 0;
-            is_down(VK_CONTROL) || is_down(VK_MENU) || is_down(VK_SHIFT) || is_down(VK_RWIN)
+            is_down(VK_LWIN) || is_down(VK_RWIN)
         }
     }
 
-    fn dispatch_worker(cmd: WorkerCmd) {
+    fn other_modifier_is_held() -> bool {
+        unsafe {
+            let is_down = |vk: VIRTUAL_KEY| ((GetAsyncKeyState(vk.0 as i32) as u16) & 0x8000) != 0;
+            is_down(VK_CONTROL) || is_down(VK_MENU) || is_down(VK_SHIFT)
+        }
+    }
+
+    fn dispatch_worker() {
         if let Some(lock) = WORKER_TX.get() {
             if let Ok(guard) = lock.try_lock() {
                 if let Some(ref tx) = *guard {
-                    let _ = tx.send(cmd);
+                    let _ = tx.send(());
                 }
             }
         }
     }
 
-    /// Atomically replays `[VK_LWIN DOWN, <key> DOWN]` into the Windows input stream,
-    /// preserving the combo key's hardware scan code and extended-key flag (critical for
-    /// `Win+Arrows`, `Win+Shift+S`, `Win+Tab`, `Win+E`, `Win+R`, etc.).
-    fn send_forwarded_lwin_and_key_down(vk_code: u32, scan_code: u32, is_extended: bool) {
-        let lwin_down = INPUT {
+    /// Injects a benign unassigned VK (`0xFF`) key-up event while `Win` is held so Windows
+    /// treats the held `Win` key as part of an answered chord and never opens Start Menu on `Win` up.
+    fn send_win_chord_suppressor() {
+        let dummy = INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
-                    wVk: VK_LWIN,
-                    wScan: LWIN_HARDWARE_SCAN,
-                    dwFlags: KEYEVENTF_EXTENDEDKEY,
+                    wVk: VIRTUAL_KEY(0xFF),
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
                     time: 0,
                     dwExtraInfo: AIDEN_INJECTED_TAG,
                 },
             },
         };
-
-        let key_down = INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(vk_code as u16),
-                    wScan: scan_code as u16,
-                    dwFlags: if is_extended {
-                        KEYEVENTF_EXTENDEDKEY
-                    } else {
-                        Default::default()
-                    },
-                    time: 0,
-                    dwExtraInfo: AIDEN_INJECTED_TAG,
-                },
-            },
-        };
-
-        let inputs = [lwin_down, key_down];
         unsafe {
-            let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            let _ = SendInput(&[dummy], std::mem::size_of::<INPUT>() as i32);
         }
     }
 
@@ -304,15 +233,14 @@ mod platform {
                     || kb.dwExtraInfo == AIDEN_INJECTED_TAG;
 
                 if !is_injected {
-                    let check_mods = is_down && (kb.vkCode == VK_LWIN_CODE || kb.vkCode == VK_L_CODE);
-                    let other_mod = if check_mods {
-                        other_modifier_is_held()
+                    let (win_held, other_mod) = if is_down && kb.vkCode == VK_SPACE_CODE {
+                        (win_is_physically_held(), other_modifier_is_held())
                     } else {
-                        false
+                        (false, false)
                     };
 
                     let action = if let Ok(mut sm) = STATE_MACHINE.try_lock() {
-                        sm.on_key_event(kb.vkCode, is_down, false, other_mod, now_ms())
+                        sm.on_key_event(kb.vkCode, is_down, false, win_held, other_mod, now_ms())
                     } else {
                         HookAction::PassThrough
                     };
@@ -322,16 +250,8 @@ mod platform {
                             return LRESULT(1);
                         }
                         HookAction::SwallowAndTriggerAiden => {
-                            dispatch_worker(WorkerCmd::ToggleAiden);
-                            return LRESULT(1);
-                        }
-                        HookAction::ForwardLWinAndKeyDown => {
-                            let is_extended = (kb.flags.0 & LLKHF_EXTENDED.0) != 0;
-                            send_forwarded_lwin_and_key_down(kb.vkCode, kb.scanCode, is_extended);
-                            return LRESULT(1);
-                        }
-                        HookAction::SwallowAndLockWorkstation => {
-                            dispatch_worker(WorkerCmd::LockWorkstation);
+                            send_win_chord_suppressor();
+                            dispatch_worker();
                             return LRESULT(1);
                         }
                         HookAction::PassThrough => {}
@@ -380,22 +300,17 @@ mod platform {
         F: Fn() + Send + 'static,
     {
         let _ = START_INSTANT.get_or_init(Instant::now);
-        let (tx, rx) = mpsc::channel::<WorkerCmd>();
+        let (tx, rx) = mpsc::channel::<()>();
 
         let holder = WORKER_TX.get_or_init(|| Mutex::new(None));
         if let Ok(mut guard) = holder.lock() {
             *guard = Some(tx);
         }
 
-        // Dedicated worker thread runs Tauri toggle & Win+L lock completely off the hook thread
+        // Dedicated worker thread runs Tauri toggle completely off the hook thread
         std::thread::spawn(move || {
-            while let Ok(cmd) = rx.recv() {
-                match cmd {
-                    WorkerCmd::ToggleAiden => on_trigger(),
-                    WorkerCmd::LockWorkstation => unsafe {
-                        let _ = LockWorkStation();
-                    },
-                }
+            while rx.recv().is_ok() {
+                on_trigger();
             }
         });
 
@@ -411,7 +326,7 @@ mod platform {
                 return;
             };
 
-            println!("[WIN_HOTKEY] Installed Deferred Left-Win hook (zero-flicker Start Menu override active).");
+            println!("[WIN_HOTKEY] Installed Win+Space global shortcut hook.");
 
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
@@ -421,7 +336,7 @@ mod platform {
 
             let _ = UnhookWindowsHookEx(hook);
             HOOK_THREAD_ID.store(0, Ordering::SeqCst);
-            println!("[WIN_HOTKEY] Unhooked Left-Win hook cleanly.");
+            println!("[WIN_HOTKEY] Unhooked Win+Space shortcut hook cleanly.");
         });
     }
 }
@@ -448,105 +363,129 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{HookAction, WinKeyStateMachine, VK_LWIN_CODE, VK_L_CODE};
+    use super::{
+        HookAction, WinKeyStateMachine, VK_LWIN_CODE, VK_RWIN_CODE, VK_SPACE_CODE,
+    };
 
-    const VK_RWIN: u32 = 0x5C;
     const VK_E: u32 = 0x45;
+    const VK_L: u32 = 0x4C;
     const VK_LSHIFT: u32 = 0xA0;
     const VK_S: u32 = 0x53;
-    const VK_RIGHT: u32 = 0x27;
-    const VK_UP: u32 = 0x26;
 
     #[test]
-    fn solo_left_win_tap_swallows_both_edges_and_triggers() {
+    fn win_space_swallows_space_and_triggers_aiden_while_win_passes_through() {
         let mut sm = WinKeyStateMachine::new();
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 100), HookAction::Swallow);
-        // Auto-repeat while held stays swallowed
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 200), HookAction::Swallow);
         assert_eq!(
-            sm.on_key_event(VK_LWIN_CODE, false, false, false, 240),
+            sm.on_key_event(VK_LWIN_CODE, true, false, false, false, 100),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, true, false, true, false, 130),
             HookAction::SwallowAndTriggerAiden
         );
+        // Auto-repeat while holding Space remains swallowed
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, true, false, true, false, 160),
+            HookAction::Swallow
+        );
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, false, false, true, false, 200),
+            HookAction::Swallow
+        );
+        assert_eq!(
+            sm.on_key_event(VK_LWIN_CODE, false, false, false, false, 240),
+            HookAction::PassThrough
+        );
     }
 
     #[test]
-    fn win_combos_defer_lwin_down_then_pass_through_cleanly() {
+    fn solo_win_and_other_win_combos_pass_through_natively() {
         let mut sm = WinKeyStateMachine::new();
-        // Win + E
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 100), HookAction::Swallow);
+        // Solo Left Win tap
         assert_eq!(
-            sm.on_key_event(VK_E, true, false, false, 130),
-            HookAction::ForwardLWinAndKeyDown
+            sm.on_key_event(VK_LWIN_CODE, true, false, false, false, 100),
+            HookAction::PassThrough
         );
-        assert_eq!(sm.on_key_event(VK_E, false, false, false, 170), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, false, false, 200), HookAction::PassThrough);
-
-        // Win + Shift + S (Snipping Tool)
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 500), HookAction::Swallow);
         assert_eq!(
-            sm.on_key_event(VK_LSHIFT, true, false, false, 520),
-            HookAction::ForwardLWinAndKeyDown
+            sm.on_key_event(VK_LWIN_CODE, false, false, false, false, 150),
+            HookAction::PassThrough
         );
-        assert_eq!(sm.on_key_event(VK_S, true, false, false, 540), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_S, false, false, false, 580), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_LSHIFT, false, false, false, 590), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, false, false, 610), HookAction::PassThrough);
 
-        // Multi-key snap: Win + Right, then Up while still holding Win
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 900), HookAction::Swallow);
+        // Win + E, Win + L, Win + Shift + S
         assert_eq!(
-            sm.on_key_event(VK_RIGHT, true, false, false, 920),
-            HookAction::ForwardLWinAndKeyDown
+            sm.on_key_event(VK_LWIN_CODE, true, false, false, false, 300),
+            HookAction::PassThrough
         );
-        assert_eq!(sm.on_key_event(VK_RIGHT, false, false, false, 950), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_UP, true, false, false, 980), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_UP, false, false, false, 1010), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, false, false, 1040), HookAction::PassThrough);
+        assert_eq!(
+            sm.on_key_event(VK_E, true, false, true, false, 320),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_L, true, false, true, false, 360),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_LSHIFT, true, false, true, false, 400),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_S, true, false, true, true, 420),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_LWIN_CODE, false, false, false, false, 460),
+            HookAction::PassThrough
+        );
 
-        // Pre-held modifier (Ctrl+Win+Right) passes straight through untouched
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, true, 1500), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_RIGHT, true, false, true, 1520), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, false, false, 1560), HookAction::PassThrough);
+        // Ctrl+Win+Space (other modifier held) passes through natively
+        assert_eq!(
+            sm.on_key_event(VK_LWIN_CODE, true, false, false, true, 700),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, true, false, true, true, 730),
+            HookAction::PassThrough
+        );
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, false, false, true, true, 760),
+            HookAction::PassThrough
+        );
     }
 
     #[test]
-    fn win_l_invokes_native_lock_and_recovers_after_unlock() {
+    fn right_win_plus_space_and_debounce_work_cleanly() {
         let mut sm = WinKeyStateMachine::new();
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 100), HookAction::Swallow);
         assert_eq!(
-            sm.on_key_event(VK_L_CODE, true, false, false, 130),
-            HookAction::SwallowAndLockWorkstation
+            sm.on_key_event(VK_RWIN_CODE, true, false, false, false, 500),
+            HookAction::PassThrough
         );
-        // Even if Winlogon swallows both key-ups, unlocking and tapping Left Win works immediately
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 900), HookAction::Swallow);
         assert_eq!(
-            sm.on_key_event(VK_LWIN_CODE, false, false, false, 960),
+            sm.on_key_event(VK_SPACE_CODE, true, false, true, false, 530),
             HookAction::SwallowAndTriggerAiden
         );
-    }
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, false, false, true, false, 560),
+            HookAction::Swallow
+        );
 
-    #[test]
-    fn right_win_injected_bounces_and_long_holds_stay_clean() {
-        let mut sm = WinKeyStateMachine::new();
-        // Right Win stays 100% native
-        assert_eq!(sm.on_key_event(VK_RWIN, true, false, false, 100), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_RWIN, false, false, false, 150), HookAction::PassThrough);
+        // Rapid bounce < 160ms while Win still held is swallowed without double trigger
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, true, false, true, false, 600),
+            HookAction::Swallow
+        );
+        assert_eq!(
+            sm.on_key_event(VK_SPACE_CODE, false, false, true, false, 630),
+            HookAction::Swallow
+        );
+        assert_eq!(
+            sm.on_key_event(VK_RWIN_CODE, false, false, false, false, 660),
+            HookAction::PassThrough
+        );
 
         // Injected events always pass through
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, true, false, 200), HookAction::PassThrough);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, true, false, 220), HookAction::PassThrough);
-
-        // Hardware bounce < 180ms is swallowed silently without double-toggling
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 400), HookAction::Swallow);
         assert_eq!(
-            sm.on_key_event(VK_LWIN_CODE, false, false, false, 450),
-            HookAction::SwallowAndTriggerAiden
+            sm.on_key_event(VK_SPACE_CODE, true, true, true, false, 900),
+            HookAction::PassThrough
         );
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 500), HookAction::Swallow);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, false, false, 530), HookAction::Swallow);
-
-        // Aborted long solo hold (> 800ms) silently cancels without triggering AIDEN or Start Menu
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, true, false, false, 2000), HookAction::Swallow);
-        assert_eq!(sm.on_key_event(VK_LWIN_CODE, false, false, false, 3200), HookAction::Swallow);
     }
 }
