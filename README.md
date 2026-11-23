@@ -1,28 +1,128 @@
-# AIDEN Assistant 🔮
+<div align="center">
 
-> **Aiden** is an intelligent, voice-first desktop companion living directly within the hardware of Windows. Built with a high-performance **Tauri v2 + Rust** desktop core, a **React 19 + TypeScript** interface, and an autonomous **Python AI reasoning engine**.
+# AIDEN Assistant
+
+**A voice-first, living Windows desktop companion with instant Spotlight launching, rich interactive glass cards, and autonomous OS & cloud tools.**
+
+Built with **Tauri v2 + Rust**, **React 19 + TypeScript**, and an autonomous **Python AI engine**.
+
+[![Latest Release](https://img.shields.io/github/v/release/Eliud-Ke/AIDEN_assistant?style=flat-square&color=258292&label=Release)](https://github.com/Eliud-Ke/AIDEN_assistant/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=flat-square&logo=windows)](https://github.com/Eliud-Ke/AIDEN_assistant/releases/latest)
+[![Tauri v2](https://img.shields.io/badge/Core-Tauri%20v2%20%2B%20Rust-FFC131?style=flat-square&logo=tauri&logoColor=111)](https://v2.tauri.app/)
+[![React 19](https://img.shields.io/badge/UI-React%2019%20%2B%20TypeScript-61DAFB?style=flat-square&logo=react&logoColor=111)](https://react.dev/)
+[![Python 3.12+](https://img.shields.io/badge/Engine-Python%203.12%2B-3776AB?style=flat-square&logo=python&logoColor=fff)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+
+[**Download Latest Installer (.exe / .msi)**](https://github.com/Eliud-Ke/AIDEN_assistant/releases/latest) · [**Shortcuts**](#-usage--keyboard-shortcuts) · [**Architecture**](#-system-architecture) · [**Build from Source**](#-developer-setup)
+
+</div>
 
 ---
 
-## ✨ Highlights & Core Features
+<!-- MEDIA SLOT 1/5: HERO DEMO VIDEO (Recommended: 8-10s 60fps .mp4, 1280x720)
+     Show: Press Win + Space -> liquid-glass pill blooms in upper third -> instant fuzzy search
+     across Apps / Browser Bookmarks / Files -> ask AIDEN a question with live streaming + card.
+     To embed: Drag-and-drop the .mp4 into a GitHub issue/PR comment to get a native video URL
+     and replace the block below, or save to docs/media/hero-spotlight-chat.mp4. -->
+> [!TIP]
+> **Media Slot 1 / 5 — Hero Demo (`.mp4`, 8–10s)**
+> *Upload slot for: `Win + Space` wake bloom ➔ Conjoined Spotlight search (Apps, Bookmarks, Files) ➔ Live AI chat response.*
 
-* 🎙️ **Offline Wake Word Detection**: Ultra-low latency voice activation powered by local ONNX/TFLite models (`backend/models/aiden.onnx`). Activates hands-free on *"Hey Aiden"* or *"Aiden"*, or via global hotkey (`Win + Space`).
-* 💬 **Floating Taskbar Chat Pill**: A borderless, transparent floating interface docked right above the Windows taskbar:
-  * **Smooth Token Streaming**: Asynchronous WebSocket streaming with a 60fps adaptive token pacemaker.
-  * **Dynamic Windows Accent Bezel**: Automatically detects and adapts to your active Windows accent color (`HKCU\Software\Microsoft\Windows\DWM\AccentColor`).
-  * **Orb Status Indicator**: 3 counter-rotating SVG filaments with a breathing core and real-time status telemetry (*Thinking*, *Opening app*, *Checking weather*).
-  * **Click-Through Transparency**: Automatically sleeps and ignores cursor events when idle, waking instantly on interaction.
-* 🎛️ **Settings Launcher & Control Hub**:
-  * **Dual-Theme Fluid Circular Transition**: Seamless toggle between Cinematic Dark Velvet and Warm Biscuit Cream with an origin-aware circular reveal.
-  * **Long-Term Memory Manager**: Visual dashboard for long-term facts stored in `%LOCALAPPDATA%\AidenAssistant\memory.json`. Supports custom category columns, inline fact editing (`✎`), fact deletion (`🗑`), and dynamic category creation with hidden scrollbars for a clean UI.
-  * **Process Lifecycle Supervision**: Complete background process orchestration (Boot up, Restart, Shutdown, and Minimize to System Tray).
-* 🛠️ **Autonomous System Tools**:
-  * Fast fuzzy matching and launching of installed Windows applications.
-  * System telemetry (battery level, CPU usage, Wi-Fi status, live time).
-  * Safe PowerShell script execution.
-  * Media controls (Spotify & YouTube playback, volume adjustment, mute/unmute).
-  * Local file search.
-* 🔒 **Secure Credential Storage**: Zero plaintext API keys on disk. Credentials are encrypted and persisted directly in the **Windows Credential Manager** via native OS APIs.
+---
+
+## ⚡ Quick Install (Windows 10 / 11)
+
+No build tools required for end users:
+
+1. Download the latest **`AIDEN Assistant_<version>_x64-setup.exe`** (or `.msi`) from [**GitHub Releases**](https://github.com/Eliud-Ke/AIDEN_assistant/releases/latest).
+2. Run the installer and launch **AIDEN Assistant** — the bundled Python engine (`aiden-engine.exe`) boots automatically in the background.
+3. Open **Authentication** in the Launcher and add your **OpenAI API Key** (stored encrypted in **Windows Credential Manager**, never in plaintext).
+4. *(Optional)* Connect **Gmail**, **Google Calendar**, and **Spotify** inside the **Integrations** tab.
+5. *(Optional)* Install [**Voidtools Everything**](https://www.voidtools.com/) + the `es.exe` CLI on your `PATH` to unlock sub-10ms local file & folder results inside the Spotlight tray.
+
+---
+
+## ✨ What AIDEN Actually Does
+
+### 🪟 Upper-Third Liquid Glass Pill & Conjoined Spotlight Launcher
+Summoned instantly via **`Win + Space`** (native Win32 `WH_KEYBOARD_LL` hook that leaves solo `Win` and every other `Win + *` system shortcut untouched), **`Ctrl + Shift + Space`**, or voice wake word (**"Aiden"** / **"Hey Aiden"**):
+* **Native Windows 11 Acrylic Chrome (`native_window.rs`)**: Borderless, DWM-blurred floating pill in the upper third of your monitor with custom spring morphing (`WindowMorpher`) and live Windows Accent Color adaptation.
+* **Instant Conjoined Search Tray (`search_index.rs` + `bookmarks.rs`)**: Type to fuzzy-search before sending to AI, ranked in three clean tiers:
+  1. **Installed Apps & System Tools** — Start Menu, Registry, UWP apps, and Windows tools with cached native icons.
+  2. **Cross-Browser Bookmarks** — Reads bookmarks and offline cached favicons across **Edge, Zen, Chrome, Brave, Vivaldi, Opera / Opera GX, and Firefox**.
+  3. **Folders & Files** — Live parallel directory & file queries via Everything CLI (`es.exe`) when available.
+* **Power-User Launch Actions**: `Enter` to open, **`Shift + Enter`** to Run as Administrator (or insert a newline & dismiss the tray while writing a prompt), and **`Ctrl + Enter`** to reveal in File Explorer (resolving `.lnk` shortcuts to their real `.exe` target) or copy a bookmark URL to clipboard.
+
+### 🧊 The 68×68 Living PiP Companion Cube
+When asleep or minimized, AIDEN morphs smoothly into a draggable **68×68 Picture-in-Picture cube** docked across single or multi-monitor setups:
+* **45fps Expressive Eyes (`PipSquareEyes.tsx`)**: Smooth cursor-tracking eyes and eyebrows, idle animations, and a dizzy spin reaction when dragged rapidly.
+* **Battery Awareness (`pip_bubble`)**: Floating speech-bubble reactions when plugging in, unplugging, hitting low battery (≤ 20%), or reaching full charge.
+* **Spotify Groove Mode (`pip_headphones` + `audio_beat.rs`)**: Automatically detects Spotify playback via Windows GSMTC, equips an animated **AirPods Max headphones overlay**, and bops the cube in sync with your live bass beat via **WASAPI loopback audio analysis**.
+
+<!-- MEDIA SLOT 2/5: LIVING PIP CUBE SHOWCASE (Recommended: 6-8s .mp4 or .gif, cropped around cube)
+     Show: 68x68 cube eyes tracking cursor -> battery speech bubble or dizzy drag -> Spotify starts
+     playing and AirPods Max headphones appear while the cube bops to the beat. -->
+> [!TIP]
+> **Media Slot 2 / 5 — Living 68×68 PiP Cube (`.mp4` or `.gif`, 6–8s)**
+> *Upload slot for: Cursor-tracking eyes, battery speech bubble, and Spotify AirPods Max headphones + beat bopping.*
+
+### 🃏 Zero-Yapping Interactive Glass Cards
+Instead of dumping walls of text, AIDEN answers with one crisp conversational line paired with a rich interactive card inside the pill:
+* **Weather (`WeatherCard`)** — Live conditions, hourly/daily breakdowns, and dynamic visuals.
+* **Live Location (`LocationCard`)** — Interactive Leaflet map card on demand.
+* **Google Calendar (`CalendarCard`)** — Agenda view, quick scheduling, cancellation, and automatic overlap/conflict detection cards.
+* **Gmail (`GmailCard`)** — Unread inbox & search cards powered by a warm persistent IMAP session with batched `UID FETCH` (~350–730ms tool latency), plus reading, drafting, sending, replying, and archiving.
+* **Spotify (`Spotify*Card`)** — Dedicated interactive cards for Tracks, Artists, Albums, Public Playlists, and your Personal Library Playlists, plus direct playback, shuffle/repeat, and Liked Songs control.
+* **Hardware Glass Sliders (`SystemSlider`)** — Interactive volume and display brightness controls right inside the reply.
+* **Rich Markdown (`MarkdownContent`)** — GitHub Flavored Markdown, comparison tables, syntax-highlighted code blocks (`highlight.js`), and inline/display LaTeX math (`KaTeX`).
+
+<!-- MEDIA SLOT 3/5: RICH INTERACTIVE GLASS CARDS COLLAGE (Recommended: 1 clean 2x2 PNG, 1600x1000)
+     Show: WeatherCard + CalendarCard (or GmailCard) + SpotifyTracksCard + SystemSlider in Dark/Light glass. -->
+> [!TIP]
+> **Media Slot 3 / 5 — Interactive Glass Cards Showcase (`.png` collage)**
+> *Upload slot for: 2×2 showcase of Weather, Calendar/Gmail, Spotify, and Hardware Volume/Brightness Glass Slider cards.*
+
+### 👁️ Screen Vision, Live Web Grounding & Hardware Awareness
+* **Screen Vision (`look_at_screen`)**: Inspects your full screen, active window, or a specific background window by name to read errors, explain code, or summarize what you're looking at.
+* **Live Grounded Web Search (`grounded_web_search`)**: Searches live web sources for current events, docs, and real-time facts with clean clickable citations.
+* **Autonomic Nervous System (`ans.py`)**: Feeds real-time system vitals (battery, CPU, RAM, active focus, open windows, currently playing media, notification counts) directly into AIDEN's context.
+* **Offline Wake Word (`wake_word.py`)**: Local low-latency ONNX/TFLite `openWakeWord` models (`backend/models/aiden.onnx` & `aiden.tflite`).
+
+<!-- MEDIA SLOT 4/5: SCREEN VISION OR LIVE SEARCH DEMO (Recommended: 6-8s .mp4 or crisp .png)
+     Show: AIDEN inspecting an open code/error window via look_at_screen OR returning a grounded
+     live web answer with syntax-highlighted code & KaTeX math. -->
+> [!TIP]
+> **Media Slot 4 / 5 — Screen Vision & Rich AI Output (`.mp4` or `.png`)**
+> *Upload slot for: `look_at_screen` debugging an open window or a streamed response with code + KaTeX math.*
+
+### 🎛️ Control Launcher, Dual Theme & Long-Term Memory
+* **Dual-Theme Circular Wipe**: Instant origin-aware circular ripple transition between **Dark Velvet** and **Warm Biscuit Cream**.
+* **Visual Long-Term Memory Manager**: Browse, add, inline-edit, and delete categorized memories in `%LOCALAPPDATA%\AidenAssistant\memory.json`, backed by automatic conversation summarization in `episodic_ledger.json`.
+* **Personality & Rules Editor**: Customize AIDEN's identity vibe and custom operational rules in `user_preferences.json`.
+* **System Tray & Process Supervision**: One-click **Boot up**, **Restart**, **Shutdown**, and **Exit** from the Launcher or Windows System Tray, with all secrets encrypted in **Windows Credential Manager**.
+
+<!-- MEDIA SLOT 5/5: LAUNCHER & DUAL THEME SHOWCASE (Recommended: 4-5s .gif or .mp4)
+     Show: Launcher circular theme ripple (Dark Velvet <-> Warm Biscuit Cream) + Integrations & Memory tabs. -->
+> [!TIP]
+> **Media Slot 5 / 5 — Control Launcher & Theme Transition (`.gif` or `.mp4`, 4–5s)**
+> *Upload slot for: Dark Velvet ↔ Warm Biscuit Cream circular wipe, Integrations setup, and Memory Manager.*
+
+---
+
+## 🔌 Built-In Tools & On-Demand Connectors
+
+AIDEN uses an MCP-style dynamic connector registry (`backend/connectors.py`) that mounts specialized tool stacks into RAM only when needed to keep latency and token overhead low:
+
+| Category | Status | Capabilities |
+| :--- | :---: | :--- |
+| **Core OS & Media** | ✅ Active | App launching, active window inspection & closing, Windows Settings deep-links, Recycle Bin, volume & brightness sliders, universal media playback (`play/pause/next/prev/restart`), power management, Bible passages |
+| **Vision & Web** | ✅ Active | Screen Vision (`look_at_screen`: whole screen / active / background window), Live Grounded Web Search, Weather Forecast, Live Location |
+| **Gmail** | ✅ Active | Persistent warm IMAP + SMTP: unread inbox, fast search, read, draft, send, reply, mark read, archive |
+| **Google Calendar** | ✅ Active | OAuth 2.0: daily/weekly agenda, availability & conflict detection, event creation, update, cancellation |
+| **Spotify** | ✅ Active | OAuth 2.0: search tracks/artists/albums/playlists, browse personal library playlists, play items/playlists, shuffle/repeat, like/unlike tracks, active device check |
+| **Notes Vault (Obsidian)** | 🚧 Planned | Registered connector slot (`notes_vault`) — tool implementation coming in a future release |
+| **YouTube Visual** | 🚧 Planned | Registered connector slot (`youtube_visual`) — tool implementation coming in a future release |
+| **AI File Agent** | 🚧 Planned | Registered connector slot (`file_system`) — instant file/folder search is currently provided natively via the Rust Spotlight tray |
 
 ---
 
@@ -30,208 +130,173 @@
 
 ```mermaid
 flowchart TD
-    subgraph UI ["Desktop UI (Tauri v2 + React 19)"]
-        ChatPill["Floating Chat Pill (Taskbar Docked)"]
-        Launcher["Launcher & Settings Hub (Dual Theme)"]
+    subgraph UI ["4-Window Desktop UI (Tauri v2 + React 19)"]
+        Main["Launcher & Settings Hub (main)"]
+        ChatPill["Liquid Glass Pill / 68x68 PiP Cube (chat_pill)"]
+        Bubble["Battery & Reaction Bubble (pip_bubble)"]
+        Headphones["AirPods Max Overlay (pip_headphones)"]
         Tray["Windows System Tray"]
     end
 
-    subgraph RustCore ["Tauri v2 Core (Rust)"]
-        ProcMgr["Process Lifecycle Supervisor"]
-        WinAccent["Windows DWM Accent Color Detector"]
-        KeyBridge["Credential & Preference Interop"]
+    subgraph RustCore ["Native Rust Core (frontend/src-tauri)"]
+        ProcMgr["Backend Supervisor & Async IPC (lib.rs)"]
+        NativeWin["DWM Acrylic, WindowMorpher & GSMTC (native_window.rs)"]
+        WinHook["Win32 Low-Level Win+Space Hook (win_hotkey.rs)"]
+        SearchIdx["Unified Fuzzy Search & Bookmarks (search_index.rs, bookmarks.rs)"]
+        AudioBeat["WASAPI Loopback Bass-Beat Tracker (audio_beat.rs)"]
     end
 
-    subgraph PythonEngine ["AIDEN Brain (Python 3.12+)"]
-        WakeWord["openWakeWord Detection Engine"]
-        Hotkey["Global Hotkey Monitor (Win + Space)"]
-        WSServer["WebSocket Streaming Server (Port 8765)"]
-        Brain["GPT-4o / GPT-6 Luna Reasoning Core"]
-        MemoryMgr["Semantic & Episodic Memory Manager"]
-        ToolExecutor["Autonomous OS Tool Executor"]
+    subgraph PythonEngine ["AIDEN AI Engine (Python 3.12+ / PyInstaller Sidecar)"]
+        WSServer["Async WebSocket Server (Port 8765)"]
+        WakeWord["Offline openWakeWord (aiden.onnx)"]
+        ANS["Autonomic Nervous System Telemetry (ans.py)"]
+        Brain["OpenAI Responses API Core (gpt-5.6-luna / gpt-6-luna)"]
+        Connectors["Dynamic Connectors (Gmail, Calendar, Spotify)"]
+        Memory["Semantic & Episodic Memory Manager"]
+        SysTools["OS, Vision, Weather & Web Grounding Tools"]
     end
 
-    ChatPill <--> |WebSocket JSON & Tokens| WSServer
-    Launcher <--> |Tauri IPC Commands| ProcMgr
+    ChatPill <--> |WebSocket JSON & Token Stream| WSServer
+    Main <--> |Async Tauri IPC| ProcMgr
+    ChatPill <--> |Tauri IPC & Events| NativeWin
+    ChatPill <--> |Instant Fuzzy Search| SearchIdx
+    WinHook --> |Toggle Awake / PiP| ChatPill
+    AudioBeat --> |VSync Beat Bop| NativeWin
     ProcMgr --> |Spawn / Supervise| PythonEngine
     WakeWord --> |Wake Signal| Brain
-    Hotkey --> |Wake Signal| Brain
-    Brain --> ToolExecutor
-    Brain --> MemoryMgr
+    ANS --> |Live Context| Brain
+    Brain --> SysTools
+    Brain --> Connectors
+    Brain --> Memory
 ```
 
 ---
 
 ## 📁 Repository Structure
 
-```
+```text
 AIDEN_assistant/
 ├── backend/
-│   ├── models/                # Trained offline wake-word models (aiden.onnx & aiden.tflite)
-│   ├── main.py                # Main assistant loop & state machine (Sleep ⟷ Awake)
-│   ├── server.py              # Asynchronous WebSocket server streaming tokens to UI
-│   ├── wake_word.py           # Threaded microphone listener & openWakeWord classifier
-│   ├── shortcut_detector.py   # Global keyboard shortcut hook (Win + Space)
-│   ├── tools_system.py        # System tools: installed apps, PowerShell, media, weather
-│   ├── memory_manager.py      # Long-term semantic categories & episodic ledger manager
-│   ├── configuration.py       # Identity vibe, immutable rules, and preference loader
-│   ├── auth_manager.py        # Windows Credential Manager integration (keyring)
-│   ├── requirements.txt       # Python dependencies
-│   └── *.py                   # Telemetry, app registry & connector modules
+│   ├── models/                   # Offline wake-word models (aiden.onnx & aiden.tflite)
+│   ├── main.py                   # Master Sleep <-> Awake loop & stateful Responses API core
+│   ├── server.py                 # Async WebSocket streaming server (port 8765)
+│   ├── ans.py                    # Autonomic Nervous System hardware/window/media telemetry
+│   ├── wake_word.py              # Threaded microphone listener & openWakeWord engine
+│   ├── voice_engine.py           # Speech capture & audio helpers
+│   ├── shortcut_detector.py      # Configurable keyboard shortcut fallback (Ctrl+Shift+Space)
+│   ├── connectors.py             # Dynamic on-demand connector registry
+│   ├── tool_registry.py          # Unified tool dispatch map
+│   ├── tools_system.py           # OS controls, look_at_screen, web search, weather, media
+│   ├── tools_gmail.py            # Persistent warm IMAP/SMTP Gmail tools
+│   ├── tools_calendar.py         # Google Calendar OAuth & conflict-aware scheduling tools
+│   ├── tools_spotify.py          # Spotify Web API search, library & playback tools
+│   ├── memory_manager.py         # Semantic facts (memory.json) & episodic ledger
+│   ├── configuration.py          # Identity vibe, operational rules & preferences
+│   ├── auth_manager.py           # Windows Credential Manager integration (keyring)
+│   ├── aiden-engine.spec         # PyInstaller standalone sidecar build specification
+│   └── requirements.txt          # Python dependencies
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── ChatPill.tsx   # Floating taskbar chat interface & animated orb
-│   │   │   └── ChatPill.css   # Dynamic accent bezels & spring animations
-│   │   ├── App.tsx            # Main Control Hub (Auth, Preferences, Memory, Control)
-│   │   └── App.css            # Circular theme wipe, custom tabs & hidden scrollbars
-│   ├── src-tauri/
-│   │   ├── src/
-│   │   │   ├── lib.rs         # Tauri commands, multi-window layout & process manager
-│   │   │   └── main.rs        # Tauri entrypoint
-│   │   ├── Cargo.toml         # Rust dependencies
-│   │   └── tauri.conf.json    # Dual-window configuration (main launcher + chat_pill)
-│   ├── package.json           # Frontend dependencies (React 19, TypeScript, Vite)
-│   └── vite.config.ts         # Vite bundler settings
-├── .gitignore                 # Clean root gitignore (excludes target, venv, node_modules)
-└── README.md                  # Project overview & documentation
+│   │   │   ├── ChatPill.tsx           # Upper-third Liquid Glass pill & conjoined search tray
+│   │   │   ├── PipSquareEyes.tsx      # 68x68 living cube eyes, expressions & Spotify state
+│   │   │   ├── PipCommentBubble.tsx   # Floating battery/status speech bubble window
+│   │   │   ├── PipHeadphones.tsx      # Animated AirPods Max overlay window
+│   │   │   ├── MarkdownContent.tsx    # GFM + highlight.js + KaTeX renderer
+│   │   │   ├── WeatherCard.tsx        # Interactive glass weather forecast card
+│   │   │   ├── LocationCard.tsx       # Interactive Leaflet map card
+│   │   │   ├── CalendarCard.tsx       # Agenda & conflict detection card
+│   │   │   ├── GmailCard.tsx          # Inbox & email search card
+│   │   │   ├── Spotify*Card.tsx       # Tracks, Artist, Albums, Playlists & Library cards
+│   │   │   └── SystemSlider.tsx       # Native-feel glass volume & brightness slider
+│   │   ├── App.tsx                    # Control Launcher (Auth, Integrations, Memory, Prefs)
+│   │   └── main.tsx                   # Multi-window entrypoint router
+│   └── src-tauri/
+│       ├── src/
+│       │   ├── lib.rs                 # Async Tauri IPC commands, 4-window coordinator & tray
+│       │   ├── native_window.rs       # DWM Acrylic, WindowMorpher, bounded WinRT GSMTC
+│       │   ├── win_hotkey.rs          # Native Win32 WH_KEYBOARD_LL hook (Win + Space)
+│       │   ├── search_index.rs        # Fuzzy app/file/folder indexer & Win32 launcher
+│       │   ├── bookmarks.rs           # Cross-browser bookmark & offline favicon extractor
+│       │   └── audio_beat.rs          # Real-time WASAPI loopback bass-beat tracker
+│       ├── Cargo.toml                 # Rust dependencies
+│       └── tauri.conf.json            # 4-window config + bundled aiden-engine sidecar
+├── RELEASE_WORKFLOW.md           # Full PyInstaller + Tauri build & GitHub Release SOP
+└── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🎮 Usage & Keyboard Shortcuts
 
-### Prerequisites
-
-* **Operating System**: Windows 10 / 11 (64-bit)
-* **Python**: `3.12+` (with `pip` and virtual environment support)
-* **Node.js**: `v18+` or `v20+` and `npm`
-* **Rust**: `1.75+` with `cargo` installed via [rustup.rs](https://rustup.rs/)
-* **C++ Build Tools**: Visual Studio C++ Build Tools (required for Rust and PyAudio)
-
----
-
-### Installation & Setup
-
-#### 1. Clone the Repository
-```bash
-git clone https://github.com/your-username/AIDEN_assistant.git
-cd AIDEN_assistant
-```
-
-#### 2. Set Up the Backend
-```bash
-cd backend
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
-cd ..
-```
-
-#### 3. Set Up the Frontend
-```bash
-cd frontend
-npm install
-cd ..
-```
-
----
-
-### 🏃 Running in Development Mode
-
-Run the unified Tauri development environment from the `frontend` folder:
-
-```bash
-cd frontend
-npm run tauri dev
-```
-
-This will:
-1. Start the Vite development server on `http://localhost:1420/`.
-2. Compile and launch the Rust/Tauri desktop shell.
-3. Automatically position the **Floating Chat Pill** right above your Windows taskbar.
-4. Launch the **AIDEN Control Launcher** on your screen.
-5. Provide live hot-reloading for frontend components.
-
----
-
-### 🔑 Providing Your OpenAI API Key
-
-1. When opening the Launcher for the first time, click **Have a key already?** or expand the **Authentication** section.
-2. Paste your OpenAI API key (`sk-...`).
-3. Click **Save**.
-   * Your key will be securely saved into the **Windows Credential Manager** (`AidenAssistant/openai_api_key`). No API keys are ever committed or stored in plaintext.
-
----
-
-### 🎮 Usage & Hotkeys
-
-| Action | Trigger | Description |
+| Action | Trigger | Behavior |
 | :--- | :--- | :--- |
-| **Wake Aiden** | Voice (*"Hey Aiden"*) or `Win + Space` | Activates listening mode; floating pill expands |
-| **Dismiss / Sleep** | `Win + Space` or click outside | Returns Aiden to dormant sleep mode |
-| **Open Launcher** | Click System Tray icon or taskbar | Opens settings, preferences, and memory manager |
-| **Toggle Theme** | Top-left Sun/Moon icon in Launcher | Circular ripple transition between Dark and Light mode |
-| **Minimize to Tray** | Top-right `X` button on Launcher | Minimizes the control panel to the Windows system tray |
-| **Complete Exit** | System Tray Context Menu ➔ **Quit** | Shuts down backend background processes and closes windows |
+| **Wake / Toggle AIDEN** | **`Win + Space`**, `Ctrl + Shift + Space`, or Voice (*"Aiden"*) | Blooms the Liquid Glass pill in the upper third, or minimizes it back to the 68×68 PiP cube |
+| **Navigate Search Tray** | `↑` / `↓` | Move selection across Apps, Bookmarks, and Folders & Files |
+| **Send / Launch** | `Enter` | Opens the highlighted search result, or sends your message to AIDEN |
+| **Run as Admin / Newline** | `Shift + Enter` | Launches the selected app/item elevated as Administrator; when typing a prompt, inserts a newline and dismisses the search tray |
+| **Reveal in Folder / Copy URL** | `Ctrl + Enter` | Opens File Explorer selecting the file/folder (resolves `.lnk` shortcuts to their real `.exe` target), or copies a bookmark URL to clipboard |
+| **Minimize to PiP Cube** | `Ctrl + M`, `Esc`, or click cube minimize | Collapses the pill into the draggable 68×68 living companion cube |
+| **Open Launcher** | Left-click System Tray icon | Opens Authentication, Integrations, Preferences, and Memory Manager |
+| **Engine Controls / Exit** | Right-click System Tray icon | Quick **Open**, **Boot up**, **Restart**, **Shutdown**, or complete **Exit** |
 
 ---
 
-### 🪟 Tiling Window Managers (GlazeWM Setup)
+## 🪟 Tiling Window Managers (GlazeWM Setup)
 
-If you use [GlazeWM](https://github.com/glzr-io/glazewm) (or other tiling window managers), add an ignore rule so GlazeWM doesn't attempt to manage, tile, or snap the floating chat pill and settings launcher.
-
-In your `~/.glzr/glazewm/config.yaml`, add the following under `window_rules:` -> `- commands: ["ignore"]`:
+If you use [GlazeWM](https://github.com/glzr-io/glazewm), add an ignore rule in `~/.glzr/glazewm/config.yaml` so GlazeWM does not tile AIDEN's Launcher, Floating Pill, or PiP overlay windows (`AIDEN`, `AIDEN Chat`, `AIDEN Bubble`, `AIDEN Headphones`):
 
 ```yaml
 window_rules:
   - commands: ["ignore"]
     match:
-      # Ignores AIDEN Assistant (both App Launcher and Floating Chat UI in dev and release)
       - window_process: { equals: "AIDEN Assistant" }
       - window_process: { equals: "frontend" }
         window_title: { regex: "(?i)^AIDEN" }
       - window_title: { regex: "(?i)^AIDEN" }
 ```
 
-Reload your GlazeWM configuration with your reload hotkey (default `Alt + Shift + R`) or via terminal:
+Reload your config with `Alt + Shift + R` or:
 ```powershell
 glazewm command wm-reload-config
 ```
 
 ---
 
-### 🧠 Long-Term Memory System
+## 🛠️ Developer Setup
 
-Aiden organizes long-term memories across customizable categories (e.g., `General`, `Preferences`, `Personal`, `Projects`) saved to:
+### Prerequisites
+* **OS**: Windows 10 / 11 (64-bit)
+* **Python**: `3.12+` (with `venv` & `pip`)
+* **Node.js**: `v20+` and `npm`
+* **Rust**: `1.85+` (Rust Edition 2024) via [rustup.rs](https://rustup.rs/)
+* **C++ Build Tools**: Visual Studio C++ Build Tools (required for Rust, PyAudio, and bundled `rusqlite`)
+* **Optional**: [Everything](https://www.voidtools.com/) + `es.exe` CLI for instant local file/folder search in the Spotlight tray
+
+### 1. Clone & Set Up Backend
+```powershell
+git clone https://github.com/Eliud-Ke/AIDEN_assistant.git
+cd AIDEN_assistant/backend
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+cd ..
 ```
-%LOCALAPPDATA%\AidenAssistant\memory.json
-```
-* In the **Launcher ➔ Memory** tab, you can create custom category columns, add memories, and edit (`✎`) or delete (`🗑`) individual facts.
-* Past conversations are automatically summarized and stored in:
-```
-%LOCALAPPDATA%\AidenAssistant\episodic_ledger.json
-```
 
----
-
-### 📦 Building for Production
-
-To compile a production installer / standalone executable:
-
-```bash
+### 2. Install Frontend & Run Dev Mode
+```powershell
 cd frontend
-npm run tauri build
+npm install
+npm run tauri dev
 ```
 
-The output executable and MSI installer will be created in:
-```
-frontend/src-tauri/target/release/bundle/
-```
+This launches the Vite dev server (`http://localhost:1420/`), compiles the Rust/Tauri shell, auto-boots the Python AI engine on WebSocket port `8765`, and opens the Launcher + Living PiP Cube.
+
+### 3. Production Installers & Releases
+Packaging a standalone `.exe` (NSIS) and `.msi` (WiX) requires compiling the frozen Python sidecar (`backend/aiden-engine.spec`) before running `npm run tauri build`. See [**RELEASE_WORKFLOW.md**](RELEASE_WORKFLOW.md) for the complete step-by-step build, archiving, and GitHub Release procedure.
 
 ---
 
 ## 🛡️ License
 
-This project is licensed under the MIT License — see the LICENSE file for details.
-
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
