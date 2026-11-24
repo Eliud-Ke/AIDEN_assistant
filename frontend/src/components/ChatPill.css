@@ -77,13 +77,18 @@
 }
 
 .chat-pill-wrapper.awake.waking-bloom .siri-pill-input-wrap,
+.chat-pill-wrapper.awake.waking-bloom .siri-idle-plus-btn,
 .chat-pill-wrapper.awake.waking-bloom .siri-idle-bare-mic-btn {
   animation: aidenIslandContentIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) 0.085s both;
 }
 
 /* Clean fast inner UI blur-dissolve on Hide so content never squishes as pill collapses to 64px */
 .chat-pill-wrapper.hiding-bloom .siri-pill-input-wrap,
+.chat-pill-wrapper.hiding-bloom .siri-idle-plus-btn,
 .chat-pill-wrapper.hiding-bloom .siri-idle-bare-mic-btn,
+.chat-pill-wrapper.hiding-bloom .siri-deep-reason-bar-btn,
+.chat-pill-wrapper.hiding-bloom .siri-idle-images-collapse,
+.chat-pill-wrapper.hiding-bloom .siri-idle-conjoined-tray,
 .chat-pill-wrapper.hiding-bloom .siri-unified-stream,
 .chat-pill-wrapper.hiding-bloom .siri-thinking-content,
 .chat-pill-wrapper.hiding-bloom .siri-listening-content,
@@ -2939,13 +2944,14 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  gap: 8px;
+  padding: 0 16px 0 14px;
   box-sizing: border-box;
 }
 
 .siri-unified-pill.mode-idle.multiline .siri-idle-top-bar {
   align-items: flex-end;
-  padding: 16px 24px;
+  padding: 16px 16px 16px 14px;
 }
 
 /* Minimalist Bare Mic Icon in Initial Idle Pill (No Circle, Just Icon) */
@@ -2958,7 +2964,7 @@
   width: 32px;
   height: 32px;
   min-width: 32px;
-  margin-left: 10px;
+  margin-left: 0;
   padding: 0;
   background: transparent !important;
   border: none !important;
@@ -3023,7 +3029,8 @@
 }
 
 /* Staggered Content Reveal on Voice Exit: Fade in near center separated, then spring smoothly outwards to ends */
-.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap {
+.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap,
+.siri-unified-pill.mode-idle.exiting-voice .siri-idle-plus-btn {
   animation: siriVoiceSearchSpringOut 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both;
 }
 
@@ -3079,6 +3086,8 @@
 
 /* Content Fade Out when Entering Voice Mode ("they just fade there") */
 .siri-pill-input-wrap.entering-voice,
+.siri-idle-plus-btn.entering-voice,
+.siri-deep-reason-bar-btn.entering-voice,
 .siri-idle-bare-mic-btn.entering-voice {
   pointer-events: none !important;
   animation: siriVoiceContentFadeThere 0.14s ease-out forwards !important;
@@ -3377,10 +3386,14 @@
 
 .siri-user-followup-wrap {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   justify-content: flex-end;
+  gap: 7px;
   width: 100%;
   margin: 8px 0 22px 0;
   padding-right: 4px;
+  box-sizing: border-box;
 }
 
 .siri-user-followup-bubble {
@@ -3611,6 +3624,7 @@
 
 /* Unhovered state: all 3 elements tucked below bottom edge */
 .siri-command-glass-btn.plus-btn,
+.siri-plus-morph-surface,
 .siri-command-capsule,
 .siri-command-glass-btn.mic-btn {
   opacity: 0;
@@ -3618,21 +3632,30 @@
   transform: translateY(44px) scale(0.92);
   transition: opacity 0.16s ease-out,
               transform 0.22s cubic-bezier(0.32, 0, 0.2, 1),
+              bottom 0.46s cubic-bezier(0.22, 1.18, 0.36, 1),
+              width 0.46s cubic-bezier(0.22, 1.18, 0.36, 1),
+              height 0.46s cubic-bezier(0.22, 1.18, 0.36, 1),
+              border-radius 0.42s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.25s ease,
               background 0.25s ease,
               border-color 0.25s ease,
               color 0.25s ease;
 }
 
-/* 1. The + button comes and springs first (0ms delay — pure CSS transition preserves live backdrop-filter blur) */
-.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-glass-btn.plus-btn {
+/* 1. The + button / morph surface comes and springs first (0ms delay) */
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-command-glass-btn.plus-btn,
+.siri-unified-pill.controls-visible:not(.expanded-voice-active) .siri-plus-morph-surface {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
   transition: opacity 0.16s ease-out 0ms,
               transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0ms,
-              box-shadow 0.25s ease,
-              background 0.25s ease,
+              bottom 0.46s cubic-bezier(0.22, 1.18, 0.36, 1),
+              width 0.46s cubic-bezier(0.22, 1.18, 0.36, 1),
+              height 0.46s cubic-bezier(0.22, 1.18, 0.36, 1),
+              border-radius 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.30s ease,
+              background 0.28s ease,
               border-color 0.25s ease,
               color 0.25s ease;
 }
@@ -3644,6 +3667,7 @@
   transform: translateY(0) scale(1);
   transition: opacity 0.16s ease-out 60ms,
               transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 60ms,
+              border-radius 0.34s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.25s ease,
               background 0.25s ease,
               border-color 0.25s ease;
@@ -3690,6 +3714,7 @@
 }
 
 .siri-unified-pill.expanded-voice-active:not(.expanded-voice-cascading):not(.expanded-voice-returning) .siri-command-glass-btn,
+.siri-unified-pill.expanded-voice-active:not(.expanded-voice-cascading):not(.expanded-voice-returning) .siri-plus-morph-surface,
 .siri-unified-pill.expanded-voice-active:not(.expanded-voice-cascading):not(.expanded-voice-returning) .siri-command-capsule {
   opacity: 0 !important;
   pointer-events: none !important;
@@ -3704,7 +3729,8 @@
   visibility: visible !important;
 }
 
-.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-command-glass-btn.plus-btn {
+.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-command-glass-btn.plus-btn,
+.siri-unified-pill.expanded-voice-active.expanded-voice-cascading .siri-plus-morph-surface {
   pointer-events: none !important;
   animation: commandCascadeDown 0.30s cubic-bezier(0.32, 0, 0.67, 0) 0ms both !important;
 }
@@ -3737,7 +3763,8 @@
   pointer-events: auto !important;
 }
 
-.siri-unified-pill.expanded-voice-returning .siri-command-glass-btn.plus-btn {
+.siri-unified-pill.expanded-voice-returning .siri-command-glass-btn.plus-btn,
+.siri-unified-pill.expanded-voice-returning .siri-plus-morph-surface {
   pointer-events: auto !important;
   animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 0ms both !important;
 }
@@ -3752,11 +3779,14 @@
   animation: commandWaveSpringUp 0.44s cubic-bezier(0.18, 1.28, 0.35, 1) 140ms both !important;
 }
 
-/* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic] */
+/* 3-Element Horizontal Apple Command Bar: [+] [Ask Aiden capsule] [Mic]
+   gap: 0 because .plus-slot-spacer and .siri-command-capsule own the 12px margin-right so
+   collapsing the spacer lets Ask Aiden stretch flush to left: 0 without a lingering flex gap. */
 .siri-apple-command-bar {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 0;
   width: 100%;
   padding: 0;
   box-sizing: border-box;
@@ -3892,6 +3922,7 @@
   min-width: 0;
   min-height: 48px;
   height: auto;
+  margin-right: 12px;
   border-radius: 24px;
   /* Pure colourless clear glass — zero black tint */
   background: rgba(255, 255, 255, 0.04);
@@ -3901,9 +3932,15 @@
     inset 0 -1px 1px rgba(0, 0, 0, 0.25),
     0 6px 16px rgba(0, 0, 0, 0.28);
   display: flex;
-  align-items: center;
-  padding: 13px 18px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 10px 12px 10px 16px;
   box-sizing: border-box;
+}
+
+.siri-command-capsule.has-images {
+  border-radius: 20px;
 }
 
 .siri-command-capsule:hover,
@@ -5931,7 +5968,12 @@
 
 /* Dissolve maximized UI cleanly before shrinking to 68x68; re-bloom in once flying back */
 .siri-unified-pill.is-morphing-to-pip .siri-pill-input-wrap,
+.siri-unified-pill.is-morphing-to-pip .siri-idle-plus-btn,
 .siri-unified-pill.is-morphing-to-pip .siri-idle-bare-mic-btn,
+.siri-unified-pill.is-morphing-to-pip .siri-deep-reason-bar-btn,
+.siri-unified-pill.is-morphing-to-pip .siri-idle-images-collapse,
+.siri-unified-pill.is-morphing-to-pip .siri-idle-conjoined-tray,
+.siri-unified-pill.is-morphing-to-pip .siri-drop-overlay,
 .siri-unified-pill.is-morphing-to-pip .siri-listening-content,
 .siri-unified-pill.is-morphing-to-pip .siri-thinking-content,
 .siri-unified-pill.is-morphing-to-pip .siri-floating-close-btn,
@@ -5948,7 +5990,12 @@
 }
 
 .siri-unified-pill.is-pip .siri-pill-input-wrap,
+.siri-unified-pill.is-pip .siri-idle-plus-btn,
 .siri-unified-pill.is-pip .siri-idle-bare-mic-btn,
+.siri-unified-pill.is-pip .siri-deep-reason-bar-btn,
+.siri-unified-pill.is-pip .siri-idle-images-collapse,
+.siri-unified-pill.is-pip .siri-idle-conjoined-tray,
+.siri-unified-pill.is-pip .siri-drop-overlay,
 .siri-unified-pill.is-pip .siri-listening-content,
 .siri-unified-pill.is-pip .siri-thinking-content,
 .siri-unified-pill.is-pip .siri-floating-close-btn,
@@ -6095,4 +6142,804 @@
 .siri-pip-content.show-sparkle .siri-pip-sparkle {
   opacity: 0.92;
   transform: scale(1) translateY(0);
+}
+
+/* ==========================================================================
+   INPUT UPGRADES: ORGANIC LIQUID-GLASS [+] MORPH, IMAGE DROP-IN & DEEP REASON
+   Dark Velvet & Light Mode — Dual Specular Arch Shine + Centered Grey-Out ×
+   ========================================================================== */
+
+.siri-hidden-file-input {
+  display: none;
+}
+
+/* Translucent Glass Drop-Zone Halo Overlay */
+.siri-drop-overlay {
+  position: absolute;
+  inset: 4px;
+  border-radius: inherit;
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: rgba(12, 16, 22, 0.78);
+  border: 1.5px dashed rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  opacity: 0;
+  transform: scale(0.97);
+  transition: opacity 0.18s ease, transform 0.24s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.siri-unified-pill.light-mode .siri-drop-overlay {
+  background: rgba(248, 250, 252, 0.86);
+  border-color: rgba(15, 23, 42, 0.36);
+  color: #111215;
+}
+
+.siri-unified-pill.is-drag-over .siri-drop-overlay {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.siri-drop-overlay-label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Animated spacer reserving the 48px + 12px left slot when [+] is docked.
+   Collapses smoothly to 0px when [+] lifts up into the tray so Ask Aiden stretches leftward! */
+.plus-slot-spacer {
+  width: 48px;
+  margin-right: 12px;
+  height: 48px;
+  flex-shrink: 0;
+  pointer-events: none;
+  transition:
+    width 0.44s cubic-bezier(0.22, 1.18, 0.36, 1),
+    margin-right 0.44s cubic-bezier(0.22, 1.18, 0.36, 1);
+}
+
+.siri-apple-command-bar.tray-open .plus-slot-spacer {
+  width: 0px;
+  margin-right: 0px;
+}
+
+/* SINGLE CONTINUOUS LIQUID-GLASS MORPH SURFACE:
+   Starts as the exact 48x48 [+] circular glass button at bottom: 0, left: 0.
+   When opened, THIS SAME GLASS SURFACE lifts smoothly up to bottom: calc(100% + 10px)
+   and expands organically into the frosted arch-shine tray (backed by live SVG lens blur!). */
+.siri-plus-morph-surface {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 35;
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border: none !important;
+  color: #ffffff;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
+    0 6px 16px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  box-sizing: border-box;
+  --arc-top-peak: 0.56;
+  --arc-top-mid: 0.24;
+  --arc-bot-peak: 0.25;
+}
+
+/* Dual Specular Arch Shine ONLY (top crown arch + subtle bottom bounce; left/right clean) */
+.siri-plus-morph-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.15px;
+  pointer-events: none;
+  z-index: 3;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    rgba(255, 255, 255, var(--arc-top-peak)) 0deg,
+    rgba(255, 255, 255, var(--arc-top-mid)) 34deg,
+    rgba(255, 255, 255, 0) 58deg,
+    rgba(255, 255, 255, 0) 156deg,
+    rgba(255, 255, 255, var(--arc-bot-peak)) 180deg,
+    rgba(255, 255, 255, 0) 204deg,
+    rgba(255, 255, 255, 0) 302deg,
+    rgba(255, 255, 255, var(--arc-top-mid)) 326deg,
+    rgba(255, 255, 255, var(--arc-top-peak)) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: opacity 0.22s ease;
+}
+
+/* Subtle crown glass sheen along top arch when morphed open */
+.siri-plus-morph-surface::after {
+  content: "";
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  top: 0;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.52) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+
+.siri-unified-pill.controls-visible .siri-plus-morph-surface:not(.is-open):hover {
+  transform: translateY(0) scale(1.09) !important;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    0 8px 20px rgba(0, 0, 0, 0.34);
+  --arc-top-peak: 0.70;
+  --arc-top-mid: 0.32;
+  --arc-bot-peak: 0.33;
+  transition-delay: 0ms !important;
+}
+
+.siri-unified-pill.controls-visible .siri-plus-morph-surface:not(.is-open):active {
+  transform: translateY(0) scale(0.88) !important;
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+/* Morphed Open State: Identical colourless clear glass & curved top/bottom arch shine to Ask Aiden
+   (no dark tint and no nested CSS backdrop-filter; backed directly by live #aiden-stream-lens-blur) */
+.siri-plus-morph-surface.is-open {
+  bottom: calc(100% + 10px);
+  width: 194px;
+  height: 92px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.35),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
+    0 6px 16px rgba(0, 0, 0, 0.28);
+  cursor: default;
+}
+
+.siri-plus-morph-surface.is-open::before {
+  opacity: 0;
+}
+
+.siri-plus-morph-surface.is-open::after {
+  opacity: 0;
+}
+
+/* Light Mode Morph Surface */
+.siri-unified-pill.light-mode .siri-plus-morph-surface {
+  background: rgba(255, 255, 255, 0.18);
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+  --arc-top-peak: 0.94;
+  --arc-top-mid: 0.44;
+  --arc-bot-peak: 0.50;
+}
+
+.siri-unified-pill.light-mode.controls-visible .siri-plus-morph-surface:not(.is-open):hover {
+  background: rgba(255, 255, 255, 0.24);
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.10),
+    0 8px 20px rgba(0, 0, 0, 0.14);
+  --arc-top-peak: 0.98;
+  --arc-top-mid: 0.52;
+  --arc-bot-peak: 0.56;
+}
+
+.siri-unified-pill.light-mode .siri-plus-morph-surface.is-open {
+  background: rgba(255, 255, 255, 0.18);
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.80),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+}
+
+/* Centered '+' glyph inside morph surface */
+.morph-plus-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+  transition:
+    opacity 0.16s ease 0.08s,
+    transform 0.30s cubic-bezier(0.22, 1.18, 0.36, 1);
+  pointer-events: none;
+}
+
+.siri-plus-morph-surface.is-open .morph-plus-glyph {
+  opacity: 0;
+  transform: scale(0.42) rotate(68deg);
+  transition:
+    opacity 0.12s ease,
+    transform 0.24s ease;
+}
+
+/* Tray options inside the same morphed glass surface */
+.morph-tray-content {
+  position: relative;
+  z-index: 2;
+  width: 194px;
+  padding: 7px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0;
+  transform: translateY(10px) scale(0.92);
+  filter: blur(5px);
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    transform 0.22s ease,
+    filter 0.16s ease;
+}
+
+.siri-plus-morph-surface.is-open .morph-tray-content {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
+  pointer-events: auto;
+  transition:
+    opacity 0.24s ease 0.10s,
+    transform 0.36s cubic-bezier(0.22, 1.18, 0.36, 1) 0.08s,
+    filter 0.24s ease 0.10s;
+}
+
+.siri-tray-action-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  height: 37px;
+  padding: 0 11px;
+  border-radius: 14px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+  outline: none;
+  transition: background 0.15s ease, transform 0.14s ease, color 0.15s ease;
+}
+
+.siri-tray-action-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.siri-tray-action-item:active {
+  transform: scale(0.96);
+}
+
+.siri-unified-pill.light-mode .siri-tray-action-item {
+  color: rgba(17, 18, 21, 0.88);
+}
+
+.siri-unified-pill.light-mode .siri-tray-action-item:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+.siri-tray-item-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.siri-tray-item-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.90;
+  flex-shrink: 0;
+}
+
+.siri-tray-status-pill {
+  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 9.5px;
+  font-weight: 620;
+  padding: 2px 6.5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.96);
+  opacity: 0;
+  transform: scale(0.76);
+  transition: opacity 0.2s ease, transform 0.24s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.siri-tray-action-item.is-enabled .siri-tray-status-pill {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.siri-unified-pill.light-mode .siri-tray-status-pill {
+  background: rgba(15, 23, 42, 0.12);
+  color: #111215;
+}
+
+/* Center Capsule Inner Row: Input Track + Far-End Brain Toggle */
+.siri-capsule-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+}
+
+.siri-capsule-input-row .siri-input-track {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Organic Collapsible Thumbnail Strip + Centered Grey-Out × Hover (Zero snap-back, zero clipping!) */
+.siri-attached-strip-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.24s ease,
+    margin-bottom 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.siri-attached-strip-collapse.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 8px;
+}
+
+.siri-attached-strip-collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.siri-attached-images-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+
+.siri-attached-images-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.siri-attached-thumb-chip {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  margin-right: 8px;
+  padding: 0;
+  border-radius: 11px;
+  overflow: hidden;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+  outline: none;
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  transition:
+    width 0.30s cubic-bezier(0.16, 1, 0.3, 1),
+    margin-right 0.30s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.22s ease,
+    transform 0.28s cubic-bezier(0.22, 1.18, 0.36, 1),
+    filter 0.22s ease,
+    border-color 0.2s ease;
+}
+
+.siri-attached-thumb-chip:last-child {
+  margin-right: 0;
+}
+
+.siri-attached-thumb-chip.is-entering {
+  width: 0px;
+  margin-right: 0px;
+  opacity: 0;
+  transform: scale(0.58);
+  filter: blur(5px);
+  border-width: 0;
+}
+
+.siri-attached-thumb-chip.is-removing {
+  width: 0px !important;
+  margin-right: 0px !important;
+  opacity: 0;
+  transform: scale(0.55);
+  filter: blur(5px);
+  border-width: 0;
+  pointer-events: none;
+}
+
+.siri-attached-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition:
+    filter 0.22s ease,
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Centered Monochrome Grey-Out + White '×' Overlay on Hover */
+.siri-attached-thumb-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 18, 24, 0.44);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.20s ease, background 0.20s ease;
+}
+
+.siri-attached-thumb-overlay svg {
+  transform: scale(0.68);
+  transition: transform 0.24s cubic-bezier(0.22, 1.28, 0.36, 1);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+.siri-attached-thumb-chip:hover .siri-attached-thumb-img,
+.siri-attached-thumb-chip:focus-visible .siri-attached-thumb-img {
+  filter: grayscale(100%) brightness(0.45);
+  transform: scale(1.07);
+}
+
+.siri-attached-thumb-chip:hover .siri-attached-thumb-overlay,
+.siri-attached-thumb-chip:focus-visible .siri-attached-thumb-overlay {
+  opacity: 1;
+}
+
+.siri-attached-thumb-chip:hover .siri-attached-thumb-overlay svg,
+.siri-attached-thumb-chip:focus-visible .siri-attached-thumb-overlay svg {
+  transform: scale(1);
+}
+
+.siri-attached-thumb-chip:active {
+  transform: scale(0.92);
+}
+
+.siri-unified-pill.light-mode .siri-attached-thumb-chip {
+  border-color: rgba(15, 23, 42, 0.16);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+}
+
+/* Far-End Clickable Monochrome Deep Reason Brain Toggle (Organic Enter AND Organic Exit!) */
+.siri-deep-reason-bar-btn {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0px;
+  height: 28px;
+  margin-left: -6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.11);
+  color: rgba(255, 255, 255, 0.94);
+  cursor: pointer;
+  flex-shrink: 0;
+  overflow: hidden;
+  outline: none;
+  opacity: 0;
+  transform: scale(0.32) rotate(18deg);
+  filter: blur(4px);
+  pointer-events: none;
+  transition:
+    width 0.30s cubic-bezier(0.16, 1, 0.3, 1),
+    margin-left 0.30s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.22s ease,
+    transform 0.32s cubic-bezier(0.22, 1.28, 0.36, 1),
+    filter 0.22s ease,
+    border-width 0.22s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.siri-idle-top-bar .siri-deep-reason-bar-btn {
+  margin-left: -8px;
+}
+
+.siri-deep-reason-bar-btn.is-active {
+  width: 28px;
+  margin-left: 0px;
+  border-width: 1px;
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+  filter: blur(0px);
+  pointer-events: auto;
+}
+
+.siri-deep-reason-bar-btn.is-active:hover {
+  background: rgba(255, 255, 255, 0.20);
+  border-color: rgba(255, 255, 255, 0.42);
+  transform: scale(1.08);
+}
+
+.siri-deep-reason-bar-btn.is-active:active {
+  transform: scale(0.88);
+}
+
+.siri-deep-reason-bar-btn .brain-icon-main {
+  transition: opacity 0.16s ease, transform 0.18s ease;
+}
+
+.siri-deep-reason-bar-btn .brain-icon-close {
+  position: absolute;
+  opacity: 0;
+  transform: scale(0.62) rotate(-35deg);
+  transition: opacity 0.16s ease, transform 0.20s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.siri-deep-reason-bar-btn.is-active:hover .brain-icon-main {
+  opacity: 0;
+  transform: scale(0.62);
+}
+
+.siri-deep-reason-bar-btn.is-active:hover .brain-icon-close {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+.siri-unified-pill.light-mode .siri-deep-reason-bar-btn {
+  border-color: rgba(15, 23, 42, 0.18);
+  background: rgba(15, 23, 42, 0.08);
+  color: #111215;
+}
+
+.siri-unified-pill.light-mode .siri-deep-reason-bar-btn.is-active:hover {
+  background: rgba(15, 23, 42, 0.15);
+  border-color: rgba(15, 23, 42, 0.32);
+}
+
+/* Compact Idle Pill: Collapsible Image Strip + Bare Left + Button + Conjoined Action Tray */
+.siri-idle-images-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex-shrink: 0;
+  opacity: 0;
+  padding: 0 20px;
+  box-sizing: border-box;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.24s ease,
+    padding-top 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.siri-idle-images-collapse.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  padding-top: 12px;
+}
+
+.siri-idle-images-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.siri-idle-plus-btn {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.48);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color 0.18s ease,
+    transform 0.20s cubic-bezier(0.22, 1.28, 0.36, 1),
+    background 0.16s ease;
+}
+
+.siri-idle-plus-btn .siri-idle-plus-svg {
+  transition: transform 0.32s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.siri-idle-plus-btn.tray-open .siri-idle-plus-svg {
+  transform: rotate(45deg);
+}
+
+.siri-idle-plus-btn:hover {
+  color: rgba(255, 255, 255, 0.96);
+  transform: scale(1.10);
+}
+
+.siri-idle-plus-btn:active {
+  transform: scale(0.92);
+}
+
+.siri-idle-plus-btn.tray-open {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.siri-unified-pill.light-mode .siri-idle-plus-btn {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.siri-unified-pill.light-mode .siri-idle-plus-btn:hover {
+  color: #0f172a;
+}
+
+.siri-unified-pill.light-mode .siri-idle-plus-btn.tray-open {
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.siri-idle-conjoined-tray {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 0.30s cubic-bezier(0.22, 1.18, 0.36, 1),
+    opacity 0.22s ease;
+}
+
+.siri-idle-conjoined-tray.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.siri-idle-conjoined-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.siri-idle-tray-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 12px;
+}
+
+.siri-idle-tray-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 12.2px;
+  font-weight: 550;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.14s ease, color 0.15s ease;
+}
+
+.siri-idle-tray-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+.siri-idle-tray-pill-btn:active {
+  transform: scale(0.95);
+}
+
+.siri-idle-tray-pill-btn.is-enabled {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.36);
+  color: #ffffff;
+}
+
+.siri-unified-pill.light-mode .siri-idle-tray-pill-btn {
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(15, 23, 42, 0.05);
+  color: rgba(17, 18, 21, 0.86);
+}
+
+.siri-unified-pill.light-mode .siri-idle-tray-pill-btn:hover {
+  background: rgba(15, 23, 42, 0.10);
+  color: #0f172a;
+}
+
+.siri-unified-pill.light-mode .siri-idle-tray-pill-btn.is-enabled {
+  background: #111215;
+  border-color: #111215;
+  color: #ffffff;
+}
+
+/* Sent User Image Thumbnails in Chat Stream */
+.siri-user-bubble-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 82%;
+}
+
+.siri-user-bubble-img {
+  width: 68px;
+  height: 68px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.30);
+}
+
+.siri-unified-pill.light-mode .siri-user-bubble-img {
+  border-color: rgba(15, 23, 42, 0.14);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.14);
+}
+
+/* Subtle Monochrome Deep Reason Indicator Chip on High-Effort Replies */
+.siri-deep-reason-reply-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin-bottom: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 560;
+  padding: 2.5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.74);
+  user-select: none;
+}
+
+.siri-unified-pill.light-mode .siri-deep-reason-reply-chip {
+  background: rgba(15, 23, 42, 0.06);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: rgba(15, 23, 42, 0.68);
 }

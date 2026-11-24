@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { LocationCard } from "./LocationCard";
 import { GmailCard, GmailEmailItem } from "./GmailCard";
 import { CalendarCard, CalendarEventItem } from "./CalendarCard";
@@ -46,12 +47,99 @@ function computeSearchDrawerHeight(res: UnifiedSearchResponse): number {
 
 export type PipPhase = "max" | "to-pip" | "pip" | "to-max";
 
+export interface AttachedImageItem {
+  id: string;
+  name: string;
+  dataUrl: string;
+  entering?: boolean;
+  removing?: boolean;
+}
+
+export interface SendMessageOptions {
+  images?: Array<{ name: string; dataUrl: string }>;
+  reasoningEffort?: "none" | "high";
+}
+
+const MAX_ATTACHED_IMAGES = 4;
+const MAX_IMAGE_EDGE_PX = 1536;
+
+function compressImageDataUrl(rawDataUrl: string, name: string): Promise<{ name: string; dataUrl: string }> {
+  return new Promise((resolve) => {
+    if (!rawDataUrl || !rawDataUrl.startsWith("data:image/")) {
+      resolve({ name, dataUrl: rawDataUrl });
+      return;
+    }
+    // Keep small non-BMP payloads or GIFs intact if already lean (< 320 KB base64)
+    if (rawDataUrl.startsWith("data:image/gif") && rawDataUrl.length < 450_000) {
+      resolve({ name, dataUrl: rawDataUrl });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) {
+          resolve({ name, dataUrl: rawDataUrl });
+          return;
+        }
+        const scale = Math.min(1, MAX_IMAGE_EDGE_PX / Math.max(w, h));
+        if (scale >= 1 && rawDataUrl.length < 360_000 && !rawDataUrl.startsWith("data:image/bmp")) {
+          resolve({ name, dataUrl: rawDataUrl });
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve({ name, dataUrl: rawDataUrl });
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.86);
+        resolve({
+          name,
+          dataUrl: compressed.length < rawDataUrl.length || scale < 1 ? compressed : rawDataUrl,
+        });
+      } catch {
+        resolve({ name, dataUrl: rawDataUrl });
+      }
+    };
+    img.onerror = () => resolve({ name, dataUrl: rawDataUrl });
+    img.src = rawDataUrl;
+  });
+}
+
+function readFileAsCompressedImage(file: File): Promise<{ name: string; dataUrl: string } | null> {
+  return new Promise((resolve) => {
+    if (!file || !file.type || !file.type.startsWith("image/")) {
+      resolve(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const raw = typeof reader.result === "string" ? reader.result : "";
+      if (!raw.startsWith("data:image/")) {
+        resolve(null);
+        return;
+      }
+      const compressed = await compressImageDataUrl(raw, file.name || "image.png");
+      resolve(compressed);
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 export interface ChatTurn {
   id: string;
   userPrompt?: string | null;
+  userImages?: Array<{ name: string; dataUrl: string }>;
   assistantReply: string;
   isStreaming?: boolean;
   connectors?: string[];
+  reasoningEffort?: "none" | "high";
 }
 
 export interface ConnectorMeta {
@@ -126,8 +214,9 @@ interface ChatPillProps {
   isMaxHeight?: boolean;
   turns?: ChatTurn[];
   followupThinkingPrompt?: string | null;
+  followupThinkingImages?: Array<{ name: string; dataUrl: string }> | null;
   userPrompt?: string | null;
-  onSendMessage?: (message: string, isFollowup?: boolean) => void;
+  onSendMessage?: (message: string, isFollowup?: boolean, options?: SendMessageOptions) => void;
   onToggleSleep?: () => void;
   responseMessage?: string | null;
   activeUiTag?: string | null;
@@ -986,6 +1075,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   isMaxHeight = false,
   turns,
   followupThinkingPrompt = null,
+  followupThinkingImages = [],
   userPrompt = null,
   onSendMessage,
   onToggleSleep,
@@ -1155,6 +1245,22 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [pipRimTone, setPipRimTone] = useState<"none" | "green" | "red" | "amber" | "music" | "work_green">("none");
   const [announcementBlockPulse, setAnnouncementBlockPulse] = useState(false);
   const announcementBlockTimerRef = useRef<number | null>(null);
+  const [attachedImages, setAttachedImages] = useState<AttachedImageItem[]>([]);
+  const attachedImagesRef = useRef<AttachedImageItem[]>([]);
+  attachedImagesRef.current = attachedImages;
+  const [deepReason, setDeepReason] = useState(false);
+  const [isPlusTrayOpen, setIsPlusTrayOpen] = useState(false);
+  const [isIdleTrayOpen, setIsIdleTrayOpen] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef<number>(0);
+  const removeTimersRef = useRef<Set<number>>(new Set());
+
+  const activeImages = attachedImages.filter((im) => !im.removing);
+  const hasActiveImages = activeImages.length > 0;
+  const hasFollowupPending = Boolean(
+    followupThinkingPrompt || (followupThinkingImages && followupThinkingImages.length > 0)
+  );
 
   const handleDragVisualChange = useCallback((dragging: boolean, dimmed: boolean) => {
     setIsPipDragging((prev) => (prev !== dragging ? dragging : prev));
@@ -1187,7 +1293,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const bubbleAnimRafIdsRef = useRef<number[]>([]);
   const sleepBtnRef = useRef<HTMLButtonElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
-  const plusBtnRef = useRef<HTMLButtonElement>(null);
+  const plusBtnRef = useRef<HTMLDivElement>(null);
   const capsuleRef = useRef<HTMLDivElement>(null);
   const micBtnRef = useRef<HTMLButtonElement>(null);
   const lensFilterRef = useRef<SVGFilterElement>(null);
@@ -1294,14 +1400,16 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const showInlineAgyCard = Boolean(agyWorkJob && !agyWorkJob.cardDismissed);
   const isProactiveAnnouncementActive = proactiveTurnKind === "agy_done";
 
-  const hasTurns = activeTurns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt));
+  const hasTurns = activeTurns.some((t) =>
+    Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt || (t.userImages && t.userImages.length > 0))
+  );
   const hasReplyText =
     hasTurns ||
-    Boolean((responseMessage && responseMessage.length > 0) || followupThinkingPrompt) ||
+    Boolean((responseMessage && responseMessage.length > 0) || hasFollowupPending) ||
     Boolean(showInlineAgyCard && isAgyRunning);
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
   const isProactiveThinkingInStream = Boolean(
-    !followupThinkingPrompt && activeUiTag && proactiveTurnKind && hasReplyText
+    !hasFollowupPending && activeUiTag && proactiveTurnKind && hasReplyText
   );
 
   const pillMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
@@ -1326,30 +1434,219 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const activeScaleY = 1 + voiceIntensity * 0.48;
   const activeScaleX = 1 + voiceIntensity * 0.09;
 
-  // Controls (minimize button and command bar) are visible on hover or when input is focused/typed (text mode only, never during PiP)
+  // Controls (minimize button and command bar) stay visible on hover, focus, draft text, open [+] tray, attached images, or active drag-over
   const isControlsVisible = Boolean(
-    !voiceActive && pipPhase === "max" && (isHovered || isInputFocused || inputText.length > 0)
+    !voiceActive &&
+      pipPhase === "max" &&
+      (isHovered || isInputFocused || inputText.length > 0 || isPlusTrayOpen || hasActiveImages || isDragOver)
   );
 
   const respondingMountedAtRef = useRef<number>(0);
 
-  // Reset hover state when entering or leaving responding mode
+  // Reset hover & transient trays when entering or leaving responding mode
   useEffect(() => {
     if (pillMode === "responding") {
       respondingMountedAtRef.current = Date.now();
       setIsHovered(false);
+      setIsIdleTrayOpen(false);
     } else {
       setIsHovered(false);
+      setIsPlusTrayOpen(false);
     }
   }, [pillMode]);
+
+  // Reset attached images & Deep Reason cleanly when putting AIDEN to sleep (× / Esc) — preserved across PiP minimize!
+  const prevAwakeForAttachmentsRef = useRef<boolean>(isAwake);
+  useEffect(() => {
+    const wasAwake = prevAwakeForAttachmentsRef.current;
+    prevAwakeForAttachmentsRef.current = isAwake;
+    if (wasAwake && !isAwake) {
+      setAttachedImages([]);
+      setDeepReason(false);
+      setIsPlusTrayOpen(false);
+      setIsIdleTrayOpen(false);
+      setIsDragOver(false);
+      dragDepthRef.current = 0;
+    }
+  }, [isAwake]);
+
+  useEffect(() => {
+    return () => {
+      removeTimersRef.current.forEach((id) => window.clearTimeout(id));
+      removeTimersRef.current.clear();
+    };
+  }, []);
+
+  const attachCompressedImages = useCallback((items: Array<{ name: string; dataUrl: string }>) => {
+    if (!items || items.length === 0) return;
+    const addedIds: string[] = [];
+    setAttachedImages((prev) => {
+      const currentActive = prev.filter((x) => !x.removing).length;
+      const slots = Math.max(0, MAX_ATTACHED_IMAGES - currentActive);
+      if (slots <= 0) return prev;
+      const toAdd: AttachedImageItem[] = items
+        .slice(0, slots)
+        .filter((it) => it && it.dataUrl && it.dataUrl.startsWith("data:image/"))
+        .map((it) => {
+          const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          addedIds.push(id);
+          return {
+            id,
+            name: it.name || "image.png",
+            dataUrl: it.dataUrl,
+            entering: true,
+            removing: false,
+          };
+        });
+      return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+    });
+    if (addedIds.length > 0) {
+      setIsPlusTrayOpen(false);
+      setIsIdleTrayOpen(false);
+      setDrawerForceOpen(false);
+      setDrawerSelectedIndex(-1);
+      setSearchResult(null);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          setAttachedImages((prev) =>
+            prev.map((im) => (addedIds.includes(im.id) ? { ...im, entering: false } : im))
+          );
+        });
+      });
+    }
+  }, []);
+
+  const handleImageFileList = useCallback(
+    async (fileList: FileList | File[] | null | undefined) => {
+      if (!fileList || fileList.length === 0) return;
+      const files = Array.from(fileList).filter((f) => f && f.type && f.type.startsWith("image/"));
+      if (files.length === 0) return;
+      const currentActive = attachedImagesRef.current.filter((x) => !x.removing).length;
+      const slots = Math.max(0, MAX_ATTACHED_IMAGES - currentActive);
+      if (slots <= 0) return;
+      const processed = await Promise.all(files.slice(0, slots).map(readFileAsCompressedImage));
+      const valid = processed.filter((x): x is { name: string; dataUrl: string } => Boolean(x));
+      attachCompressedImages(valid);
+    },
+    [attachCompressedImages]
+  );
+
+  const removeImageOrganically = useCallback((id: string) => {
+    setAttachedImages((prev) =>
+      prev.map((im) => (im.id === id ? { ...im, removing: true } : im))
+    );
+    const tid = window.setTimeout(() => {
+      removeTimersRef.current.delete(tid);
+      setAttachedImages((prev) => prev.filter((im) => im.id !== id));
+    }, 310);
+    removeTimersRef.current.add(tid);
+  }, []);
+
+  // Native Tauri v2 OS File Drag-and-Drop listener (works across both Compact Idle Pill & Expanded Chat!)
+  useEffect(() => {
+    const canAcceptDrop = Boolean(
+      isAwake && pipPhase === "max" && !voiceActive && (pillMode === "idle" || pillMode === "responding")
+    );
+    if (!canAcceptDrop) {
+      setIsDragOver(false);
+      return;
+    }
+
+    let disposed = false;
+    let unlistenDrop: (() => void) | undefined;
+
+    const attachDrop = async () => {
+      try {
+        const unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
+          if (disposed) return;
+          const payload = event.payload;
+          if (payload.type === "enter" || payload.type === "over") {
+            setIsDragOver(true);
+          } else if (payload.type === "leave") {
+            setIsDragOver(false);
+          } else if (payload.type === "drop") {
+            setIsDragOver(false);
+            const paths = Array.isArray(payload.paths) ? payload.paths : [];
+            if (paths.length === 0) return;
+            try {
+              const loaded = await invoke<Array<{ name: string; dataUrl: string }>>(
+                "read_dropped_images",
+                { paths }
+              );
+              if (!disposed && Array.isArray(loaded) && loaded.length > 0) {
+                const compressed = await Promise.all(
+                  loaded.map((item) => compressImageDataUrl(item.dataUrl, item.name))
+                );
+                if (!disposed) {
+                  attachCompressedImages(compressed);
+                }
+              }
+            } catch {
+              // Ignore invalid or non-image drop
+            }
+          }
+        });
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenDrop = unlisten;
+        }
+      } catch {
+        // Fallback outside Tauri (HTML5 drag/drop handles dev browser)
+      }
+    };
+
+    attachDrop();
+
+    return () => {
+      disposed = true;
+      if (unlistenDrop) unlistenDrop();
+    };
+  }, [isAwake, pipPhase, voiceActive, pillMode, attachCompressedImages]);
+
+  // Global Clipboard Image Paste (Ctrl+V after Win+Shift+S screenshot!) across both Compact & Expanded bars
+  useEffect(() => {
+    if (!isAwake || pipPhase !== "max" || voiceActive) return;
+    if (pillMode !== "idle" && pillMode !== "responding") return;
+
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.startsWith("image/")) {
+          const f = items[i].getAsFile();
+          if (f) imageFiles.push(f);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        handleImageFileList(imageFiles);
+      }
+    };
+
+    window.addEventListener("paste", handleGlobalPaste);
+    return () => window.removeEventListener("paste", handleGlobalPaste);
+  }, [isAwake, pipPhase, voiceActive, pillMode, handleImageFileList]);
+
+  // Close open [+] action tray cleanly on outside click
+  useEffect(() => {
+    if (!isPlusTrayOpen && !isIdleTrayOpen) return;
+    const handleDocClick = () => {
+      setIsPlusTrayOpen(false);
+      setIsIdleTrayOpen(false);
+    };
+    window.addEventListener("click", handleDocClick);
+    return () => window.removeEventListener("click", handleDocClick);
+  }, [isPlusTrayOpen, isIdleTrayOpen]);
 
   const lastReportedHRef = useRef<number>(0);
 
   const isMultiTurnMode = Boolean(
-    isMaxHeight || activeTurns.length > 1 || followupThinkingPrompt
+    isMaxHeight || activeTurns.length > 1 || hasFollowupPending
   );
   const stagePadTop = isControlsVisible ? 56 : 28;
-  const stagePadBot = isControlsVisible ? 76 + followupExtraH : 16;
+  const stagePadBot = isControlsVisible ? 76 + followupExtraH + (hasActiveImages ? 56 : 0) : 16;
   const stageMinH = Math.max(240, 620 - 32 - stagePadTop - stagePadBot);
 
   // Synchronize responding height (pure content + controls, or max 620px canvas on Turn 2+) with the native HWND pill
@@ -1395,9 +1692,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       const headerH = activeUiTag ? 36 : 0;
       // Exact chrome clearance: pill vertical padding (32px) + unhovered stream padding (28 + 16 = 44px) + 2px buffer
       const baseH = pureContentH + headerH + 78;
-      // When controls (close button at top + command bar at bottom) are visible, allocate exactly +90px
-      const targetH = isControlsVisible ? baseH + 90 : baseH;
-      const clampedTargetH = Math.min(620, Math.max(isControlsVisible ? 180 : 128, targetH));
+      // When controls (close button at top + command bar at bottom) are visible, allocate +90px (+56px when images attached)
+      const imgExtraH = hasActiveImages ? 56 : 0;
+      const targetH = isControlsVisible ? baseH + 90 + imgExtraH : baseH;
+      const clampedTargetH = Math.min(620, Math.max(isControlsVisible ? 180 + imgExtraH : 128, targetH));
 
       if (Math.abs(clampedTargetH - lastReportedHRef.current) >= 4) {
         lastReportedHRef.current = clampedTargetH;
@@ -1431,7 +1729,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         observer.disconnect();
       }
     };
-  }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, agyWorkJob, proactiveTurnKind, onHeightChange, updateScrollMask]);
+  }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, hasActiveImages, activeUiTag, followupThinkingPrompt, followupThinkingImages, activeTurns, isStreaming, agyWorkJob, proactiveTurnKind, onHeightChange, updateScrollMask]);
 
   const clampedSelectionIndex = Math.max(0, Math.min(selectionIndex, inputText.length));
   const cursorPrefix = inputText.slice(0, clampedSelectionIndex);
@@ -1756,7 +2054,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       bubbleAnimRafIdsRef.current = [];
     };
 
-    if (pillMode !== "responding" || !followupThinkingPrompt || !streamContainerRef.current) {
+    if (pillMode !== "responding" || !hasFollowupPending || !streamContainerRef.current) {
       cancelAll();
       return;
     }
@@ -1813,7 +2111,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       if (launchTimerId !== null) window.clearTimeout(launchTimerId);
       cancelAll();
     };
-  }, [pillMode, followupThinkingPrompt, activeTurns.length, updateScrollMask]);
+  }, [pillMode, hasFollowupPending, followupThinkingPrompt, activeTurns.length, updateScrollMask]);
 
   // Synchronize SVG #aiden-stream-lens-blur cutout shapes frame-by-frame with the 4 controls'
   // real live bounding boxes and opacities (zero React re-renders during transitions)
@@ -1848,8 +2146,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const shapes =
       shapeFor(sleepBtnRef.current, "circle") +
       shapeFor(closeBtnRef.current, "circle") +
-      shapeFor(plusBtnRef.current, "circle") +
-      shapeFor(capsuleRef.current, 24) +
+      shapeFor(plusBtnRef.current, isPlusTrayOpen ? 22 : 24) +
+      shapeFor(capsuleRef.current, hasActiveImages ? 20 : 24) +
       shapeFor(micBtnRef.current, "circle");
 
     const sig = `${w}x${h}:${shapes}`;
@@ -1864,7 +2162,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     imgEl.setAttribute("width", String(w));
     imgEl.setAttribute("height", String(h));
     imgEl.setAttribute("href", maskUri);
-  }, []);
+  }, [hasActiveImages, isPlusTrayOpen]);
 
   const runLensSyncFor = useCallback((durationMs: number) => {
     const deadline = performance.now() + durationMs;
@@ -1938,6 +2236,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }
   }, [isMultiTurnMode, showReplyWindow, isControlsVisible, voiceActive, runLensSyncFor]);
 
+  // Track organic [+] morph into liquid-glass tray, Ask Aiden stretch, and attached-image expansion at 60fps
+  useLayoutEffect(() => {
+    if (showReplyWindow && isControlsVisible && !voiceActive && pipPhase === "max") {
+      runLensSyncFor(560);
+    }
+  }, [isPlusTrayOpen, hasActiveImages, deepReason, showReplyWindow, isControlsVisible, voiceActive, pipPhase, runLensSyncFor]);
+
   // Keep stream top/bottom scroll-fade mask & SVG lens filter synchronized with container resizes and scrolling
   useLayoutEffect(() => {
     const el = streamContainerRef.current;
@@ -1984,7 +2289,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       followupInputRef.current.style.height = "";
       followupInputRef.current.scrollTop = 0;
     }
-    if (!shouldShowSearchDrawer && lastIdleReportedHRef.current !== 60) {
+    if (
+      !shouldShowSearchDrawer &&
+      !hasActiveImages &&
+      !isIdleTrayOpen &&
+      lastIdleReportedHRef.current !== 60
+    ) {
       lastIdleReportedHRef.current = 60;
       if (pillMode === "idle" && !voiceActive && onHeightChange) {
         onHeightChange(60, 160);
@@ -2022,10 +2332,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       setFollowupExtraH(0);
       const nextPillH = isMulti ? Math.min(198, Math.max(60, Math.ceil(targetH + 34))) : 60;
       lastTextareaIdleHRef.current = nextPillH;
+      const totalIdleH = nextPillH + (hasActiveImages ? 60 : 0) + (isIdleTrayOpen ? 56 : 0);
       if (!shouldShowSearchDrawer && pillMode === "idle" && !voiceActive && onHeightChange) {
-        if (Math.abs(nextPillH - lastIdleReportedHRef.current) >= 2) {
-          lastIdleReportedHRef.current = nextPillH;
-          onHeightChange(nextPillH, 160);
+        if (Math.abs(totalIdleH - lastIdleReportedHRef.current) >= 2) {
+          lastIdleReportedHRef.current = totalIdleH;
+          onHeightChange(totalIdleH, 160);
         }
       }
     }
@@ -2053,6 +2364,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       !voiceActive &&
       !isSubmitting &&
       !isMultiline &&
+      !hasActiveImages &&
+      !isIdleTrayOpen &&
       !inputText.includes("\n")
   );
   const trimmedSearchQuery = inputText.trim();
@@ -2155,23 +2468,27 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [isSearchEligible, trimmedSearchQuery, drawerForceOpen, runUnifiedSearch]);
 
-  // Morph the single conjoined AIDEN HWND height seamlessly when the app tray opens/resizes/closes
+  // Morph the single conjoined AIDEN HWND height seamlessly when the app tray, image strip, or [+] tray opens/closes
   useEffect(() => {
     drawerVisiblePrevRef.current = shouldShowSearchDrawer;
     if (pillMode !== "idle" || voiceActive || !onHeightChange) return;
     const baseBarH = isMultiline ? Math.max(60, lastTextareaIdleHRef.current) : 60;
+    const imgStripH = hasActiveImages ? 60 : 0;
+    const actionTrayH = isIdleTrayOpen ? 56 : 0;
     const desiredH =
       shouldShowSearchDrawer && searchResult
         ? 60 + 1 + computeSearchDrawerHeight(searchResult)
-        : baseBarH;
+        : baseBarH + imgStripH + actionTrayH;
     if (Math.abs(desiredH - lastIdleReportedHRef.current) >= 2) {
       lastIdleReportedHRef.current = desiredH;
-      onHeightChange(desiredH, 175);
+      onHeightChange(desiredH, 210);
     }
   }, [
     pillMode,
     voiceActive,
     isMultiline,
+    hasActiveImages,
+    isIdleTrayOpen,
     shouldShowSearchDrawer,
     searchResult,
     onHeightChange,
@@ -2197,6 +2514,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   );
 
   closeSearchDrawerRef.current = () => {
+    if (isPlusTrayOpen || isIdleTrayOpen) {
+      setIsPlusTrayOpen(false);
+      setIsIdleTrayOpen(false);
+      return true;
+    }
     if (!shouldShowSearchDrawer) return false;
     setDrawerForceOpen(false);
     setDrawerSelectedIndex(-1);
@@ -2261,7 +2583,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      if (shouldShowSearchDrawer) {
+      if (isIdleTrayOpen || isPlusTrayOpen) {
+        setIsIdleTrayOpen(false);
+        setIsPlusTrayOpen(false);
+      } else if (shouldShowSearchDrawer) {
         setDrawerForceOpen(false);
         setDrawerSelectedIndex(-1);
         setSearchResult(null);
@@ -2273,7 +2598,10 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   const handleSend = () => {
     const trimmed = inputText.trim();
-    if (!trimmed || isSubmitting) return;
+    const readyImages = attachedImagesRef.current
+      .filter((im) => !im.removing)
+      .map(({ name, dataUrl }) => ({ name, dataUrl }));
+    if ((!trimmed && readyImages.length === 0) || isSubmitting) return;
     // Smart Maximized Interruption Guard: while AIDEN is announcing a finished background task,
     // hold submission without erasing or blurring the user's draft text.
     if (isProactiveAnnouncementActive) {
@@ -2290,9 +2618,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setDrawerForceOpen(false);
     setDrawerSelectedIndex(-1);
     setSearchResult(null);
+    setIsPlusTrayOpen(false);
+    setIsIdleTrayOpen(false);
+    setAttachedImages([]);
     setIsSubmitting(true);
     if (onSendMessage) {
-      onSendMessage(trimmed, showReplyWindow);
+      onSendMessage(trimmed, showReplyWindow, {
+        images: readyImages.length > 0 ? readyImages : undefined,
+        reasoningEffort: deepReason ? "high" : "none",
+      });
     }
     setInputText("");
     setSelectionIndex(0);
@@ -2320,7 +2654,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const prevCount = prevTurnCountForProactiveRef.current;
     prevTurnCountForProactiveRef.current = activeTurns.length;
     if (pillMode !== "responding" || pipPhase !== "max" || !streamContainerRef.current) return;
-    if (isProactiveThinkingInStream || (activeTurns.length > prevCount && !followupThinkingPrompt)) {
+    if (isProactiveThinkingInStream || (activeTurns.length > prevCount && !hasFollowupPending)) {
       const container = streamContainerRef.current;
       window.requestAnimationFrame(() => {
         if (!streamContainerRef.current) return;
@@ -2331,7 +2665,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         }
       });
     }
-  }, [pillMode, pipPhase, isProactiveThinkingInStream, activeTurns.length, followupThinkingPrompt, updateScrollMask]);
+  }, [pillMode, pipPhase, isProactiveThinkingInStream, activeTurns.length, hasFollowupPending, updateScrollMask]);
 
   const formatStatusTag = (raw: string): string => {
     const trimmed = raw.trim();
@@ -2352,7 +2686,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const triggerMinimizeToPip = useCallback(() => {
     if (!onMinimizeToPip || !isAwake || pillMode !== "responding") return;
     if (pipPhase === "pip" || pipPhase === "to-pip") return;
-    const stillControls = isInputFocused || inputText.length > 0;
+    const stillControls = isInputFocused || inputText.length > 0 || hasActiveImages;
     const fallbackH = lastReportedHRef.current || 280;
     const restoreH = isMultiTurnMode
       ? 620
@@ -2363,6 +2697,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             stillControls || !isControlsVisible ? fallbackH : fallbackH - 90
           )
         );
+    setIsPlusTrayOpen(false);
+    setIsIdleTrayOpen(false);
     setIsHovered(false);
     setIsInputFocused(false);
     followupInputRef.current?.blur();
@@ -2374,6 +2710,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     pipPhase,
     isInputFocused,
     inputText.length,
+    hasActiveImages,
     isMultiTurnMode,
     isControlsVisible,
   ]);
@@ -2389,12 +2726,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       return;
     }
 
-    // Preserve active thinking state or a half-typed idle draft in PiP rather than clearing it
-    if (pillMode === "thinking" || inputText.length > 0) {
+    // Preserve active thinking state or a half-typed idle draft / attached images in PiP rather than clearing
+    if (pillMode === "thinking" || inputText.length > 0 || hasActiveImages) {
       const restoreH =
         pillMode === "thinking"
           ? 60
           : Math.max(60, lastIdleReportedHRef.current || 60);
+      setIsIdleTrayOpen(false);
+      setIsPlusTrayOpen(false);
       setIsHovered(false);
       setIsInputFocused(false);
       pillInputRef.current?.blur();
@@ -2415,6 +2754,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     pipPhase,
     pillMode,
     inputText.length,
+    hasActiveImages,
     voiceActive,
     triggerMinimizeToPip,
     onMinimizeToPip,
@@ -2531,9 +2871,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           } ${
             isLensBlurActive ? "lens-blur-active" : ""
           } ${
-            isHovered || isInputFocused || inputText.length > 0 ? "hover-active" : ""
+            isHovered || isInputFocused || inputText.length > 0 || isPlusTrayOpen || hasActiveImages
+              ? "hover-active"
+              : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
-            shouldShowSearchDrawer && pillMode === "idle" ? "search-tray-open" : ""
+            (shouldShowSearchDrawer || isIdleTrayOpen) && pillMode === "idle"
+              ? "search-tray-open"
+              : ""
+          } ${hasActiveImages && pillMode === "idle" ? "idle-has-images" : ""} ${
+            isDragOver && pipPhase === "max" ? "is-drag-over" : ""
           } ${
             isDarkMode ? "dark-mode" : "light-mode"
           } ${pipPhase === "pip" ? "is-pip" : ""} ${
@@ -2562,10 +2908,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               target &&
               (target.classList.contains("siri-floating-close-btn") ||
                 target.classList.contains("siri-command-glass-btn") ||
+                target.classList.contains("siri-plus-morph-surface") ||
+                target.classList.contains("plus-slot-spacer") ||
                 target.classList.contains("siri-command-capsule") ||
                 target.classList.contains("siri-unified-stream"))
             ) {
-              runLensSyncFor(450);
+              runLensSyncFor(520);
             }
           }}
           onMouseEnter={() => {
@@ -2581,7 +2929,71 @@ export const ChatPill: React.FC<ChatPillProps> = ({
             }
           }}
           onMouseLeave={() => setIsHovered(false)}
+          onDragEnter={(e) => {
+            if (pipPhase !== "max" || voiceActive || (pillMode !== "idle" && pillMode !== "responding")) return;
+            if (e.dataTransfer?.types?.includes("Files")) {
+              e.preventDefault();
+              dragDepthRef.current += 1;
+              setIsDragOver(true);
+            }
+          }}
+          onDragOver={(e) => {
+            if (pipPhase !== "max" || voiceActive || (pillMode !== "idle" && pillMode !== "responding")) return;
+            if (e.dataTransfer?.types?.includes("Files")) {
+              e.preventDefault();
+            }
+          }}
+          onDragLeave={() => {
+            dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+            if (dragDepthRef.current === 0) {
+              setIsDragOver(false);
+            }
+          }}
+          onDrop={(e) => {
+            if (pipPhase !== "max" || voiceActive || (pillMode !== "idle" && pillMode !== "responding")) return;
+            e.preventDefault();
+            dragDepthRef.current = 0;
+            setIsDragOver(false);
+            if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+              handleImageFileList(e.dataTransfer.files);
+            }
+          }}
         >
+          {/* Hidden native file picker for Add image */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+            multiple
+            className="siri-hidden-file-input"
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                handleImageFileList(e.target.files);
+              }
+              e.target.value = "";
+            }}
+          />
+
+          {/* Translucent Glass Drop-Zone Halo */}
+          {pipPhase === "max" && (pillMode === "idle" || pillMode === "responding") && (
+            <div className="siri-drop-overlay" aria-hidden="true">
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+              <span className="siri-drop-overlay-label">Drop image to attach</span>
+            </div>
+          )}
           {pipPhase !== "max" && onMaximizeFromPip && (
             <PipSquareEyes
               active={pipPhase === "pip"}
@@ -2599,7 +3011,80 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           {/* 1. IDLE / INPUT STATE */}
           {(pillMode === "idle" || (effectiveEnteringVoice && pillMode !== "responding")) && (
             <>
+              {/* Organic Collapsible Image Thumbnail Strip inside Compact Idle Pill */}
+              {pillMode === "idle" && !effectiveEnteringVoice && (
+                <div className={`siri-idle-images-collapse ${hasActiveImages ? "is-open" : ""}`}>
+                  <div className="siri-idle-images-inner">
+                    <div className="siri-attached-images-strip">
+                      {attachedImages.map((img) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          className={`siri-attached-thumb-chip ${img.entering ? "is-entering" : ""} ${
+                            img.removing ? "is-removing" : ""
+                          }`}
+                          title={`Remove ${img.name}`}
+                          aria-label={`Remove ${img.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeImageOrganically(img.id);
+                          }}
+                        >
+                          <img src={img.dataUrl} alt={img.name} className="siri-attached-thumb-img" />
+                          <span className="siri-attached-thumb-overlay" aria-hidden="true">
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                            >
+                              <path d="M18 6L6 18" />
+                              <path d="M6 6l12 12" />
+                            </svg>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="siri-idle-top-bar">
+                {/* Minimalist Bare + Icon on Left (matches Bare Mic on Right) */}
+                <button
+                  type="button"
+                  className={`siri-idle-plus-btn ${isIdleTrayOpen ? "tray-open" : ""} ${
+                    effectiveEnteringVoice ? "entering-voice" : ""
+                  }`}
+                  title="Add image or toggle Deep Reason"
+                  aria-label="Open actions tray"
+                  aria-expanded={isIdleTrayOpen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDrawerForceOpen(false);
+                    setDrawerSelectedIndex(-1);
+                    setSearchResult(null);
+                    setIsIdleTrayOpen((prev) => !prev);
+                  }}
+                >
+                  <svg
+                    className="siri-idle-plus-svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+
                 <div
                   className={`siri-pill-input-wrap ${
                     effectiveEnteringVoice ? "entering-voice" : ""
@@ -2658,6 +3143,50 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
                 </div>
 
+                {/* Clickable Far-End Deep Reason Brain Toggle (Organic Enter & Exit!) */}
+                <button
+                  type="button"
+                  className={`siri-deep-reason-bar-btn ${deepReason ? "is-active" : ""} ${
+                    effectiveEnteringVoice ? "entering-voice" : ""
+                  }`}
+                  title="Deep Reason (High Effort) — Click to disable"
+                  aria-label="Disable Deep Reason"
+                  tabIndex={deepReason ? 0 : -1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeepReason(false);
+                  }}
+                >
+                  <svg
+                    className="brain-icon-main"
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                  </svg>
+                  <svg
+                    className="brain-icon-close"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6L6 18" />
+                    <path d="M6 6l12 12" />
+                  </svg>
+                </button>
+
                 {/* Minimalist Bare Mic Icon (No background circle, just clean icon) */}
                 <button
                   type="button"
@@ -2668,6 +3197,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   aria-label="Voice input"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setIsIdleTrayOpen(false);
                     toggleVoiceMode(true);
                   }}
                 >
@@ -2692,6 +3222,68 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               {pillMode === "idle" && !effectiveEnteringVoice && (
                 <>
                   <div className="siri-conjoined-divider" aria-hidden="true" />
+                  {/* Conjoined Action Tray inside Compact Idle Pill */}
+                  <div
+                    className={`siri-idle-conjoined-tray ${
+                      isIdleTrayOpen && !shouldShowSearchDrawer ? "is-open" : ""
+                    }`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="siri-idle-conjoined-inner">
+                      <div className="siri-idle-tray-row">
+                        <button
+                          type="button"
+                          className="siri-idle-tray-pill-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsIdleTrayOpen(false);
+                            fileInputRef.current?.click();
+                          }}
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="3" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="M21 15l-5-5L5 21" />
+                          </svg>
+                          <span>Add image</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`siri-idle-tray-pill-btn ${deepReason ? "is-enabled" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeepReason((prev) => !prev);
+                            setIsIdleTrayOpen(false);
+                          }}
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.9"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                          </svg>
+                          <span>Deep Reason</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <ConjoinedSearchTray
                     open={shouldShowSearchDrawer}
                     query={trimmedSearchQuery}
@@ -2874,7 +3466,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 ref={streamContainerRef}
                 className="siri-unified-stream"
                 style={{
-                  ...(isControlsVisible && followupExtraH > 0 ? { paddingBottom: `${76 + followupExtraH}px` } : {}),
+                  ...(isControlsVisible && (followupExtraH > 0 || hasActiveImages)
+                    ? { paddingBottom: `${76 + followupExtraH + (hasActiveImages ? 56 : 0)}px` }
+                    : {}),
                   "--stage-min-h": `${stageMinH}px`,
                 } as React.CSSProperties}
                 onScroll={updateScrollMask}
@@ -2883,24 +3477,60 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   const isActiveTurnStage =
                     activeTurns.length > 1 &&
                     turnIdx === activeTurns.length - 1 &&
-                    !followupThinkingPrompt;
+                    !hasFollowupPending;
+                  const hasTurnImages = Boolean(turn.userImages && turn.userImages.length > 0);
                   return (
                   <div
                     key={turn.id}
                     className={`siri-turn-item ${isActiveTurnStage ? "active-turn-stage" : ""}`}
                   >
-                    {/* Turn 2+ user prompt bubble (Turn 1 has userPrompt === null, so zero bubble!) */}
-                    {turn.userPrompt && (
+                    {/* Turn 2+ user prompt bubble & attached user images */}
+                    {(turn.userPrompt || hasTurnImages) && (
                       <div className="siri-user-followup-wrap">
-                        <div className="siri-user-followup-bubble">
-                          <span className="siri-bubble-label">{turn.userPrompt}</span>
-                        </div>
+                        {hasTurnImages && (
+                          <div className="siri-user-bubble-images">
+                            {turn.userImages!.map((img, imgIdx) => (
+                              <img
+                                key={`${turn.id}-uimg-${imgIdx}`}
+                                src={img.dataUrl}
+                                alt={img.name || "Attached image"}
+                                title={img.name || "Attached image"}
+                                className="siri-user-bubble-img"
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {turn.userPrompt && (
+                          <div className="siri-user-followup-bubble">
+                            <span className="siri-bubble-label">{turn.userPrompt}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Assistant Reply for this turn */}
                     {turn.assistantReply && (
                       <div className="siri-assistant-reply">
+                        {turn.reasoningEffort === "high" && (
+                          <div className="siri-deep-reason-reply-chip" title="Answered with Deep Reason (High Effort)">
+                            <svg
+                              width="11"
+                              height="11"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.1"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                              <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                              <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                            </svg>
+                            <span>Deep Reason</span>
+                          </div>
+                        )}
                         {parseMessageWithGalleries(turn.assistantReply, Boolean(turn.isStreaming)).map((part, idx) => {
                           if (part.type === "text") {
                             return (
@@ -3209,15 +3839,29 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </div>
                 )}
 
-                {/* In-Flight Follow-up Prompt Bubble + Constellation Spinner (Shown while Turn 2+ is thinking) */}
-                {followupThinkingPrompt && (
+                {/* In-Flight Follow-up Prompt Bubble / Attached Images + Constellation Spinner */}
+                {hasFollowupPending && (
                   <div className="siri-turn-item pending-turn">
                     <div ref={pendingWrapRef} className="siri-user-followup-wrap">
-                      <div ref={pendingBubbleRef} className="siri-user-followup-bubble bubble-awaiting">
-                        <span ref={pendingLabelRef} className="siri-bubble-label">
-                          {followupThinkingPrompt}
-                        </span>
-                      </div>
+                      {followupThinkingImages && followupThinkingImages.length > 0 && (
+                        <div className="siri-user-bubble-images">
+                          {followupThinkingImages.map((img, imgIdx) => (
+                            <img
+                              key={`pending-img-${imgIdx}`}
+                              src={img.dataUrl}
+                              alt={img.name || "Attached image"}
+                              className="siri-user-bubble-img"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {followupThinkingPrompt && (
+                        <div ref={pendingBubbleRef} className="siri-user-followup-bubble bubble-awaiting">
+                          <span ref={pendingLabelRef} className="siri-bubble-label">
+                            {followupThinkingPrompt}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div ref={pendingStatusRef} className="siri-instream-thinking status-awaiting">
                       <div className="siri-icon-morph-anchor">
@@ -3295,100 +3939,266 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                 ref={followupBarRef}
                 className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
               >
-                <div className="siri-apple-command-bar">
-                  {/* Left: Circular Frosted Glass Plus Button */}
-                  <button
-                    ref={plusBtnRef}
-                    type="button"
-                    className="siri-command-glass-btn plus-btn"
-                    title="Add attachment or action"
-                    aria-label="Add"
-                    tabIndex={isControlsVisible ? 0 : -1}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  </button>
+                <div className={`siri-apple-command-bar ${isPlusTrayOpen ? "tray-open" : ""}`}>
+                  {/* Animated spacer reserving [+] slot; collapses smoothly to 0px so Ask Aiden stretches left */}
+                  <div className="plus-slot-spacer" aria-hidden="true" />
 
-                  {/* Center: Frosted Capsule Input with "Ask Aiden" placeholder */}
+                  {/* Single Continuous Liquid-Glass Surface: circular [+] button that lifts & morphs into frosted arch-shine tray */}
+                  <div
+                    ref={plusBtnRef}
+                    className={`siri-plus-morph-surface ${isPlusTrayOpen ? "is-open" : ""}`}
+                    role="button"
+                    title={isPlusTrayOpen ? undefined : "Add image or toggle Deep Reason"}
+                    aria-label="Open actions tray"
+                    aria-expanded={isPlusTrayOpen}
+                    tabIndex={isControlsVisible ? 0 : -1}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isPlusTrayOpen) {
+                        setIsPlusTrayOpen(true);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if ((e.key === "Enter" || e.key === " ") && !isPlusTrayOpen) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsPlusTrayOpen(true);
+                      }
+                    }}
+                  >
+                    <div className="morph-plus-glyph" aria-hidden="true">
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </div>
+
+                    <div className="morph-tray-content" role="menu">
+                      <button
+                        type="button"
+                        className="siri-tray-action-item"
+                        role="menuitem"
+                        tabIndex={isPlusTrayOpen ? 0 : -1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsPlusTrayOpen(false);
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        <span className="siri-tray-item-left">
+                          <svg
+                            className="siri-tray-item-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="3" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="M21 15l-5-5L5 21" />
+                          </svg>
+                          <span>Add image</span>
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`siri-tray-action-item ${deepReason ? "is-enabled" : ""}`}
+                        role="menuitemcheckbox"
+                        aria-checked={deepReason}
+                        tabIndex={isPlusTrayOpen ? 0 : -1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeepReason((prev) => !prev);
+                          setIsPlusTrayOpen(false);
+                        }}
+                      >
+                        <span className="siri-tray-item-left">
+                          <svg
+                            className="siri-tray-item-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.9"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                          </svg>
+                          <span>Deep Reason</span>
+                        </span>
+                        <span className="siri-tray-status-pill">ON</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Center: Frosted Capsule Input with Organic Image Strip + "Ask Aiden" + Brain Toggle */}
                   <div
                     ref={capsuleRef}
-                    className={`siri-command-capsule ${
+                    className={`siri-command-capsule ${hasActiveImages ? "has-images" : ""} ${
                       isProactiveAnnouncementActive ? "announcement-locked" : ""
                     } ${announcementBlockPulse ? "announcement-pulse" : ""}`}
                   >
-                    <div className="siri-input-track">
-                      <div
-                        ref={followupMirrorRef}
-                        className="siri-cursor-mirror followup-mirror"
-                        aria-hidden="true"
-                      >
-                        {cursorPrefix}
-                        <span ref={followupMarkerRef} className="siri-caret-marker">
-                          &#8288;
-                        </span>
-                        {cursorSuffix}
+                    <div className={`siri-attached-strip-collapse ${hasActiveImages ? "is-open" : ""}`}>
+                      <div className="siri-attached-strip-collapse-inner">
+                        <div className="siri-attached-images-strip">
+                          {attachedImages.map((img) => (
+                            <button
+                              key={img.id}
+                              type="button"
+                              className={`siri-attached-thumb-chip ${img.entering ? "is-entering" : ""} ${
+                                img.removing ? "is-removing" : ""
+                              }`}
+                              title={`Remove ${img.name}`}
+                              aria-label={`Remove ${img.name}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeImageOrganically(img.id);
+                              }}
+                            >
+                              <img src={img.dataUrl} alt={img.name} className="siri-attached-thumb-img" />
+                              <span className="siri-attached-thumb-overlay" aria-hidden="true">
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                >
+                                  <path d="M18 6L6 18" />
+                                  <path d="M6 6l12 12" />
+                                </svg>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      {isInputFocused && !hasTextSelection && caretPos.visible && (
-                        <span
-                          className="siri-shining-cursor followup-cursor"
-                          style={{
-                            transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
-                          }}
+                    </div>
+
+                    <div className="siri-capsule-input-row">
+                      <div className="siri-input-track">
+                        <div
+                          ref={followupMirrorRef}
+                          className="siri-cursor-mirror followup-mirror"
                           aria-hidden="true"
-                        />
-                      )}
-                      <textarea
-                        ref={followupInputRef}
-                        rows={1}
-                        className="siri-command-input"
-                        placeholder={
-                          isProactiveAnnouncementActive
-                            ? "AIDEN is reporting a finished task..."
-                            : "Ask Aiden"
-                        }
-                        value={inputText}
-                        onChange={(e) => {
-                          setInputText(e.target.value);
-                          updateSelection(e.target);
-                          adjustTextareaHeight(e.target);
-                        }}
-                        onFocus={(e) => {
-                          setIsInputFocused(true);
-                          updateSelection(e.currentTarget);
-                        }}
-                        onBlur={() => setIsInputFocused(false)}
-                        onSelect={(e) => updateSelection(e.currentTarget)}
-                        onKeyUp={(e) => updateSelection(e.currentTarget)}
-                        onClick={(e) => updateSelection(e.currentTarget)}
-                        onScroll={() => measureActiveCaret()}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            handleSend();
-                            return;
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            sleepUi();
-                            return;
+                        >
+                          {cursorPrefix}
+                          <span ref={followupMarkerRef} className="siri-caret-marker">
+                            &#8288;
+                          </span>
+                          {cursorSuffix}
+                        </div>
+                        {isInputFocused && !hasTextSelection && caretPos.visible && (
+                          <span
+                            className="siri-shining-cursor followup-cursor"
+                            style={{
+                              transform: `translate3d(${caretPos.left}px, ${caretPos.top}px, 0)`,
+                            }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <textarea
+                          ref={followupInputRef}
+                          rows={1}
+                          className="siri-command-input"
+                          placeholder={
+                            isProactiveAnnouncementActive
+                              ? "AIDEN is reporting a finished task..."
+                              : "Ask Aiden"
                           }
-                          const target = e.currentTarget;
-                          window.requestAnimationFrame(() => updateSelection(target));
+                          value={inputText}
+                          onChange={(e) => {
+                            setInputText(e.target.value);
+                            updateSelection(e.target);
+                            adjustTextareaHeight(e.target);
+                          }}
+                          onFocus={(e) => {
+                            setIsInputFocused(true);
+                            updateSelection(e.currentTarget);
+                          }}
+                          onBlur={() => setIsInputFocused(false)}
+                          onSelect={(e) => updateSelection(e.currentTarget)}
+                          onKeyUp={(e) => updateSelection(e.currentTarget)}
+                          onClick={(e) => updateSelection(e.currentTarget)}
+                          onScroll={() => measureActiveCaret()}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                              e.preventDefault();
+                              handleSend();
+                              return;
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (isPlusTrayOpen) {
+                                setIsPlusTrayOpen(false);
+                              } else {
+                                sleepUi();
+                              }
+                              return;
+                            }
+                            const target = e.currentTarget;
+                            window.requestAnimationFrame(() => updateSelection(target));
+                          }}
+                          spellCheck={false}
+                        />
+                      </div>
+
+                      {/* Far-Right Clickable Monochrome Deep Reason Brain Icon (Organic Enter & Exit!) */}
+                      <button
+                        type="button"
+                        className={`siri-deep-reason-bar-btn ${deepReason ? "is-active" : ""}`}
+                        title="Deep Reason (High Effort) — Click to disable"
+                        aria-label="Disable Deep Reason"
+                        tabIndex={deepReason && isControlsVisible ? 0 : -1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeepReason(false);
                         }}
-                        spellCheck={false}
-                      />
+                      >
+                        <svg
+                          className="brain-icon-main"
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                          <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                          <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                        </svg>
+                        <svg
+                          className="brain-icon-close"
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                        >
+                          <path d="M18 6L6 18" />
+                          <path d="M6 6l12 12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
 
@@ -3402,6 +4212,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     tabIndex={isControlsVisible ? 0 : -1}
                     onClick={(e) => {
                       e.stopPropagation();
+                      setIsPlusTrayOpen(false);
                       toggleVoiceMode(true);
                     }}
                   >
@@ -3458,6 +4269,9 @@ export const ChatPillWindow: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [followupThinkingPrompt, setFollowupThinkingPrompt] = useState<string | null>(null);
+  const [followupThinkingImages, setFollowupThinkingImages] = useState<
+    Array<{ name: string; dataUrl: string }> | null
+  >(null);
   const [activeUiTag, setActiveUiTag] = useState<string | null>(null);
   const [activeConnector, setActiveConnector] = useState<string | null>(null);
   const currentTurnConnectorsRef = useRef<Set<string>>(new Set());
@@ -3492,7 +4306,10 @@ export const ChatPillWindow: React.FC = () => {
     }
 
     setIsVoiceActive((prev) => {
-      const isResponding = turnsRef.current.length > 0 || Boolean(followupThinkingPromptRef.current);
+      const isResponding =
+        turnsRef.current.length > 0 ||
+        Boolean(followupThinkingPromptRef.current) ||
+        Boolean(followupThinkingImagesRef.current && followupThinkingImagesRef.current.length > 0);
       if (isResponding) {
         return active;
       }
@@ -3578,6 +4395,8 @@ export const ChatPillWindow: React.FC = () => {
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
   const followupThinkingPromptRef = useRef<string | null>(null);
+  const followupThinkingImagesRef = useRef<Array<{ name: string; dataUrl: string }> | null>(null);
+  const pendingTurnEffortRef = useRef<"none" | "high">("none");
   const currentTurnIdRef = useRef<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -3628,6 +4447,9 @@ export const ChatPillWindow: React.FC = () => {
     currentTurnIdRef.current = null;
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
+    followupThinkingImagesRef.current = null;
+    setFollowupThinkingImages(null);
+    pendingTurnEffortRef.current = "none";
     stopPolishShuffle();
     if (polishTimerRef.current !== null) {
       window.clearTimeout(polishTimerRef.current);
@@ -3657,7 +4479,13 @@ export const ChatPillWindow: React.FC = () => {
     }
   };
 
-  function enterTurnPending(prompt: string | null, isFollowup: boolean, resetTimers = true) {
+  function enterTurnPending(
+    prompt: string | null,
+    isFollowup: boolean,
+    resetTimers = true,
+    images?: Array<{ name: string; dataUrl: string }>,
+    effort: "none" | "high" = "none"
+  ) {
     if (resetTimers) {
       stopPolishShuffle();
       if (polishTimerRef.current !== null) {
@@ -3666,18 +4494,35 @@ export const ChatPillWindow: React.FC = () => {
       }
       polishStartTimeRef.current = 0;
     }
-    setActiveUiTag("Thinking");
+    const cleanImgs = images && images.length > 0 ? images : null;
+    pendingTurnEffortRef.current = effort;
+    setActiveUiTag(
+      effort === "high"
+        ? "Deep Reasoning"
+        : cleanImgs
+        ? cleanImgs.length === 1
+          ? "Inspecting image"
+          : `Inspecting ${cleanImgs.length} images`
+        : "Thinking"
+    );
     if (isFollowup) {
       if (prompt !== null) {
         followupThinkingPromptRef.current = prompt;
         setFollowupThinkingPrompt(prompt);
+      } else {
+        followupThinkingPromptRef.current = null;
+        setFollowupThinkingPrompt(null);
       }
+      followupThinkingImagesRef.current = cleanImgs;
+      setFollowupThinkingImages(cleanImgs);
       setIsMaxHeight(true);
     } else {
       turnsRef.current = [];
       setTurns([]);
       followupThinkingPromptRef.current = null;
       setFollowupThinkingPrompt(null);
+      followupThinkingImagesRef.current = cleanImgs;
+      setFollowupThinkingImages(null);
       setIsMaxHeight(false);
     }
   }
@@ -3685,6 +4530,9 @@ export const ChatPillWindow: React.FC = () => {
   function finalizeChatTurn(turn: ChatTurn, appendToExisting: boolean, nextUiTag: string | null) {
     followupThinkingPromptRef.current = null;
     setFollowupThinkingPrompt(null);
+    followupThinkingImagesRef.current = null;
+    setFollowupThinkingImages(null);
+    pendingTurnEffortRef.current = "none";
     setActiveUiTag(nextUiTag);
     const nextTurns = appendToExisting ? [...turnsRef.current, turn] : [turn];
     turnsRef.current = nextTurns;
@@ -3692,8 +4540,16 @@ export const ChatPillWindow: React.FC = () => {
   }
 
   const hasReplyText =
-    turns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt)) ||
+    turns.some(
+      (t) =>
+        Boolean(
+          (t.assistantReply && t.assistantReply.trim().length > 0) ||
+            t.userPrompt ||
+            (t.userImages && t.userImages.length > 0)
+        )
+    ) ||
     Boolean(followupThinkingPrompt) ||
+    Boolean(followupThinkingImages && followupThinkingImages.length > 0) ||
     Boolean(agyWorkJob && !agyWorkJob.cardDismissed && agyWorkJob.status === "running");
   const isThinking = Boolean(!hasReplyText && activeUiTag);
   const currentMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
@@ -4232,7 +5088,15 @@ export const ChatPillWindow: React.FC = () => {
               const newTurnId = "turn-" + Date.now();
               currentTurnIdRef.current = newTurnId;
               const pendingPrompt = followupThinkingPromptRef.current;
-              const appendToExisting = Boolean(pendingPrompt) || turnsRef.current.length > 0;
+              const pendingImages = followupThinkingImagesRef.current;
+              const turnEffort: "none" | "high" =
+                data.reasoningEffort === "high" || pendingTurnEffortRef.current === "high"
+                  ? "high"
+                  : "none";
+              const appendToExisting =
+                Boolean(pendingPrompt) ||
+                Boolean(pendingImages && pendingImages.length > 0 && turnsRef.current.length > 0) ||
+                turnsRef.current.length > 0;
               const proactiveKind = typeof data.proactiveKind === "string" ? data.proactiveKind : null;
               const anchorPendingJobId = pendingAgyAnchorJobIdRef.current;
               if (anchorPendingJobId) {
@@ -4242,6 +5106,8 @@ export const ChatPillWindow: React.FC = () => {
               const newTurn: ChatTurn = {
                 id: newTurnId,
                 userPrompt: pendingPrompt,
+                userImages: pendingImages && pendingImages.length > 0 ? pendingImages : undefined,
+                reasoningEffort: turnEffort,
                 assistantReply: finalContent,
                 isStreaming: false,
                 connectors: turnConnectorsList.length > 0 ? turnConnectorsList : undefined,
@@ -4363,6 +5229,7 @@ export const ChatPillWindow: React.FC = () => {
               setProactiveTurnKind(null);
               const errText = String(data.message || "An unexpected error occurred.");
               const pendingPrompt = followupThinkingPromptRef.current;
+              const pendingImages = followupThinkingImagesRef.current;
 
               const errorTurnId = "error-" + Date.now();
               currentTurnIdRef.current = null;
@@ -4370,6 +5237,7 @@ export const ChatPillWindow: React.FC = () => {
                 {
                   id: errorTurnId,
                   userPrompt: pendingPrompt,
+                  userImages: pendingImages && pendingImages.length > 0 ? pendingImages : undefined,
                   assistantReply: errText,
                   isStreaming: false,
                 },
@@ -4426,7 +5294,11 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, [clearOfflineGraceTimer]);
 
-  const handleSendMessage = (msg: string, _isFollowup?: boolean) => {
+  const handleSendMessage = (
+    msg: string,
+    _isFollowup?: boolean,
+    options?: SendMessageOptions
+  ) => {
     stopStreamRaf();
     setIsVoiceActive(false);
     currentTurnConnectorsRef.current.clear();
@@ -4448,13 +5320,19 @@ export const ChatPillWindow: React.FC = () => {
     setIsStreaming(false);
 
     const isFollowup = Boolean(_isFollowup || turnsRef.current.length > 0);
-    enterTurnPending(isFollowup ? msg : null, isFollowup, true);
+    const images = options?.images && options.images.length > 0 ? options.images : undefined;
+    const reasoningEffort: "none" | "high" = options?.reasoningEffort === "high" ? "high" : "none";
+    const promptForBubble = isFollowup && msg.trim().length > 0 ? msg : null;
+
+    enterTurnPending(promptForBubble, isFollowup, true, images, reasoningEffort);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           type: "command",
           text: msg,
+          images: images || [],
+          reasoningEffort,
         })
       );
     } else {
@@ -4462,7 +5340,9 @@ export const ChatPillWindow: React.FC = () => {
       finalizeChatTurn(
         {
           id: "offline-" + Date.now(),
-          userPrompt: isFollowup ? msg : null,
+          userPrompt: promptForBubble,
+          userImages: images,
+          reasoningEffort,
           assistantReply: offlineMsg,
           isStreaming: false,
         },
@@ -4532,6 +5412,7 @@ export const ChatPillWindow: React.FC = () => {
         isMaxHeight={isMaxHeight}
         turns={turns}
         followupThinkingPrompt={followupThinkingPrompt}
+        followupThinkingImages={followupThinkingImages}
         activeUiTag={activeUiTag}
         activeConnector={activeConnector}
         isStreaming={isStreaming}

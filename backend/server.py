@@ -23,8 +23,8 @@ _connected_clients: Set[Any] = set()
 _server_loop: Optional[asyncio.AbstractEventLoop] = None
 _ws_server: Optional[Any] = None
 
-# Thread-safe command queue from UI -> main.py
-ui_command_queue: "queue.Queue[str]" = queue.Queue()
+# Thread-safe command queue from UI -> main.py (str or structured dict with text/images/reasoning_effort)
+ui_command_queue: "queue.Queue[Any]" = queue.Queue()
 
 # UI surface visibility state (tracks whether chat_pill is minimized to 68x68 Living Cube)
 _ui_surface_lock = threading.Lock()
@@ -140,7 +140,7 @@ def clear_transient_system_turns_on_sleep() -> None:
         ]
 
 
-def get_pending_ui_command() -> Optional[str]:
+def get_pending_ui_command() -> Optional[Any]:
     """Non-blocking pop of the next user command sent from the Chat Pill UI."""
     try:
         return ui_command_queue.get_nowait()
@@ -350,6 +350,7 @@ async def broadcast_stream_end(
     connectors: Optional[list] = None,
     target_height: Optional[float] = None,
     proactive_kind: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     """Marks completion of the streamed assistant reply."""
     calc_h = target_height if target_height is not None else estimate_response_height(full_content, connectors)
@@ -362,6 +363,8 @@ async def broadcast_stream_end(
         payload["connectors"] = connectors
     if proactive_kind:
         payload["proactiveKind"] = proactive_kind
+    if reasoning_effort and reasoning_effort != "none":
+        payload["reasoningEffort"] = reasoning_effort
     await broadcast_event_async(payload)
 
 
@@ -400,9 +403,31 @@ async def handle_connection(websocket: Any):
 
             if msg_type == "command":
                 text = str(data.get("text", "")).strip()
-                if text:
-                    print(f"💬 [WS BRIDGE] Command received from Chat UI: {text}")
-                    ui_command_queue.put(text)
+                raw_images = data.get("images")
+                clean_images = []
+                if isinstance(raw_images, list):
+                    for item in raw_images[:4]:
+                        if isinstance(item, dict):
+                            durl = str(item.get("dataUrl") or item.get("data_url") or "").strip()
+                            if durl.startswith("data:image/"):
+                                clean_images.append({
+                                    "dataUrl": durl,
+                                    "name": str(item.get("name") or "image")[:80],
+                                })
+                raw_effort = str(data.get("reasoningEffort") or "none").strip().lower()
+                reasoning_effort = "high" if raw_effort == "high" else "none"
+
+                if text or clean_images:
+                    print(
+                        f"💬 [WS BRIDGE] Command received from Chat UI: "
+                        f"{text[:80] if text else '[image-only]'} "
+                        f"(images={len(clean_images)}, reasoning={reasoning_effort})"
+                    )
+                    ui_command_queue.put({
+                        "text": text,
+                        "images": clean_images,
+                        "reasoning_effort": reasoning_effort,
+                    })
                     if not _current_state["isAwake"] and _wake_event is not None:
                         _wake_event.set()
 
@@ -604,7 +629,12 @@ async def start_ws_server(host: str = "127.0.0.1", port: int = 8765):
         on_recording=_on_voice_recording,
         loop=_server_loop,
     )
-    _ws_server = await websockets.serve(handle_connection, host, port)
+    _ws_server = await websockets.serve(
+        handle_connection,
+        host,
+        port,
+        max_size=16 * 1024 * 1024,
+    )
     print(f"🌐 [WS BRIDGE] Listening for UI connections on ws://{host}:{port}")
     return _ws_server
 

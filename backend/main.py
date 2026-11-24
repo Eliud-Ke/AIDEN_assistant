@@ -316,6 +316,37 @@ def _strip_images_from_tool_output(raw_out):
     return content_str
 
 
+def _strip_images_from_user_message(msg: dict) -> dict:
+    """Replaces Base64 input_image blocks in a stored user message with a lean text placeholder."""
+    if not isinstance(msg, dict):
+        return msg
+    names = msg.pop("_image_names", None)
+    content = msg.get("content")
+    if msg.get("role") == "user" and isinstance(content, list):
+        text_parts = [
+            str(item.get("text", "")).strip()
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "input_text" and item.get("text")
+        ]
+        img_count = sum(
+            1 for item in content if isinstance(item, dict) and item.get("type") == "input_image"
+        )
+        base_text = "\n\n".join(text_parts).strip()
+        if img_count > 0:
+            name_note = ""
+            if isinstance(names, list) and names:
+                clean_names = ", ".join(str(n) for n in names[:4])
+                name_note = f" ({clean_names})"
+            trim_note = (
+                f"[User attached {img_count} image(s){name_note} - "
+                f"image pixels trimmed from short-term memory after inspection to save tokens]"
+            )
+            msg["content"] = f"{base_text}\n\n{trim_note}" if base_text else trim_note
+        else:
+            msg["content"] = base_text
+    return msg
+
+
 # ---------------------------------------------------------
 # 3. MAIN CORE LOGIC (HEADLESS TERMINAL & UI BRIDGE LOOP)
 # ---------------------------------------------------------
@@ -357,8 +388,14 @@ async def async_input(prompt: str, sleep_event: threading.Event, stop_event: thr
         # 2. Check WebSocket UI command queue
         ui_cmd = server.get_pending_ui_command()
         if ui_cmd is not None:
+            if isinstance(ui_cmd, dict):
+                txt = str(ui_cmd.get("text") or "")
+                imgs = ui_cmd.get("images") or []
+                eff = "high" if str(ui_cmd.get("reasoning_effort") or "none").lower() == "high" else "none"
+                print(f"{txt or '[image-only]'} (images={len(imgs)}, reasoning={eff})")
+                return {"source": "user", "text": txt, "images": imgs, "reasoning_effort": eff}
             print(ui_cmd)
-            return {"source": "user", "text": ui_cmd}
+            return {"source": "user", "text": str(ui_cmd), "images": [], "reasoning_effort": "none"}
 
         # 3. Check interactive terminal input if attached to a console
         if IS_INTERACTIVE_TTY and msvcrt and msvcrt.kbhit():
@@ -529,16 +566,31 @@ async def main_loop():
             proactive_kind = raw_command.get("kind") if is_system_turn else None
             proactive_job_id = str(raw_command.get("job_id") or "") if is_system_turn else ""
             proactive_ui_tag = str(raw_command.get("ui_tag") or "") if is_system_turn else ""
+            user_images = (
+                []
+                if is_system_turn
+                else (raw_command.get("images") if isinstance(raw_command, dict) else []) or []
+            )
+            reasoning_effort = (
+                "none"
+                if is_system_turn
+                else (
+                    "high"
+                    if isinstance(raw_command, dict)
+                    and str(raw_command.get("reasoning_effort") or "none").lower() == "high"
+                    else "none"
+                )
+            )
             raw_text = (
                 str(raw_command.get("prompt") or "")
                 if is_system_turn
                 else str(raw_command.get("text") if isinstance(raw_command, dict) else raw_command)
             )
             clean_command = raw_text.strip()
-            if not clean_command:
+            if not clean_command and not user_images:
                 continue
 
-            command = clean_command
+            command = clean_command or "Please inspect the attached image(s) and help me with what is shown."
 
             if is_system_turn and proactive_kind == "agy_done" and proactive_job_id:
                 try:
@@ -554,7 +606,7 @@ async def main_loop():
                 brain_client = AsyncOpenAI(api_key=SECURE_API_KEY)
 
             # --- STANDARD AI PROCESSING ---
-            print(f"\n☁️ [OPENAI CLOUD] THINKING...")
+            print(f"\n☁️ [OPENAI CLOUD] THINKING... (effort={reasoning_effort}, images={len(user_images)})")
             active_turn_connectors.clear()
             if is_system_turn:
                 if proactive_kind == "agy_done":
@@ -568,6 +620,12 @@ async def main_loop():
                 await server.broadcast_ui_tag_async(
                     proactive_ui_tag or "Thinking",
                     connector="antigravity_work",
+                )
+            elif reasoning_effort == "high":
+                await server.broadcast_ui_tag_async("Deep Reasoning")
+            elif user_images:
+                await server.broadcast_ui_tag_async(
+                    "Inspecting images" if len(user_images) > 1 else "Inspecting image"
                 )
             else:
                 await server.broadcast_ui_tag_async("Thinking")
@@ -602,7 +660,27 @@ async def main_loop():
                 else:
                     parts.append(f"[USER REQUEST]\n{command}")
                 user_payload = "\n\n".join(parts)
-                new_user_msg = {"role": "user", "content": user_payload}
+
+                if user_images:
+                    img_detail = "high" if len(user_images) <= 2 else "auto"
+                    content_blocks = [{"type": "input_text", "text": user_payload}]
+                    image_names = []
+                    for img in user_images[:4]:
+                        durl = str(img.get("dataUrl") or "").strip()
+                        if durl.startswith("data:image/"):
+                            content_blocks.append({
+                                "type": "input_image",
+                                "image_url": durl,
+                                "detail": img_detail,
+                            })
+                            image_names.append(str(img.get("name") or "image"))
+                    new_user_msg = {
+                        "role": "user",
+                        "content": content_blocks,
+                        "_image_names": image_names,
+                    }
+                else:
+                    new_user_msg = {"role": "user", "content": user_payload}
                 messages.append(new_user_msg)
 
                 # 4. THE SMART TRIMMER MARKER
@@ -619,7 +697,7 @@ async def main_loop():
                         break
 
                     current_turn += 1
-                    print(f"\n🧠 [BRAIN] Thinking (Turn {current_turn})...")
+                    print(f"\n🧠 [BRAIN] Thinking (Turn {current_turn}, effort={reasoning_effort})...")
 
                     # ⚡ THE DYNAMIC MCP CONNECTOR MOUNTING ⚡
                     current_turn_tools = []
@@ -634,18 +712,20 @@ async def main_loop():
                         current_turn_tools = to_responses_tools(raw_tools)
 
                     # Construct stateful or initial Responses API payload
+                    # Note: OpenAI Responses API forbids `temperature` when reasoning.effort != "none".
                     if current_turn == 1 or not last_response_id:
                         active_input = [
-                            {k: v for k, v in m.items() if k != "_tool_name"}
+                            {k: v for k, v in m.items() if k not in ("_tool_name", "_image_names")}
                             for m in messages
                         ]
                         api_kwargs = {
                             "model": "gpt-5.6-luna",
                             "input": active_input,
                             "stream": True,
-                            "temperature": 0.8,
-                            "reasoning": {"effort": "none"},
+                            "reasoning": {"effort": reasoning_effort},
                         }
+                        if reasoning_effort == "none":
+                            api_kwargs["temperature"] = 0.8
                         if current_turn_tools:
                             api_kwargs["tools"] = current_turn_tools
                     else:
@@ -662,9 +742,10 @@ async def main_loop():
                             "previous_response_id": last_response_id,
                             "input": active_input,
                             "stream": True,
-                            "temperature": 0.8,
-                            "reasoning": {"effort": "none"},
+                            "reasoning": {"effort": reasoning_effort},
                         }
+                        if reasoning_effort == "none":
+                            api_kwargs["temperature"] = 0.8
                         if current_turn_tools:
                             api_kwargs["tools"] = current_turn_tools
 
@@ -868,6 +949,7 @@ async def main_loop():
                             full_ai_msg,
                             connectors=sorted(list(active_turn_connectors)),
                             proactive_kind=proactive_kind,
+                            reasoning_effort=reasoning_effort,
                         )
 
                         # 1. Append final text to active messages sequence
@@ -875,8 +957,9 @@ async def main_loop():
                             {"role": "assistant", "content": full_ai_msg})
 
                         # 2. Append to Legacy Memory and Session Tracker
+                        img_tag = f" [+{len(user_images)} image(s)]" if user_images else ""
                         history_user_label = (
-                            f"[System: {proactive_kind}]" if is_system_turn else command
+                            f"[System: {proactive_kind}]" if is_system_turn else f"{command}{img_tag}"
                         )
                         chat_history.append(
                             {"user": history_user_label, "aiden": full_ai_msg})
@@ -887,12 +970,14 @@ async def main_loop():
 
                         # ⚡ 3. THE SMART TRIMMER: Process this turn into Working Memory ⚡
                         # Preserve exact tool output strings in working_memory so OpenAI's
-                        # prefix KV cache remains 100% intact across turns (only strip Base64 images).
+                        # prefix KV cache remains 100% intact across turns (strip Base64 images from both tool & user turns).
                         new_turn_messages = messages[turn_start_index:]
                         for msg in new_turn_messages:
                             if msg.get("type") == "function_call_output":
                                 msg.pop("_tool_name", None)
                                 msg["output"] = _strip_images_from_tool_output(msg.get("output", ""))
+                            elif msg.get("role") == "user":
+                                _strip_images_from_user_message(msg)
 
                             working_memory.append(msg)
 

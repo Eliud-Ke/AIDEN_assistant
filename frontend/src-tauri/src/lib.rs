@@ -17,6 +17,7 @@ mod native_window;
 mod search_index;
 mod win_hotkey;
 
+use base64::Engine as _;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -2853,6 +2854,112 @@ fn show_main_window(app: AppHandle) {
     }
 }
 
+#[derive(serde::Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DroppedImagePayload {
+    name: String,
+    data_url: String,
+}
+
+fn image_mime_for_extension(ext: &str) -> Option<&'static str> {
+    match ext.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        "bmp" => Some("image/bmp"),
+        _ => None,
+    }
+}
+
+fn read_dropped_images_from_paths(paths: &[String]) -> Vec<DroppedImagePayload> {
+    const MAX_FILES: usize = 4;
+    const MAX_BYTES: u64 = 20 * 1024 * 1024;
+
+    let mut out = Vec::new();
+    for raw in paths {
+        if out.len() >= MAX_FILES {
+            break;
+        }
+        let path = PathBuf::from(raw);
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        let Some(mime) = image_mime_for_extension(ext) else {
+            continue;
+        };
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_BYTES {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("image")
+            .to_string();
+        out.push(DroppedImagePayload {
+            name,
+            data_url: format!("data:{};base64,{}", mime, encoded),
+        });
+    }
+    out
+}
+
+#[tauri::command]
+async fn read_dropped_images(paths: Vec<String>) -> Result<Vec<DroppedImagePayload>, String> {
+    tauri::async_runtime::spawn_blocking(move || read_dropped_images_from_paths(&paths))
+        .await
+        .map_err(|e| format!("Failed to read dropped images: {}", e))
+}
+
+#[cfg(test)]
+mod dropped_image_tests {
+    use super::*;
+
+    #[test]
+    fn mime_filter_accepts_images_and_rejects_other_files() {
+        assert_eq!(image_mime_for_extension("PNG"), Some("image/png"));
+        assert_eq!(image_mime_for_extension("jpg"), Some("image/jpeg"));
+        assert_eq!(image_mime_for_extension("jpeg"), Some("image/jpeg"));
+        assert_eq!(image_mime_for_extension("webp"), Some("image/webp"));
+        assert_eq!(image_mime_for_extension("gif"), Some("image/gif"));
+        assert_eq!(image_mime_for_extension("exe"), None);
+        assert_eq!(image_mime_for_extension("txt"), None);
+    }
+
+    #[test]
+    fn read_dropped_images_encodes_valid_image_and_skips_non_image() {
+        let dir = std::env::temp_dir().join(format!(
+            "aiden_drop_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let img_path = dir.join("sample.png");
+        let txt_path = dir.join("notes.txt");
+        let _ = std::fs::write(&img_path, b"\x89PNG\r\n\x1a\nfake");
+        let _ = std::fs::write(&txt_path, b"hello");
+
+        let res = read_dropped_images_from_paths(&[
+            txt_path.to_string_lossy().to_string(),
+            img_path.to_string_lossy().to_string(),
+        ]);
+
+        let _ = std::fs::remove_file(&img_path);
+        let _ = std::fs::remove_file(&txt_path);
+        let _ = std::fs::remove_dir(&dir);
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "sample.png");
+        assert!(res[0].data_url.starts_with("data:image/png;base64,"));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -3150,7 +3257,8 @@ pub fn run() {
             shutdown_aiden,
             restart_aiden,
             get_aiden_status,
-            get_windows_accent_color
+            get_windows_accent_color,
+            read_dropped_images
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
