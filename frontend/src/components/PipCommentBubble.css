@@ -377,6 +377,26 @@
   color: #059669;
 }
 
+@keyframes pipWorkGearSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pip-glyph-work-gear-svg {
+  width: 16px;
+  height: 16px;
+  color: #cbd5e1;
+  animation: pipWorkGearSpin 3.4s linear infinite;
+}
+
+.pip-bubble-window.light-mode .pip-glyph-work-gear-svg {
+  color: #475569;
+}
+
 .pip-glyph-note {
   font-size: 15px;
   color: #6ee7b7;

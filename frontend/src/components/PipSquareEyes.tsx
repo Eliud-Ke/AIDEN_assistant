@@ -8,9 +8,12 @@ interface PipSquareEyesProps {
   isAwake?: boolean;
   isStreaming?: boolean;
   isDarkMode?: boolean;
+  isAntigravityWorking?: boolean;
+  antigravityDoneSeq?: number;
+  antigravityFailedSeq?: number;
   onMaximize: () => void;
   onDragVisualChange: (dragging: boolean, dimmed: boolean) => void;
-  onRimToneChange?: (tone: "none" | "green" | "red" | "amber" | "music") => void;
+  onRimToneChange?: (tone: "none" | "green" | "red" | "amber" | "music" | "work_green") => void;
 }
 
 interface EyeShape {
@@ -108,6 +111,13 @@ const EXPR_PRESETS: Record<string, ExprPreset> = {
     L: { outer: 4, mid: 11, inner: 21, sx: 1.04, sy: 0.98, dy: 0.3 },
     R: { outer: 4, mid: 11, inner: 21, sx: 1.04, sy: 0.98, dy: 0.3 },
     tilt: 0,
+    op: 1.0,
+  },
+  working_agy: {
+    name: "working_agy",
+    L: { outer: 6, mid: 13, inner: 22, sx: 1.05, sy: 0.94, dy: 0.4 },
+    R: { outer: 6, mid: 13, inner: 22, sx: 1.05, sy: 0.94, dy: 0.4 },
+    tilt: -1.8,
     op: 1.0,
   },
   annoyed: {
@@ -239,6 +249,9 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
   isAwake = false,
   isStreaming = false,
   isDarkMode = true,
+  isAntigravityWorking = false,
+  antigravityDoneSeq = 0,
+  antigravityFailedSeq = 0,
   onMaximize,
   onDragVisualChange,
   onRimToneChange,
@@ -259,6 +272,8 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
   isStreamingRef.current = isStreaming;
   const isDarkModeRef = useRef(isDarkMode);
   isDarkModeRef.current = isDarkMode;
+  const isAntigravityWorkingRef = useRef(isAntigravityWorking);
+  isAntigravityWorkingRef.current = isAntigravityWorking;
   const onMaximizeRef = useRef(onMaximize);
   onMaximizeRef.current = onMaximize;
   const onDragVisualChangeRef = useRef(onDragVisualChange);
@@ -296,6 +311,7 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     activeBlink: null as BlinkState | null,
     scanQueue: [] as GazeStep[],
     streamSweepStep: 0,
+    agyWorkSweepStep: 0,
     hasBattery: false,
     pluggedIn: true,
     batteryPct: 100,
@@ -316,7 +332,9 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
   const lastSentBubbleRef = useRef<PipBubbleKind | null>(null);
   const lastSentBatteryPctRef = useRef<number | null>(null);
   const lowWarnedRef = useRef(false);
-  const persistentRimRef = useRef<"none" | "music" | "amber">("none");
+  const persistentRimRef = useRef<"none" | "music" | "amber" | "work_green">("none");
+  const lastHandledAgyDoneSeqRef = useRef<number>(antigravityDoneSeq);
+  const lastHandledAgyFailedSeqRef = useRef<number>(antigravityFailedSeq);
 
   const syncHeadphonesIpc = useCallback(
     (mode: "off" | "on" | "removing", playing: boolean, paused: boolean) => {
@@ -388,6 +406,7 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
   const blinkTimerRef = useRef<number | null>(null);
   const gazeTimerRef = useRef<number | null>(null);
   const streamTimerRef = useRef<number | null>(null);
+  const agyWorkTimerRef = useRef<number | null>(null);
   const rareTimerRef = useRef<number | null>(null);
   const sparkleTimerRef = useRef<number | null>(null);
   const rimTimerRef = useRef<number | null>(null);
@@ -451,6 +470,10 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
       window.clearTimeout(streamTimerRef.current);
       streamTimerRef.current = null;
     }
+    if (agyWorkTimerRef.current !== null) {
+      window.clearTimeout(agyWorkTimerRef.current);
+      agyWorkTimerRef.current = null;
+    }
     if (rareTimerRef.current !== null) {
       window.clearTimeout(rareTimerRef.current);
       rareTimerRef.current = null;
@@ -483,10 +506,12 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     }, durationMs);
   }, []);
 
-  const setPersistentRim = useCallback((tone: "none" | "music" | "amber") => {
-    persistentRimRef.current = tone;
+  const setPersistentRim = useCallback((tone: "none" | "music" | "amber" | "work_green") => {
+    const resolved =
+      tone === "none" && isAntigravityWorkingRef.current ? "work_green" : tone;
+    persistentRimRef.current = resolved;
     if (rimTimerRef.current === null) {
-      onRimToneChangeRef.current?.(tone);
+      onRimToneChangeRef.current?.(resolved);
     }
   }, []);
 
@@ -599,7 +624,13 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     }
     if (!activeRef.current) return;
     const st = animRef.current;
-    if (isStreamingRef.current || st.isNear || dragStateRef.current?.moved || st.dizzyLevel > 0.05) {
+    if (
+      isStreamingRef.current ||
+      isAntigravityWorkingRef.current ||
+      st.isNear ||
+      dragStateRef.current?.moved ||
+      st.dizzyLevel > 0.05
+    ) {
       gazeTimerRef.current = window.setTimeout(scheduleNextGaze, 500);
       return;
     }
@@ -671,6 +702,31 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     st.streamSweepStep += 1;
     setGazeGoal(pt.x, pt.y, pt.speed, false);
     streamTimerRef.current = window.setTimeout(runStreamingStep, pt.wait);
+  }, [setGazeGoal]);
+
+  const runAgyWorkStep = useCallback(() => {
+    if (agyWorkTimerRef.current !== null) {
+      window.clearTimeout(agyWorkTimerRef.current);
+      agyWorkTimerRef.current = null;
+    }
+    if (!activeRef.current || !isAntigravityWorkingRef.current) return;
+    const st = animRef.current;
+    if (!isStreamingRef.current && !st.isNear && !dragStateRef.current?.moved && st.dizzyLevel < 0.05 && !st.activeEvent) {
+      const pts = [
+        { x: -6.2, y: -1.2, speed: 9.5, wait: 740 },
+        { x: 1.8, y: -1.0, speed: 7.5, wait: 660 },
+        { x: 6.8, y: -0.6, speed: 8.5, wait: 760 },
+        { x: 3.4, y: -3.2, speed: 9.0, wait: 620 },
+        { x: -5.4, y: 1.4, speed: 10.0, wait: 700 },
+        { x: 0.4, y: 1.1, speed: 7.0, wait: 820 },
+      ];
+      const pt = pts[st.agyWorkSweepStep % pts.length];
+      st.agyWorkSweepStep += 1;
+      setGazeGoal(pt.x, pt.y, pt.speed, false);
+      agyWorkTimerRef.current = window.setTimeout(runAgyWorkStep, pt.wait);
+      return;
+    }
+    agyWorkTimerRef.current = window.setTimeout(runAgyWorkStep, 450);
   }, [setGazeGoal]);
 
   const triggerMicroEvent = useCallback(
@@ -1113,6 +1169,7 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
       if (
         !isAwakeRef.current &&
         !isStreamingRef.current &&
+        !isAntigravityWorkingRef.current &&
         !st.isNear &&
         !dragStateRef.current?.moved &&
         !st.activeEvent &&
@@ -1237,6 +1294,94 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     }
   }, [active, isAwake, isStreaming, popBubble, runStreamingStep, triggerMicroEvent]);
 
+  // React to Antigravity background worker running state while in Living Cube mode
+  useEffect(() => {
+    if (!active) return;
+    const st = animRef.current;
+    if (isAntigravityWorking) {
+      st.lastInteractionTime = performance.now();
+      st.idleStage = "alert";
+      setPersistentRim("work_green");
+      if (!st.activeBubble) {
+        st.activeBubble = { kind: "work_gear", expiresAt: performance.now() + 3500 };
+      }
+      runAgyWorkStep();
+    } else {
+      if (agyWorkTimerRef.current !== null) {
+        window.clearTimeout(agyWorkTimerRef.current);
+        agyWorkTimerRef.current = null;
+      }
+      if (st.activeBubble?.kind === "work_gear") {
+        st.activeBubble = null;
+      }
+      if (persistentRimRef.current === "work_green") {
+        setPersistentRim("none");
+      }
+    }
+  }, [active, isAntigravityWorking, runAgyWorkStep, setPersistentRim]);
+
+  // Trigger celebratory finished animation in Living Cube when an Antigravity task completes
+  useEffect(() => {
+    if (antigravityDoneSeq <= lastHandledAgyDoneSeqRef.current) return;
+    lastHandledAgyDoneSeqRef.current = antigravityDoneSeq;
+    if (!active) return;
+
+    const st = animRef.current;
+    st.lastInteractionTime = performance.now();
+    st.idleStage = "alert";
+    if (st.activeBubble?.kind === "work_gear") {
+      st.activeBubble = null;
+    }
+    setPersistentRim("none");
+    flashRim("green", 2800);
+    setActiveEvent("happy", 2600);
+    popBubble("done", 2400);
+    flashSparkle(2200);
+    triggerBlink(145, false, true);
+    st.bounceSx = 1.09;
+    st.bounceSy = 0.89;
+    st.bounceY = -3.4;
+    setGazeGoal(0, -1.2, 16, false);
+  }, [
+    active,
+    antigravityDoneSeq,
+    flashRim,
+    flashSparkle,
+    popBubble,
+    setActiveEvent,
+    setGazeGoal,
+    setPersistentRim,
+    triggerBlink,
+  ]);
+
+  // Brief surprised reaction in Living Cube if an Antigravity task fails
+  useEffect(() => {
+    if (antigravityFailedSeq <= lastHandledAgyFailedSeqRef.current) return;
+    lastHandledAgyFailedSeqRef.current = antigravityFailedSeq;
+    if (!active) return;
+
+    const st = animRef.current;
+    st.lastInteractionTime = performance.now();
+    st.idleStage = "alert";
+    if (st.activeBubble?.kind === "work_gear") {
+      st.activeBubble = null;
+    }
+    setPersistentRim("none");
+    flashRim("red", 2200);
+    setActiveEvent("surprised", 1500);
+    popBubble("surprised", 1600);
+    st.bounceY = -2.0;
+    setGazeGoal(0, 0, 16, false);
+  }, [
+    active,
+    antigravityFailedSeq,
+    flashRim,
+    popBubble,
+    setActiveEvent,
+    setGazeGoal,
+    setPersistentRim,
+  ]);
+
   // Wake into alert state if isAwake changes
   useEffect(() => {
     if (!active) return;
@@ -1325,6 +1470,11 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     scheduleRareIdleMoment();
     if (isStreamingRef.current) {
       runStreamingStep();
+    }
+    if (isAntigravityWorkingRef.current) {
+      setPersistentRim("work_green");
+      st.activeBubble = { kind: "work_gear", expiresAt: performance.now() + 3500 };
+      runAgyWorkStep();
     }
 
     invoke<{ dx?: number; dy?: number }>("get_pip_cursor_delta")
@@ -1507,6 +1657,7 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
       if (
         !isAwakeRef.current &&
         !isStreamingRef.current &&
+        !isAntigravityWorkingRef.current &&
         !isGrooving &&
         !isBoredWaiting &&
         !cur.isNear &&
@@ -1518,8 +1669,24 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
           popBubble("sleepy", 2600);
           cur.drowsyBubbleCooldownUntil = now + 18000;
         }
-      } else if (isAwakeRef.current || isStreamingRef.current || isGrooving) {
+      } else if (isAwakeRef.current || isStreamingRef.current || isAntigravityWorkingRef.current || isGrooving) {
         cur.idleStage = "alert";
+      }
+
+      // Keep the rotating grey gear comment bubble visible while Antigravity is working
+      // (yields automatically to hover/curious, drag/dizzy, headpat, battery, or music bubbles)
+      if (
+        isAntigravityWorkingRef.current &&
+        !cur.activeEvent &&
+        !cur.isNear &&
+        !dragStateRef.current?.moved &&
+        cur.dizzyLevel < 0.05
+      ) {
+        if (!cur.activeBubble || (cur.activeBubble.kind === "work_gear" && cur.activeBubble.expiresAt - now < 1200)) {
+          cur.activeBubble = { kind: "work_gear", expiresAt: now + 3500 };
+        }
+      } else if (!isAntigravityWorkingRef.current && cur.activeBubble?.kind === "work_gear") {
+        cur.activeBubble = null;
       }
 
       syncBubbleIpc(cur.activeBubble ? cur.activeBubble.kind : null);
@@ -1594,6 +1761,8 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
         chosenName = "surprised";
       } else if (cur.isNear && cur.cursorDist < 175) {
         chosenName = "curious";
+      } else if (isAntigravityWorkingRef.current) {
+        chosenName = "working_agy";
       } else if (isGrooving) {
         chosenName = cur.vibeSubmood;
       } else if (isBoredWaiting) {
@@ -1629,6 +1798,8 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
       let breathDy = 0;
       if (chosenName === "happy" || chosenName === "vibing_bliss") {
         breathDy = Math.sin(now * 0.011) * 0.9;
+      } else if (chosenName === "working_agy") {
+        breathDy = Math.sin(now * 0.0052) * 0.55;
       } else if (chosenName === "bored_pause") {
         breathDy = Math.sin(now * 0.0028) * 1.0 + 0.5;
       } else if (chosenName === "tired_low") {
@@ -1830,11 +2001,13 @@ export const PipSquareEyes: React.FC<PipSquareEyesProps> = ({
     clearAllTimers,
     handleCursorSample,
     popBubble,
+    runAgyWorkStep,
     runStreamingStep,
     scheduleNextBlink,
     scheduleNextGaze,
     scheduleRareIdleMoment,
     scheduleTransient,
+    setPersistentRim,
     syncBubbleIpc,
     syncHeadphonesIpc,
     syncMusicBopIpc,

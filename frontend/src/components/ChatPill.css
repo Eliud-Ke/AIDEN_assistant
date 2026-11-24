@@ -5826,6 +5826,43 @@
   animation: aidenPipMusicRim 1.07s ease-in-out infinite;
 }
 
+/* Antigravity Background Working Expression: Calm Breathing Emerald-Green Rim Glow */
+@keyframes aidenPipWorkGreenRim {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 13px rgba(16, 185, 129, 0.44),
+      inset 0 0 4px rgba(52, 211, 153, 0.34);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 23px rgba(52, 211, 153, 0.78),
+      inset 0 0 8px rgba(110, 231, 183, 0.48);
+  }
+}
+
+.siri-unified-pill.is-pip.pip-rim-work-green {
+  box-shadow:
+    inset 0 1px 0 rgba(167, 243, 208, 0.56),
+    inset 0 0 0 1px rgba(52, 211, 153, 0.36) !important;
+}
+
+.siri-unified-pill.is-pip.pip-rim-work-green::before {
+  opacity: 1 !important;
+  animation: aidenPipWorkGreenRim 2.1s ease-in-out infinite;
+}
+
+.siri-unified-pill.light-mode.is-pip.pip-rim-work-green {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 0 0 1px rgba(5, 150, 105, 0.38) !important;
+}
+
+.siri-unified-pill.light-mode.is-pip.pip-rim-work-green::before {
+  opacity: 1 !important;
+  box-shadow: inset 0 0 18px rgba(5, 150, 105, 0.42);
+  animation: aidenPipWorkGreenRim 2.1s ease-in-out infinite;
+}
+
 .siri-unified-pill.is-pip::after {
   content: "";
   position: absolute;
@@ -5838,6 +5875,42 @@
 
 .siri-unified-pill.is-pip:hover {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48) !important;
+}
+
+/* Maximized Smart Interruption Guard on Ask Aiden Capsule */
+@keyframes aidenAnnouncementNudge {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+}
+
+.siri-command-capsule.announcement-locked {
+  border-color: rgba(52, 211, 153, 0.38) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(167, 243, 208, 0.24),
+    0 0 14px rgba(16, 185, 129, 0.16);
+}
+
+.siri-command-capsule.announcement-pulse {
+  animation: aidenAnnouncementNudge 0.32s ease;
+  border-color: rgba(52, 211, 153, 0.68) !important;
+}
+
+.siri-turn-item.proactive-pending-turn {
+  margin-top: 8px;
+}
+
+.siri-turn-item.agy-inline-orphan-turn {
+  margin-top: 4px;
 }
 
 .siri-unified-pill.is-pip.is-dragging {

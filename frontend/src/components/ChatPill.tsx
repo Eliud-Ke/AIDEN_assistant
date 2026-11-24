@@ -14,6 +14,7 @@ import { SpotifyLibraryPlaylistsCard, SpotifyLibraryPlaylistsCardData } from "./
 import { MarkdownContent } from "./MarkdownContent";
 import { PipSquareEyes } from "./PipSquareEyes";
 import { ConjoinedSearchTray, SearchItem } from "./SearchDrawer";
+import { AntigravityWorkCard, AgyWorkJobState } from "./AntigravityWorkCard";
 import "./ChatPill.css";
 
 interface UnifiedSearchResponse {
@@ -72,6 +73,9 @@ export const CONNECTOR_METAS: Record<string, { name: string; icon: string }> = {
   youtube: { name: "YouTube", icon: "/icons/youtube.png" },
   file_system: { name: "Files", icon: "/icons/explorer.png" },
   files: { name: "Files", icon: "/icons/explorer.png" },
+  antigravity_work: { name: "Antigravity Work", icon: "/icons/antigravity.png" },
+  antigravity: { name: "Antigravity Work", icon: "/icons/antigravity.png" },
+  agy: { name: "Antigravity Work", icon: "/icons/antigravity.png" },
 };
 
 export const resolveConnectorMeta = (
@@ -110,6 +114,9 @@ export const resolveConnectorMeta = (
   if (lower.includes("file") || lower.includes("explorer")) {
     return { key: "file_system", ...CONNECTOR_METAS.file_system };
   }
+  if (lower.includes("antigravity") || lower.includes("agy") || lower.includes("work mode")) {
+    return { key: "antigravity_work", ...CONNECTOR_METAS.antigravity_work };
+  }
   return null;
 };
 
@@ -144,6 +151,12 @@ interface ChatPillProps {
   onMinimizeToPip?: (restoreH: number) => void;
   onMaximizeFromPip?: () => void;
   winMinimizeRef?: React.MutableRefObject<(() => void) | null>;
+  agyWorkJob?: AgyWorkJobState | null;
+  agyDoneSeq?: number;
+  agyFailedSeq?: number;
+  proactiveTurnKind?: string | null;
+  onDismissAgyCard?: (jobId: string) => void;
+  onStopAgyTask?: (jobId: string) => void;
 }
 
 interface MediaGalleryItem {
@@ -998,6 +1011,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   onMinimizeToPip,
   onMaximizeFromPip,
   winMinimizeRef,
+  agyWorkJob = null,
+  agyDoneSeq = 0,
+  agyFailedSeq = 0,
+  proactiveTurnKind = null,
+  onDismissAgyCard,
+  onStopAgyTask,
 }) => {
   void _onClearResponse;
   void _onStartRecording;
@@ -1133,7 +1152,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isPipDragging, setIsPipDragging] = useState(false);
   const [isPipDimmed, setIsPipDimmed] = useState(false);
-  const [pipRimTone, setPipRimTone] = useState<"none" | "green" | "red" | "amber" | "music">("none");
+  const [pipRimTone, setPipRimTone] = useState<"none" | "green" | "red" | "amber" | "music" | "work_green">("none");
+  const [announcementBlockPulse, setAnnouncementBlockPulse] = useState(false);
+  const announcementBlockTimerRef = useRef<number | null>(null);
 
   const handleDragVisualChange = useCallback((dragging: boolean, dimmed: boolean) => {
     setIsPipDragging((prev) => (prev !== dragging ? dragging : prev));
@@ -1269,9 +1290,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     ? [{ id: "single-turn", userPrompt: null, assistantReply: responseMessage, isStreaming }]
     : [];
 
+  const isAgyRunning = Boolean(agyWorkJob && agyWorkJob.status === "running");
+  const showInlineAgyCard = Boolean(agyWorkJob && !agyWorkJob.cardDismissed);
+  const isProactiveAnnouncementActive = proactiveTurnKind === "agy_done";
+
   const hasTurns = activeTurns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt));
-  const hasReplyText = hasTurns || Boolean((responseMessage && responseMessage.length > 0) || followupThinkingPrompt);
+  const hasReplyText =
+    hasTurns ||
+    Boolean((responseMessage && responseMessage.length > 0) || followupThinkingPrompt) ||
+    Boolean(showInlineAgyCard && isAgyRunning);
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
+  const isProactiveThinkingInStream = Boolean(
+    !followupThinkingPrompt && activeUiTag && proactiveTurnKind && hasReplyText
+  );
 
   const pillMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
@@ -1400,7 +1431,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         observer.disconnect();
       }
     };
-  }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, onHeightChange, updateScrollMask]);
+  }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, activeUiTag, followupThinkingPrompt, activeTurns, isStreaming, agyWorkJob, proactiveTurnKind, onHeightChange, updateScrollMask]);
 
   const clampedSelectionIndex = Math.max(0, Math.min(selectionIndex, inputText.length));
   const cursorPrefix = inputText.slice(0, clampedSelectionIndex);
@@ -2243,6 +2274,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const handleSend = () => {
     const trimmed = inputText.trim();
     if (!trimmed || isSubmitting) return;
+    // Smart Maximized Interruption Guard: while AIDEN is announcing a finished background task,
+    // hold submission without erasing or blurring the user's draft text.
+    if (isProactiveAnnouncementActive) {
+      setAnnouncementBlockPulse(true);
+      if (announcementBlockTimerRef.current !== null) {
+        window.clearTimeout(announcementBlockTimerRef.current);
+      }
+      announcementBlockTimerRef.current = window.setTimeout(() => {
+        announcementBlockTimerRef.current = null;
+        setAnnouncementBlockPulse(false);
+      }, 1150);
+      return;
+    }
     setDrawerForceOpen(false);
     setDrawerSelectedIndex(-1);
     setSearchResult(null);
@@ -2262,6 +2306,33 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     }, 450);
   };
 
+  useEffect(() => {
+    return () => {
+      if (announcementBlockTimerRef.current !== null) {
+        window.clearTimeout(announcementBlockTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-scroll smoothly when a proactive system turn starts or completes in multi-turn chat
+  const prevTurnCountForProactiveRef = useRef<number>(activeTurns.length);
+  useEffect(() => {
+    const prevCount = prevTurnCountForProactiveRef.current;
+    prevTurnCountForProactiveRef.current = activeTurns.length;
+    if (pillMode !== "responding" || pipPhase !== "max" || !streamContainerRef.current) return;
+    if (isProactiveThinkingInStream || (activeTurns.length > prevCount && !followupThinkingPrompt)) {
+      const container = streamContainerRef.current;
+      window.requestAnimationFrame(() => {
+        if (!streamContainerRef.current) return;
+        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+        if (maxScroll > 2) {
+          container.scrollTo({ top: maxScroll, behavior: "smooth" });
+          window.requestAnimationFrame(updateScrollMask);
+        }
+      });
+    }
+  }, [pillMode, pipPhase, isProactiveThinkingInStream, activeTurns.length, followupThinkingPrompt, updateScrollMask]);
+
   const formatStatusTag = (raw: string): string => {
     const trimmed = raw.trim();
     if (!trimmed) return "";
@@ -2274,7 +2345,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       .replace(/\bgoogle calendar\b/gi, "Google Calendar")
       .replace(/\bgps\b/gi, "GPS")
       .replace(/\bobsidian\b/gi, "Obsidian")
-      .replace(/\bnotion\b/gi, "Notion");
+      .replace(/\bnotion\b/gi, "Notion")
+      .replace(/\bantigravity\b/gi, "Antigravity");
   };
 
   const triggerMinimizeToPip = useCallback(() => {
@@ -2471,7 +2543,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           } ${pipPhase === "pip" && isPipDimmed ? "is-dimmed" : ""} ${
             pipPhase === "pip" && isAwake ? "pip-paused" : ""
           } ${pipPhase === "pip" && isStreaming ? "pip-streaming" : ""} ${
-            pipPhase === "pip" && pipRimTone === "green"
+            pipPhase === "pip" && pipRimTone === "work_green"
+              ? "pip-rim-work-green"
+              : pipPhase === "pip" && pipRimTone === "green"
               ? "pip-rim-green"
               : pipPhase === "pip" && pipRimTone === "red"
               ? "pip-rim-red"
@@ -2514,6 +2588,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               isAwake={isAwake}
               isStreaming={isStreaming}
               isDarkMode={isDarkMode}
+              isAntigravityWorking={isAgyRunning}
+              antigravityDoneSeq={agyDoneSeq}
+              antigravityFailedSeq={agyFailedSeq}
               onMaximize={onMaximizeFromPip}
               onDragVisualChange={handleDragVisualChange}
               onRimToneChange={setPipRimTone}
@@ -3071,9 +3148,66 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                         )}
                       </div>
                     )}
+
+                    {/* Live Inline Antigravity Task Card anchored inside the turn that launched it */}
+                    {showInlineAgyCard &&
+                      agyWorkJob &&
+                      agyWorkJob.anchorTurnId === turn.id &&
+                      onDismissAgyCard &&
+                      onStopAgyTask && (
+                        <AntigravityWorkCard
+                          job={agyWorkJob}
+                          onDismiss={onDismissAgyCard}
+                          onStop={onStopAgyTask}
+                        />
+                      )}
                   </div>
                   );
                 })}
+
+                {/* Unanchored Live Inline Antigravity Card (e.g. mid-launch or after wake) */}
+                {showInlineAgyCard &&
+                  agyWorkJob &&
+                  (!agyWorkJob.anchorTurnId || !activeTurns.some((t) => t.id === agyWorkJob.anchorTurnId)) &&
+                  onDismissAgyCard &&
+                  onStopAgyTask && (
+                    <div className="siri-turn-item agy-inline-orphan-turn">
+                      <AntigravityWorkCard
+                        job={agyWorkJob}
+                        onDismiss={onDismissAgyCard}
+                        onStop={onStopAgyTask}
+                      />
+                    </div>
+                  )}
+
+                {/* Proactive In-Stream Status (e.g. Antigravity finished announcement or card-dismiss reply) */}
+                {isProactiveThinkingInStream && (
+                  <div className="siri-turn-item proactive-pending-turn">
+                    <div className="siri-instream-thinking">
+                      <div className="siri-icon-morph-anchor">
+                        <span
+                          className={`siri-apple-constellation ${isConnecting ? "is-imploded" : ""}`}
+                          aria-hidden="true"
+                        >
+                          <AppleConstellationSpinner />
+                        </span>
+                        {activeConnectorMeta && (
+                          <div className={`siri-connector-sine-wrapper ${isConnecting ? "is-active" : ""}`}>
+                            <img
+                              src={activeConnectorMeta.icon}
+                              alt={activeConnectorMeta.name}
+                              className="siri-connector-sine-img"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <MorphingStatusText
+                        text={formatStatusTag(activeUiTag || "Antigravity finished")}
+                        className="siri-instream-thinking-text"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* In-Flight Follow-up Prompt Bubble + Constellation Spinner (Shown while Turn 2+ is thinking) */}
                 {followupThinkingPrompt && (
@@ -3188,7 +3322,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   </button>
 
                   {/* Center: Frosted Capsule Input with "Ask Aiden" placeholder */}
-                  <div ref={capsuleRef} className="siri-command-capsule">
+                  <div
+                    ref={capsuleRef}
+                    className={`siri-command-capsule ${
+                      isProactiveAnnouncementActive ? "announcement-locked" : ""
+                    } ${announcementBlockPulse ? "announcement-pulse" : ""}`}
+                  >
                     <div className="siri-input-track">
                       <div
                         ref={followupMirrorRef}
@@ -3214,7 +3353,11 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                         ref={followupInputRef}
                         rows={1}
                         className="siri-command-input"
-                        placeholder="Ask Aiden"
+                        placeholder={
+                          isProactiveAnnouncementActive
+                            ? "AIDEN is reporting a finished task..."
+                            : "Ask Aiden"
+                        }
                         value={inputText}
                         onChange={(e) => {
                           setInputText(e.target.value);
@@ -3456,6 +3599,11 @@ export const ChatPillWindow: React.FC = () => {
 
   const contentRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
+  const [agyWorkJob, setAgyWorkJob] = useState<AgyWorkJobState | null>(null);
+  const [agyDoneSeq, setAgyDoneSeq] = useState(0);
+  const [agyFailedSeq, setAgyFailedSeq] = useState(0);
+  const [proactiveTurnKind, setProactiveTurnKind] = useState<string | null>(null);
+  const pendingAgyAnchorJobIdRef = useRef<string | null>(null);
 
   const stopStreamRaf = () => {
     if (rafIdRef.current !== null) {
@@ -3489,8 +3637,16 @@ export const ChatPillWindow: React.FC = () => {
     turnsRef.current = [];
     setTurns([]);
     setActiveUiTag(null);
+    setProactiveTurnKind(null);
     setIsStreaming(false);
     setIsMaxHeight(false);
+    setAgyWorkJob((prev) => {
+      if (!prev) return null;
+      if (prev.status === "running") {
+        return { ...prev, anchorTurnId: null };
+      }
+      return null;
+    });
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
@@ -3535,7 +3691,10 @@ export const ChatPillWindow: React.FC = () => {
     setTurns(nextTurns);
   }
 
-  const hasReplyText = turns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt)) || Boolean(followupThinkingPrompt);
+  const hasReplyText =
+    turns.some((t) => Boolean((t.assistantReply && t.assistantReply.trim().length > 0) || t.userPrompt)) ||
+    Boolean(followupThinkingPrompt) ||
+    Boolean(agyWorkJob && !agyWorkJob.cardDismissed && agyWorkJob.status === "running");
   const isThinking = Boolean(!hasReplyText && activeUiTag);
   const currentMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
@@ -3796,6 +3955,20 @@ export const ChatPillWindow: React.FC = () => {
     };
   }, []);
 
+  // Sync UI surface visibility (Maximized vs Living Cube) to backend Turn-Barrier Mailbox.
+  // Runs AFTER the awake/sleep lifecycle effect so resetReplyState() completes before queued reports fire.
+  useEffect(() => {
+    const minimized = !isAwake || pipPhase === "pip" || pipPhase === "to-pip";
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "ui_surface",
+          pipMinimized: minimized,
+        })
+      );
+    }
+  }, [isAwake, pipPhase]);
+
   const morphTo = useCallback(
     (targetWidth: number, targetHeight: number, durationMs = 280) => {
       if (!isAwake || pipPhaseRef.current !== "max") return;
@@ -3907,6 +4080,19 @@ export const ChatPillWindow: React.FC = () => {
 
         ws.onopen = () => {
           clearOfflineGraceTimer();
+          try {
+            ws.send(
+              JSON.stringify({
+                type: "ui_surface",
+                pipMinimized:
+                  !isAwakeRef.current ||
+                  pipPhaseRef.current === "pip" ||
+                  pipPhaseRef.current === "to-pip",
+              })
+            );
+          } catch {
+            // Ignore
+          }
         };
 
         ws.onmessage = (event) => {
@@ -4046,6 +4232,12 @@ export const ChatPillWindow: React.FC = () => {
               const newTurnId = "turn-" + Date.now();
               currentTurnIdRef.current = newTurnId;
               const pendingPrompt = followupThinkingPromptRef.current;
+              const appendToExisting = Boolean(pendingPrompt) || turnsRef.current.length > 0;
+              const proactiveKind = typeof data.proactiveKind === "string" ? data.proactiveKind : null;
+              const anchorPendingJobId = pendingAgyAnchorJobIdRef.current;
+              if (anchorPendingJobId) {
+                pendingAgyAnchorJobIdRef.current = null;
+              }
 
               const newTurn: ChatTurn = {
                 id: newTurnId,
@@ -4068,8 +4260,98 @@ export const ChatPillWindow: React.FC = () => {
 
               polishTimerRef.current = window.setTimeout(() => {
                 polishTimerRef.current = null;
-                finalizeChatTurn(newTurn, Boolean(pendingPrompt), null);
+                setProactiveTurnKind(null);
+                if (proactiveKind && appendToExisting) {
+                  setIsMaxHeight(true);
+                }
+                finalizeChatTurn(newTurn, appendToExisting, null);
+                if (anchorPendingJobId) {
+                  setAgyWorkJob((prev) =>
+                    prev && prev.jobId === anchorPendingJobId
+                      ? { ...prev, anchorTurnId: newTurnId }
+                      : prev
+                  );
+                }
               }, delay);
+            } else if (msgType === "proactive_turn_start") {
+              const kind = typeof data.kind === "string" ? data.kind : "system";
+              const tag = String(data.tag || "Thinking").trim() || "Thinking";
+              setProactiveTurnKind(kind);
+              setActiveUiTag(tag);
+              setActiveConnector("antigravity_work");
+              if (turnsRef.current.length > 0) {
+                setIsMaxHeight(true);
+              }
+            } else if (msgType === "agy_work_start") {
+              const jid = String(data.job_id || "");
+              if (jid) {
+                pendingAgyAnchorJobIdRef.current = jid;
+                const rawSteps = Array.isArray(data.steps) ? data.steps : [];
+                setAgyWorkJob({
+                  jobId: jid,
+                  task: String(data.task || ""),
+                  workingDir: typeof data.working_dir === "string" ? data.working_dir : undefined,
+                  status: "running",
+                  steps: rawSteps.map((s: { text?: string; status?: string }) => ({
+                    text: String(s?.text || ""),
+                    status: s?.status === "done" ? "done" : "active",
+                  })),
+                  elapsedSec: Number(data.elapsed_sec || 0),
+                  cardDismissed: Boolean(data.card_dismissed),
+                  anchorTurnId: null,
+                });
+              }
+            } else if (msgType === "agy_work_step") {
+              const jid = String(data.job_id || "");
+              const rawSteps = Array.isArray(data.steps) ? data.steps : [];
+              setAgyWorkJob((prev) => {
+                if (!prev || (jid && prev.jobId !== jid)) return prev;
+                return {
+                  ...prev,
+                  steps: rawSteps.map((s: { text?: string; status?: string }) => ({
+                    text: String(s?.text || ""),
+                    status: s?.status === "done" ? "done" : "active",
+                  })),
+                  elapsedSec: Number(data.elapsed_sec ?? prev.elapsedSec),
+                };
+              });
+            } else if (msgType === "agy_work_done") {
+              const jid = String(data.job_id || "");
+              const nextStatus: "completed" | "failed" =
+                data.status === "failed" ? "failed" : "completed";
+              const rawSteps = Array.isArray(data.steps) ? data.steps : [];
+              setAgyWorkJob((prev) => {
+                if (!prev && !jid) return null;
+                return {
+                  jobId: jid || prev?.jobId || "",
+                  task: prev?.task || "",
+                  workingDir: prev?.workingDir,
+                  status: nextStatus,
+                  steps:
+                    rawSteps.length > 0
+                      ? rawSteps.map((s: { text?: string; status?: string }) => ({
+                          text: String(s?.text || ""),
+                          status: "done" as const,
+                        }))
+                      : (prev?.steps || []).map((s) => ({ ...s, status: "done" as const })),
+                  elapsedSec: Number(data.elapsed_sec ?? prev?.elapsedSec ?? 0),
+                  summary: typeof data.summary === "string" ? data.summary : prev?.summary,
+                  cardDismissed:
+                    typeof data.card_dismissed === "boolean"
+                      ? data.card_dismissed
+                      : Boolean(prev?.cardDismissed),
+                  anchorTurnId: prev?.anchorTurnId ?? null,
+                };
+              });
+              if (nextStatus === "completed") {
+                setAgyDoneSeq((seq) => seq + 1);
+              } else {
+                setAgyFailedSeq((seq) => seq + 1);
+              }
+            } else if (msgType === "agy_work_hide") {
+              const jid = String(data.job_id || "");
+              pendingAgyAnchorJobIdRef.current = null;
+              setAgyWorkJob((prev) => (!jid || !prev || prev.jobId === jid ? null : prev));
             } else if (msgType === "error") {
               stopStreamRaf();
               stopPolishShuffle();
@@ -4078,6 +4360,7 @@ export const ChatPillWindow: React.FC = () => {
                 polishTimerRef.current = null;
               }
               setIsStreaming(false);
+              setProactiveTurnKind(null);
               const errText = String(data.message || "An unexpected error occurred.");
               const pendingPrompt = followupThinkingPromptRef.current;
 
@@ -4090,7 +4373,7 @@ export const ChatPillWindow: React.FC = () => {
                   assistantReply: errText,
                   isStreaming: false,
                 },
-                Boolean(pendingPrompt),
+                Boolean(pendingPrompt) || turnsRef.current.length > 0,
                 pendingPrompt ? null : "Error"
               );
             }
@@ -4214,6 +4497,31 @@ export const ChatPillWindow: React.FC = () => {
     }
   }, []);
 
+  const handleDismissAgyCard = useCallback((jobId: string) => {
+    setAgyWorkJob((prev) =>
+      prev && prev.jobId === jobId ? { ...prev, cardDismissed: true } : prev
+    );
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "agy_card_dismissed",
+          job_id: jobId,
+        })
+      );
+    }
+  }, []);
+
+  const handleStopAgyTask = useCallback((jobId: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "agy_stop_task",
+          job_id: jobId,
+        })
+      );
+    }
+  }, []);
+
   return (
     <div className="chat-pill-desktop-window">
       <ChatPill
@@ -4251,6 +4559,12 @@ export const ChatPillWindow: React.FC = () => {
         onMinimizeToPip={handleMinimizeToPip}
         onMaximizeFromPip={handleSquareActivate}
         winMinimizeRef={winMinimizeActionRef}
+        agyWorkJob={agyWorkJob}
+        agyDoneSeq={agyDoneSeq}
+        agyFailedSeq={agyFailedSeq}
+        proactiveTurnKind={proactiveTurnKind}
+        onDismissAgyCard={handleDismissAgyCard}
+        onStopAgyTask={handleStopAgyTask}
       />
     </div>
   );

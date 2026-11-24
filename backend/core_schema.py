@@ -360,7 +360,7 @@ CORE_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "connect_service",
-            "description": "Connects to an external service integration (e.g. 'gmail', 'spotify', 'google_calendar', 'notes_vault') and mounts its specialized tools into your toolset. Call this ONLY IF the service's tools are not already mounted in your toolset or listed under [ACTIVE CONNECTORS].",
+            "description": "Connects to an external service integration (e.g. 'gmail', 'spotify', 'google_calendar', 'antigravity_work', 'notes_vault') and mounts its specialized tools into your toolset. Call this ONLY IF the service's tools are not already mounted in your toolset or listed under [ACTIVE CONNECTORS].",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -370,11 +370,12 @@ CORE_TOOLS_SCHEMA = [
                             "gmail",
                             "spotify",
                             "google_calendar",
+                            "antigravity_work",
                             "notes_vault",
                             "youtube_visual",
                             "file_system",
                         ],
-                        "description": "External service connector to mount (e.g. 'gmail').",
+                        "description": "External service connector to mount (e.g. 'gmail', 'antigravity_work').",
                     },
                 },
                 "required": ["service_name"],

@@ -26,6 +26,16 @@ _ws_server: Optional[Any] = None
 # Thread-safe command queue from UI -> main.py
 ui_command_queue: "queue.Queue[str]" = queue.Queue()
 
+# UI surface visibility state (tracks whether chat_pill is minimized to 68x68 Living Cube)
+_ui_surface_lock = threading.Lock()
+_ui_surface_state: Dict[str, Any] = {
+    "pipMinimized": False,
+}
+
+# Turn-Barrier System Mailbox (proactive turns like Antigravity completion or inline card dismissal)
+_system_mailbox_lock = threading.Lock()
+_system_mailbox: list = []
+
 # References to main.py threading events
 _wake_event: Optional[threading.Event] = None
 _sleep_event: Optional[threading.Event] = None
@@ -49,6 +59,85 @@ def init_bridge(
     _wake_event = wake_event
     _sleep_event = sleep_event
     _stop_event = stop_event
+
+
+def set_ui_pip_minimized(minimized: bool) -> None:
+    """Updates whether ChatPill is currently collapsed into the 68x68 Living Cube."""
+    with _ui_surface_lock:
+        _ui_surface_state["pipMinimized"] = bool(minimized)
+
+
+def is_ui_pip_minimized() -> bool:
+    """Returns True when ChatPill is minimized into the 68x68 Living Cube."""
+    with _ui_surface_lock:
+        return bool(_ui_surface_state["pipMinimized"])
+
+
+def enqueue_system_turn(
+    kind: str,
+    prompt: str,
+    job_id: str = "",
+    require_maximized: bool = True,
+    ui_tag: str = "",
+) -> None:
+    """
+    Thread-safe push into the Turn-Barrier Mailbox.
+    Delivered strictly between active LLM turns so it can never collide with an in-flight stream.
+    """
+    entry = {
+        "kind": kind,
+        "prompt": prompt,
+        "job_id": job_id,
+        "require_maximized": bool(require_maximized),
+        "ui_tag": ui_tag,
+    }
+    with _system_mailbox_lock:
+        if job_id:
+            for existing in _system_mailbox:
+                if existing.get("kind") == kind and existing.get("job_id") == job_id:
+                    return
+        _system_mailbox.append(entry)
+
+
+def remove_system_turns_for_job(job_id: str, kinds: Optional[tuple] = None) -> None:
+    """Removes queued mailbox items for a job (e.g. if canceled or already checked manually)."""
+    if not job_id:
+        return
+    with _system_mailbox_lock:
+        _system_mailbox[:] = [
+            item
+            for item in _system_mailbox
+            if not (
+                item.get("job_id") == job_id
+                and (kinds is None or item.get("kind") in kinds)
+            )
+        ]
+
+
+def pop_ready_system_turn() -> Optional[Dict[str, Any]]:
+    """
+    Pops the next eligible Turn-Barrier system turn.
+    Items with require_maximized=True remain safely queued while minimized to PiP Cube,
+    then fire immediately the moment the user expands back into ChatPill.
+    """
+    minimized = bool(_connected_clients) and is_ui_pip_minimized()
+    with _system_mailbox_lock:
+        for idx, item in enumerate(_system_mailbox):
+            if item.get("require_maximized") and minimized:
+                continue
+            return _system_mailbox.pop(idx)
+    return None
+
+
+def clear_transient_system_turns_on_sleep() -> None:
+    """
+    Clears transient dismiss-acknowledgement turns on sleep while preserving any
+    unreported Antigravity completion reports so AIDEN announces them upon waking.
+    """
+    with _system_mailbox_lock:
+        _system_mailbox[:] = [
+            item for item in _system_mailbox if item.get("kind") == "agy_done"
+        ]
 
 
 def get_pending_ui_command() -> Optional[str]:
@@ -256,7 +345,12 @@ def estimate_response_height(text: str, connectors: Optional[list] = None) -> fl
     return float(max(120.0, min(620.0, total_h)))
 
 
-async def broadcast_stream_end(full_content: str, connectors: Optional[list] = None, target_height: Optional[float] = None):
+async def broadcast_stream_end(
+    full_content: str,
+    connectors: Optional[list] = None,
+    target_height: Optional[float] = None,
+    proactive_kind: Optional[str] = None,
+):
     """Marks completion of the streamed assistant reply."""
     calc_h = target_height if target_height is not None else estimate_response_height(full_content, connectors)
     payload: Dict[str, Any] = {
@@ -266,6 +360,8 @@ async def broadcast_stream_end(full_content: str, connectors: Optional[list] = N
     }
     if connectors:
         payload["connectors"] = connectors
+    if proactive_kind:
+        payload["proactiveKind"] = proactive_kind
     await broadcast_event_async(payload)
 
 
@@ -283,6 +379,16 @@ async def handle_connection(websocket: Any):
             "wakeSource": _current_state["wakeSource"],
             "mood": _current_state["mood"],
         }))
+        try:
+            try:
+                import tools_antigravity
+            except ImportError:
+                from backend import tools_antigravity  # type: ignore
+            work_snap = tools_antigravity.get_active_work_ui_snapshot()
+            if work_snap:
+                await websocket.send(json.dumps(work_snap))
+        except Exception:
+            pass
 
         async for raw_message in websocket:
             try:
@@ -363,6 +469,57 @@ async def handle_connection(websocket: Any):
                 await broadcast_event_async({
                     "type": "clear_response"
                 })
+
+            elif msg_type == "ui_surface":
+                set_ui_pip_minimized(bool(data.get("pipMinimized", False)))
+
+            elif msg_type == "agy_card_dismissed":
+                job_id = str(data.get("job_id", "")).strip()
+                try:
+                    try:
+                        import tools_antigravity
+                    except ImportError:
+                        from backend import tools_antigravity  # type: ignore
+                    dismissed = tools_antigravity.mark_job_dismissed(job_id)
+                except Exception as agy_err:
+                    print(f"⚠️ [WS BRIDGE] agy_card_dismissed error: {agy_err}")
+                    dismissed = None
+
+                if dismissed:
+                    dismiss_prompt = (
+                        f"[ANTIGRAVITY INLINE CARD MINIMIZED - {dismissed['job_id']}]: "
+                        f"The user has seen the live progress card for '{dismissed['task']}' and "
+                        f"minimized/dismissed it to continue chatting with you while Antigravity keeps "
+                        f"running in the background. Reply in ONE short, warm, natural sentence letting "
+                        f"them know you will notify them as soon as it is done and asking if there is "
+                        f"anything else they need right now. Do NOT call any tools."
+                    )
+                    print(f"🛠️ [WS BRIDGE] Inline Antigravity card dismissed for {dismissed['job_id']}; queuing acknowledgement.")
+                    enqueue_system_turn(
+                        kind="agy_dismissed",
+                        prompt=dismiss_prompt,
+                        job_id=dismissed["job_id"],
+                        require_maximized=True,
+                        ui_tag="Continuing in background",
+                    )
+
+            elif msg_type == "agy_stop_task":
+                job_id = str(data.get("job_id", "")).strip()
+                def _run_agy_stop(jid: str):
+                    try:
+                        try:
+                            import tools_antigravity
+                        except ImportError:
+                            from backend import tools_antigravity  # type: ignore
+                        res_msg = tools_antigravity.agy_cancel_task(jid)
+                        print(f"🛑 [WS BRIDGE] Direct inline stop for {jid or 'latest'}: {res_msg}")
+                    except Exception as stop_err:
+                        print(f"⚠️ [WS BRIDGE] Direct inline stop error: {stop_err}")
+                threading.Thread(
+                    target=_run_agy_stop,
+                    args=(job_id,),
+                    daemon=True,
+                ).start()
 
             elif msg_type in ("voice_arm", "voice_start"):
                 print("🎙️ [WS BRIDGE] Voice mode armed.")

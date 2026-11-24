@@ -28,7 +28,7 @@ _UserNotificationListenerAccessStatus = None
 def _load_winrt_apis():
     """
     Lazy-loads WinRT APIs on first background poll so WinRT apartment/runtime
-    never initializes before onnxruntime loads during startup.
+    initializes cleanly off the main thread.
     """
     global _winrt_loaded
     global _MediaManager
@@ -514,6 +514,16 @@ class AutonomicNervousSystem:
                 lines.append(f"MEDIA: {self.state['media_str']}")
             if self.state.get("notifs_str"):
                 lines.append(f"NOTIFS: {self.state['notifs_str']}")
+            try:
+                try:
+                    import tools_antigravity
+                except ImportError:
+                    from backend import tools_antigravity  # type: ignore
+                work_line = tools_antigravity.get_ans_work_jobs_line()
+                if work_line:
+                    lines.append(f"WORK_JOBS: {work_line}")
+            except Exception:
+                pass
             lines.append(f"VIBE: {self.state['vibe_str']}\n")
             return "\n".join(lines)
 

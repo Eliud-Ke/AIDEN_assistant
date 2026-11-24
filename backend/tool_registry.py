@@ -6,6 +6,7 @@ import tools_system
 import tools_gmail
 import tools_calendar
 import tools_spotify
+import tools_antigravity
 import connectors
 
 AVAILABLE_TOOLS = {
@@ -13,5 +14,6 @@ AVAILABLE_TOOLS = {
     **tools_gmail.GMAIL_TOOLS,
     **tools_calendar.CALENDAR_TOOLS,
     **tools_spotify.SPOTIFY_TOOLS,
+    **tools_antigravity.ANTIGRAVITY_TOOLS,
     "connect_service": connectors.connect_service,
 }

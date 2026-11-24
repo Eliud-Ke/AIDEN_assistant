@@ -36,7 +36,6 @@ from configuration import config
 from ans import system_ans, run_ans
 from app_registry import update_registry, get_all_app_identifiers
 import memory_manager
-from wake_word import start_wake_word_engine
 from shortcut_detector import init_shortcut_detector, get_shortcut_detector
 import server
 
@@ -49,11 +48,9 @@ IS_INTERACTIVE_TTY = bool(
     msvcrt and sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
 )
 
-# ⚡ GLOBAL THREAD COORDINATION (WAKE WORD, SHORTCUT & SLEEP ENGINE) ⚡
-wake_word_event = threading.Event()
+# ⚡ GLOBAL THREAD COORDINATION (SHORTCUT & SLEEP ENGINE) ⚡
 shortcut_wake_event = threading.Event()
 shortcut_sleep_event = threading.Event()
-assistant_busy_event = threading.Event()
 stop_event = threading.Event()
 
 # ⚡ Import custom tool registry
@@ -88,6 +85,8 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
         return "youtube_visual"
     if func_name.startswith("file_"):
         return "file_system"
+    if func_name.startswith("agy_"):
+        return "antigravity_work"
     return ""
 
 # ⚡ THE STATUS DICTIONARY (Minimalist Text Only)
@@ -152,6 +151,13 @@ TOOL_STATUS_MAP = {
     "spotify_set_playback_mode": "Changing playback mode",
     "spotify_like_track": "Saving song to library",
     "spotify_unlike_track": "Removing song from library",
+
+    # Antigravity Work Connector Tools
+    "agy_plan_task": "Planning with Antigravity",
+    "agy_revise_plan": "Revising Antigravity plan",
+    "agy_execute_task": "Launching Antigravity worker",
+    "agy_check_status": "Checking Antigravity progress",
+    "agy_cancel_task": "Canceling Antigravity task",
 }
 
 # ---------------------------------------------------------
@@ -327,9 +333,10 @@ def flush_console_buffer():
 
 async def async_input(prompt: str, sleep_event: threading.Event, stop_event: threading.Event):
     """
-    Waits for a user command from either:
-    1. The floating Chat Pill UI (via server.get_pending_ui_command())
-    2. Interactive Windows console (without blocking asyncio)
+    Turn-Barrier input dispatcher waiting for either:
+    1. Proactive system turns from the Turn-Barrier Mailbox (e.g. Antigravity completion / card dismiss)
+    2. User commands from the floating Chat Pill UI (via server.get_pending_ui_command())
+    3. Interactive Windows console (without blocking asyncio)
     Exits immediately (< 30ms) if sleep_event or stop_event is set.
     """
     flush_console_buffer()
@@ -341,13 +348,19 @@ async def async_input(prompt: str, sleep_event: threading.Event, stop_event: thr
             flush_console_buffer()
             return None
 
-        # 1. Check WebSocket UI command queue first
+        # 1. Turn-Barrier Mailbox (strict priority between turns; never collides with active streams)
+        sys_turn = server.pop_ready_system_turn()
+        if sys_turn is not None:
+            print(f"[SYSTEM TURN: {sys_turn.get('kind', 'event')}]")
+            return {"source": "system", **sys_turn}
+
+        # 2. Check WebSocket UI command queue
         ui_cmd = server.get_pending_ui_command()
         if ui_cmd is not None:
             print(ui_cmd)
-            return ui_cmd
+            return {"source": "user", "text": ui_cmd}
 
-        # 2. Check interactive terminal input if attached to a console
+        # 3. Check interactive terminal input if attached to a console
         if IS_INTERACTIVE_TTY and msvcrt and msvcrt.kbhit():
             ch = msvcrt.getwch()
             # Re-check if this keystroke was actually part of the sleep shortcut
@@ -357,7 +370,7 @@ async def async_input(prompt: str, sleep_event: threading.Event, stop_event: thr
 
             if ch in ('\r', '\n'):
                 print()  # Move to next line
-                return "".join(buffer)
+                return {"source": "user", "text": "".join(buffer)}
             elif ch == '\x08':  # Backspace
                 if buffer:
                     buffer.pop()
@@ -384,15 +397,11 @@ async def async_input(prompt: str, sleep_event: threading.Event, stop_event: thr
 async def wait_for_wake_signal() -> str:
     """
     Asynchronously monitors for:
-    1. Voice wake word detection via OpenWakeWord background thread.
-    2. Physical keyboard shortcut (Ctrl + Shift + Space toggle).
-    3. Application stop signal.
+    1. Physical keyboard shortcut (Ctrl + Shift + Space / Left Win toggle) or UI wake trigger.
+    2. Application stop signal.
     """
     flush_console_buffer()
     while not stop_event.is_set():
-        if wake_word_event.is_set():
-            flush_console_buffer()
-            return "voice"
         if shortcut_wake_event.is_set():
             flush_console_buffer()
             return "shortcut"
@@ -436,12 +445,12 @@ async def main_loop():
 
     # 💤 THE SLEEP ⟷ AWAKE MASTER STATE MACHINE
     while not stop_event.is_set():
-        # Ensure dormant sleep state & yield mic to wake word engine
-        assistant_busy_event.clear()
-        wake_word_event.clear()
+        # Ensure dormant sleep state
         shortcut_wake_event.clear()
         shortcut_sleep_event.clear()
         server.clear_pending_ui_commands()
+        server.clear_transient_system_turns_on_sleep()
+        server.set_ui_pip_minimized(True)
 
         detector = get_shortcut_detector()
         if detector:
@@ -452,9 +461,8 @@ async def main_loop():
 
         current_shortcut = config.prefs.wake_shortcut.upper()
         print("\n" + "=" * 60)
-        print("💤 [AIDEN SLEEPING] Status: Dormant in RAM.")
-        print("   🗣️ Say 'Aiden' into your mic to wake her up...")
-        print(f"   ⌨️ Physical Shortcut: Press {current_shortcut} to wake/sleep")
+        print("💤 [AIDEN SLEEPING] Status: Dormant in RAM (Shortcut Wake Mode).")
+        print(f"   ⌨️ Physical Shortcut: Press {current_shortcut} (or Left Win / Cube click) to wake/sleep")
         print("=" * 60 + "\n")
 
         wake_source = await wait_for_wake_signal()
@@ -462,8 +470,6 @@ async def main_loop():
             break
 
         # --- TRANSITION TO AWAKE ---
-        assistant_busy_event.set()
-        wake_word_event.clear()
         shortcut_wake_event.clear()
         shortcut_sleep_event.clear()
 
@@ -491,13 +497,25 @@ async def main_loop():
             if shortcut_sleep_event.is_set() or raw_command is None:
                 shortcut_sleep_event.clear()
                 print("\n💤 [SHORTCUT] Physical sleep toggle triggered. Entering Sleep Cycle...")
+                server.set_ui_pip_minimized(True)
+                server.clear_transient_system_turns_on_sleep()
                 await server.broadcast_state_async(is_awake=False)
                 if session_history:
                     print(">> [SYSTEM] Consolidating session memory before sleep...")
                     memory_manager.trigger_consolidation(session_history)
                     session_history.clear()
                 working_memory.clear()
+
+                # Preserve 'antigravity_work' connector across Sleep/Wake if a job is still active or unreported
+                keep_antigravity = False
+                try:
+                    import tools_antigravity
+                    keep_antigravity = tools_antigravity.has_active_or_unreported_job()
+                except Exception:
+                    keep_antigravity = False
                 active_connectors.clear()
+                if keep_antigravity:
+                    active_connectors.add("antigravity_work")
 
                 base_persona = config.get_assembled_persona()
                 fresh_memory = memory_manager.get_memory_context()
@@ -507,11 +525,27 @@ async def main_loop():
                 is_awake = False
                 break
 
-            clean_command = raw_command.strip()
+            is_system_turn = isinstance(raw_command, dict) and raw_command.get("source") == "system"
+            proactive_kind = raw_command.get("kind") if is_system_turn else None
+            proactive_job_id = str(raw_command.get("job_id") or "") if is_system_turn else ""
+            proactive_ui_tag = str(raw_command.get("ui_tag") or "") if is_system_turn else ""
+            raw_text = (
+                str(raw_command.get("prompt") or "")
+                if is_system_turn
+                else str(raw_command.get("text") if isinstance(raw_command, dict) else raw_command)
+            )
+            clean_command = raw_text.strip()
             if not clean_command:
                 continue
 
             command = clean_command
+
+            if is_system_turn and proactive_kind == "agy_done" and proactive_job_id:
+                try:
+                    import tools_antigravity
+                    tools_antigravity.mark_job_reported(proactive_job_id)
+                except Exception:
+                    pass
 
             # Ensure fresh API key if updated from UI
             latest_key = get_api_key()
@@ -522,7 +556,21 @@ async def main_loop():
             # --- STANDARD AI PROCESSING ---
             print(f"\n☁️ [OPENAI CLOUD] THINKING...")
             active_turn_connectors.clear()
-            await server.broadcast_ui_tag_async("Thinking")
+            if is_system_turn:
+                if proactive_kind == "agy_done":
+                    active_turn_connectors.add("antigravity_work")
+                await server.broadcast_event_async({
+                    "type": "proactive_turn_start",
+                    "kind": proactive_kind,
+                    "job_id": proactive_job_id,
+                    "tag": proactive_ui_tag or "Thinking",
+                })
+                await server.broadcast_ui_tag_async(
+                    proactive_ui_tag or "Thinking",
+                    connector="antigravity_work",
+                )
+            else:
+                await server.broadcast_ui_tag_async("Thinking")
 
             try:
                 # ⚡ DYNAMIC CONSCIOUSNESS READ (EVERY TURN) - Instant RAM Access
@@ -549,7 +597,10 @@ async def main_loop():
                 if ans_block:
                     parts.append(ans_block)
                 parts.append(conn_status)
-                parts.append(f"[USER REQUEST]\n{command}")
+                if is_system_turn:
+                    parts.append(f"[PROACTIVE SYSTEM EVENT]\n{command}")
+                else:
+                    parts.append(f"[USER REQUEST]\n{command}")
                 user_payload = "\n\n".join(parts)
                 new_user_msg = {"role": "user", "content": user_payload}
                 messages.append(new_user_msg)
@@ -815,7 +866,8 @@ async def main_loop():
                         print()  # Clean newline after stream finishes
                         await server.broadcast_stream_end(
                             full_ai_msg,
-                            connectors=sorted(list(active_turn_connectors))
+                            connectors=sorted(list(active_turn_connectors)),
+                            proactive_kind=proactive_kind,
                         )
 
                         # 1. Append final text to active messages sequence
@@ -823,10 +875,13 @@ async def main_loop():
                             {"role": "assistant", "content": full_ai_msg})
 
                         # 2. Append to Legacy Memory and Session Tracker
+                        history_user_label = (
+                            f"[System: {proactive_kind}]" if is_system_turn else command
+                        )
                         chat_history.append(
-                            {"user": command, "aiden": full_ai_msg})
+                            {"user": history_user_label, "aiden": full_ai_msg})
                         session_history.append(
-                            {"user": command, "aiden": full_ai_msg})
+                            {"user": history_user_label, "aiden": full_ai_msg})
                         if len(chat_history) > 20:
                             chat_history.pop(0)
 
@@ -882,15 +937,11 @@ if __name__ == "__main__":
     print(">> [SYSTEM] Booting Autonomic Nervous System (ANS)...")
     threading.Thread(target=run_ans, daemon=True).start()
 
-    # 3. Boot the Wake Word Engine in background
-    print(">> [SYSTEM] Booting Wake Word Engine ('aiden.onnx')...")
-    start_wake_word_engine(wake_word_event, assistant_busy_event, stop_event)
-
-    # 4. Boot the Dynamic Physical Shortcut Detector (Ctrl + Shift + Space)
+    # 3. Boot the Dynamic Physical Shortcut Detector (Ctrl + Shift + Space)
     print(">> [SYSTEM] Booting Dynamic Physical Shortcut Detector...")
     init_shortcut_detector(shortcut_wake_event, shortcut_sleep_event)
 
-    # 5. Start the headless CLI & WebSocket loop
+    # 4. Start the headless CLI & WebSocket loop
     try:
         asyncio.run(main_loop())
     except KeyboardInterrupt:

@@ -24,16 +24,13 @@ more-itertools==11.2.1
 mss==10.2.0
 narwhals==2.27.1
 numpy==2.5.4
-onnxruntime==1.31.0
 openai==3.36.1
-openwakeword==0.6.0
 packaging==26.3
 pefile==2024.8.26
 pillow==13.0.0
 platformdirs==4.13.5
 protobuf==7.36.2
 psutil==7.2.2
-PyAudio==0.2.14
 pycaw==20260927
 pycparser==3.11
 pydantic==2.14.1

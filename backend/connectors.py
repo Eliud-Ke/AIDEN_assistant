@@ -7,6 +7,7 @@ without fragile keyword regex matching.
 import tools_gmail
 import tools_calendar
 import tools_spotify
+import tools_antigravity
 
 CONNECTORS_SCHEMA = {
     "gmail": {
@@ -23,6 +24,11 @@ CONNECTORS_SCHEMA = {
         "display_name": "Google Calendar",
         "description": "View, schedule, update, and manage calendar events and agenda reminders.",
         "tools": tools_calendar.CALENDAR_TOOLS_SCHEMA,
+    },
+    "antigravity_work": {
+        "display_name": "Antigravity Work",
+        "description": "Delegates complex multi-step coding, file system, and PC automation tasks to the local Antigravity CLI agent (Gemini 4 Hydrogen Medium) with a human-in-the-loop plan approval gate and async background Turbo execution.",
+        "tools": tools_antigravity.ANTIGRAVITY_TOOLS_SCHEMA,
     },
     "notes_vault": {
         "display_name": "Notes Vault",
@@ -54,6 +60,12 @@ _ALIASES = {
     "youtube": "youtube_visual",
     "file_stack": "file_system",
     "files": "file_system",
+    "antigravity": "antigravity_work",
+    "antigravity-work": "antigravity_work",
+    "antigravity_work_stack": "antigravity_work",
+    "agy": "antigravity_work",
+    "work": "antigravity_work",
+    "work_mode": "antigravity_work",
 }
 
 
