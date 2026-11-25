@@ -158,6 +158,9 @@ TOOL_STATUS_MAP = {
     "agy_execute_task": "Launching Antigravity worker",
     "agy_check_status": "Checking Antigravity progress",
     "agy_cancel_task": "Canceling Antigravity task",
+
+    # A2UI Generative Liquid-Glass Surface Tool
+    "render_a2ui_surface": "Polishing interactive UI",
 }
 
 # ---------------------------------------------------------
@@ -608,6 +611,11 @@ async def main_loop():
             # --- STANDARD AI PROCESSING ---
             print(f"\n☁️ [OPENAI CLOUD] THINKING... (effort={reasoning_effort}, images={len(user_images)})")
             active_turn_connectors.clear()
+            try:
+                import tools_a2ui
+                tools_a2ui.clear_pending_surfaces()
+            except Exception:
+                pass
             if is_system_turn:
                 if proactive_kind == "agy_done":
                     active_turn_connectors.add("antigravity_work")
@@ -945,8 +953,32 @@ async def main_loop():
                             break
                     else:
                         print()  # Clean newline after stream finishes
+                        ui_full_msg = full_ai_msg
+                        try:
+                            import tools_a2ui
+                            pending_surfaces = tools_a2ui.pop_pending_surfaces()
+                            if pending_surfaces:
+                                # Strip any accidental raw/partial ::a2ui-card tags the model echoed
+                                cleaned_prose = re.sub(
+                                    r"::a2ui-card\[[\s\S]*?(?:\]::|$)",
+                                    "",
+                                    ui_full_msg or "",
+                                    flags=re.IGNORECASE,
+                                ).strip()
+                                surface_tags = "\n".join(
+                                    tools_a2ui.serialize_a2ui_card_tag(surf)
+                                    for surf in pending_surfaces
+                                )
+                                ui_full_msg = (
+                                    f"{cleaned_prose}\n\n{surface_tags}"
+                                    if cleaned_prose
+                                    else surface_tags
+                                )
+                        except Exception as a2ui_err:
+                            print(f"⚠️ [A2UI SIDE-CHANNEL] Attachment error: {a2ui_err}")
+
                         await server.broadcast_stream_end(
-                            full_ai_msg,
+                            ui_full_msg,
                             connectors=sorted(list(active_turn_connectors)),
                             proactive_kind=proactive_kind,
                             reasoning_effort=reasoning_effort,

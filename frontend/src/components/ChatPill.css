@@ -77,18 +77,15 @@
 }
 
 .chat-pill-wrapper.awake.waking-bloom .siri-pill-input-wrap,
-.chat-pill-wrapper.awake.waking-bloom .siri-idle-plus-btn,
 .chat-pill-wrapper.awake.waking-bloom .siri-idle-bare-mic-btn {
   animation: aidenIslandContentIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) 0.085s both;
 }
 
 /* Clean fast inner UI blur-dissolve on Hide so content never squishes as pill collapses to 64px */
 .chat-pill-wrapper.hiding-bloom .siri-pill-input-wrap,
-.chat-pill-wrapper.hiding-bloom .siri-idle-plus-btn,
 .chat-pill-wrapper.hiding-bloom .siri-idle-bare-mic-btn,
 .chat-pill-wrapper.hiding-bloom .siri-deep-reason-bar-btn,
 .chat-pill-wrapper.hiding-bloom .siri-idle-images-collapse,
-.chat-pill-wrapper.hiding-bloom .siri-idle-conjoined-tray,
 .chat-pill-wrapper.hiding-bloom .siri-unified-stream,
 .chat-pill-wrapper.hiding-bloom .siri-thinking-content,
 .chat-pill-wrapper.hiding-bloom .siri-listening-content,
@@ -233,9 +230,9 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 16px;
   font-weight: 520;
-  line-height: 22.4px;
+  line-height: 22px;
   letter-spacing: 0.15px;
-  padding: 2px 0;
+  padding: 1px 0 3px 0;
 }
 
 .siri-cursor-mirror.followup-mirror {
@@ -260,7 +257,7 @@
   top: 0;
   left: 0;
   width: 2px;
-  height: 20px;
+  height: 18px;
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 1px;
   pointer-events: none;
@@ -346,7 +343,7 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 16px;
   font-weight: 520;
-  line-height: 22.4px;
+  line-height: 22px;
   letter-spacing: 0.15px;
   -webkit-font-smoothing: antialiased;
   caret-color: transparent !important;
@@ -360,7 +357,7 @@
   overflow-y: auto;
   scrollbar-width: none;
   margin: 0;
-  padding: 2px 0;
+  padding: 1px 0 3px 0;
   box-sizing: border-box;
 }
 
@@ -370,7 +367,7 @@
 
 .siri-pill-input::placeholder {
   color: rgba(255, 255, 255, 0.62);
-  text-indent: 6px;
+  text-indent: 3px;
 }
 
 .siri-pill-actions {
@@ -2940,18 +2937,18 @@
 
 .siri-idle-top-bar {
   width: 100%;
-  min-height: 60px;
+  min-height: 52px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px 0 14px;
+  padding: 0 16px 0 24px;
   box-sizing: border-box;
 }
 
 .siri-unified-pill.mode-idle.multiline .siri-idle-top-bar {
   align-items: flex-end;
-  padding: 16px 16px 16px 14px;
+  padding: 13px 16px 13px 24px;
 }
 
 /* Minimalist Bare Mic Icon in Initial Idle Pill (No Circle, Just Icon) */
@@ -3029,8 +3026,7 @@
 }
 
 /* Staggered Content Reveal on Voice Exit: Fade in near center separated, then spring smoothly outwards to ends */
-.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap,
-.siri-unified-pill.mode-idle.exiting-voice .siri-idle-plus-btn {
+.siri-unified-pill.mode-idle.exiting-voice .siri-pill-input-wrap {
   animation: siriVoiceSearchSpringOut 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.20s both;
 }
 
@@ -3086,7 +3082,6 @@
 
 /* Content Fade Out when Entering Voice Mode ("they just fade there") */
 .siri-pill-input-wrap.entering-voice,
-.siri-idle-plus-btn.entering-voice,
 .siri-deep-reason-bar-btn.entering-voice,
 .siri-idle-bare-mic-btn.entering-voice {
   pointer-events: none !important;
@@ -5968,11 +5963,9 @@
 
 /* Dissolve maximized UI cleanly before shrinking to 68x68; re-bloom in once flying back */
 .siri-unified-pill.is-morphing-to-pip .siri-pill-input-wrap,
-.siri-unified-pill.is-morphing-to-pip .siri-idle-plus-btn,
 .siri-unified-pill.is-morphing-to-pip .siri-idle-bare-mic-btn,
 .siri-unified-pill.is-morphing-to-pip .siri-deep-reason-bar-btn,
 .siri-unified-pill.is-morphing-to-pip .siri-idle-images-collapse,
-.siri-unified-pill.is-morphing-to-pip .siri-idle-conjoined-tray,
 .siri-unified-pill.is-morphing-to-pip .siri-drop-overlay,
 .siri-unified-pill.is-morphing-to-pip .siri-listening-content,
 .siri-unified-pill.is-morphing-to-pip .siri-thinking-content,
@@ -5990,11 +5983,9 @@
 }
 
 .siri-unified-pill.is-pip .siri-pill-input-wrap,
-.siri-unified-pill.is-pip .siri-idle-plus-btn,
 .siri-unified-pill.is-pip .siri-idle-bare-mic-btn,
 .siri-unified-pill.is-pip .siri-deep-reason-bar-btn,
 .siri-unified-pill.is-pip .siri-idle-images-collapse,
-.siri-unified-pill.is-pip .siri-idle-conjoined-tray,
 .siri-unified-pill.is-pip .siri-drop-overlay,
 .siri-unified-pill.is-pip .siri-listening-content,
 .siri-unified-pill.is-pip .siri-thinking-content,
@@ -6734,7 +6725,7 @@
   border-color: rgba(15, 23, 42, 0.32);
 }
 
-/* Compact Idle Pill: Collapsible Image Strip + Bare Left + Button + Conjoined Action Tray */
+/* Compact Idle Pill: Collapsible Image Strip */
 .siri-idle-images-collapse {
   display: grid;
   grid-template-rows: 0fr;
@@ -6757,144 +6748,6 @@
 .siri-idle-images-inner {
   overflow: hidden;
   min-height: 0;
-}
-
-.siri-idle-plus-btn {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: rgba(255, 255, 255, 0.48);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    color 0.18s ease,
-    transform 0.20s cubic-bezier(0.22, 1.28, 0.36, 1),
-    background 0.16s ease;
-}
-
-.siri-idle-plus-btn .siri-idle-plus-svg {
-  transition: transform 0.32s cubic-bezier(0.22, 1.28, 0.36, 1);
-}
-
-.siri-idle-plus-btn.tray-open .siri-idle-plus-svg {
-  transform: rotate(45deg);
-}
-
-.siri-idle-plus-btn:hover {
-  color: rgba(255, 255, 255, 0.96);
-  transform: scale(1.10);
-}
-
-.siri-idle-plus-btn:active {
-  transform: scale(0.92);
-}
-
-.siri-idle-plus-btn.tray-open {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.10);
-}
-
-.siri-unified-pill.light-mode .siri-idle-plus-btn {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.siri-unified-pill.light-mode .siri-idle-plus-btn:hover {
-  color: #0f172a;
-}
-
-.siri-unified-pill.light-mode .siri-idle-plus-btn.tray-open {
-  color: #0f172a;
-  background: rgba(15, 23, 42, 0.08);
-}
-
-.siri-idle-conjoined-tray {
-  display: grid;
-  grid-template-rows: 0fr;
-  flex-shrink: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    grid-template-rows 0.30s cubic-bezier(0.22, 1.18, 0.36, 1),
-    opacity 0.22s ease;
-}
-
-.siri-idle-conjoined-tray.is-open {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.siri-idle-conjoined-inner {
-  overflow: hidden;
-  min-height: 0;
-}
-
-.siri-idle-tray-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px 12px;
-}
-
-.siri-idle-tray-pill-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.88);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 12.2px;
-  font-weight: 550;
-  cursor: pointer;
-  outline: none;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.14s ease, color 0.15s ease;
-}
-
-.siri-idle-tray-pill-btn:hover {
-  background: rgba(255, 255, 255, 0.13);
-  border-color: rgba(255, 255, 255, 0.24);
-  color: #ffffff;
-}
-
-.siri-idle-tray-pill-btn:active {
-  transform: scale(0.95);
-}
-
-.siri-idle-tray-pill-btn.is-enabled {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.36);
-  color: #ffffff;
-}
-
-.siri-unified-pill.light-mode .siri-idle-tray-pill-btn {
-  border-color: rgba(15, 23, 42, 0.12);
-  background: rgba(15, 23, 42, 0.05);
-  color: rgba(17, 18, 21, 0.86);
-}
-
-.siri-unified-pill.light-mode .siri-idle-tray-pill-btn:hover {
-  background: rgba(15, 23, 42, 0.10);
-  color: #0f172a;
-}
-
-.siri-unified-pill.light-mode .siri-idle-tray-pill-btn.is-enabled {
-  background: #111215;
-  border-color: #111215;
-  color: #ffffff;
 }
 
 /* Sent User Image Thumbnails in Chat Stream */

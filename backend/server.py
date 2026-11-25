@@ -314,6 +314,10 @@ def estimate_response_height(text: str, connectors: Optional[list] = None) -> fl
     base_h = 80.0
 
     clean_text = (text or "").strip()
+    has_a2ui_card = "::a2ui-card[" in clean_text
+    if has_a2ui_card:
+        import re as _re
+        clean_text = _re.sub(r"::a2ui-card\[[\s\S]*?\]::", "", clean_text).strip()
     if clean_text:
         lines = clean_text.split("\n")
         total_wrapped_lines = 0
@@ -331,7 +335,7 @@ def estimate_response_height(text: str, connectors: Optional[list] = None) -> fl
         text_h = 40.0
 
     # Extra height for embedded cards
-    conn_h = 0.0
+    conn_h = 220.0 if has_a2ui_card else 0.0
     if connectors:
         if any(c in connectors for c in ["spotify_track", "spotify_artist", "spotify_album", "spotify"]):
             conn_h += 135.0
@@ -545,6 +549,45 @@ async def handle_connection(websocket: Any):
                     args=(job_id,),
                     daemon=True,
                 ).start()
+
+            elif msg_type == "a2ui_action":
+                raw_action = data.get("userAction") if isinstance(data.get("userAction"), dict) else data
+                surface_id = str(raw_action.get("surfaceId") or "").strip()[:80]
+                action_id = str(raw_action.get("actionId") or "").strip()[:80]
+                label = str(raw_action.get("label") or action_id).strip()[:120]
+                ctx = raw_action.get("context") if isinstance(raw_action.get("context"), dict) else {}
+                ctx_json = json.dumps(ctx, ensure_ascii=False)[:1800]
+
+                if action_id == "agy_approve_plan":
+                    jid = str(ctx.get("job_id") or "").strip()
+                    cmd_text = (
+                        f"[A2UI USER ACTION: agy_approve_plan] The user clicked 'Approve & Run' on the "
+                        f"Antigravity Plan Gate card{f' for job {jid}' if jid else ''}. "
+                        f"Call `agy_execute_task({json.dumps(jid) if jid else ''})` right now."
+                    )
+                elif action_id == "agy_cancel_plan":
+                    jid = str(ctx.get("job_id") or "").strip()
+                    cmd_text = (
+                        f"[A2UI USER ACTION: agy_cancel_plan] The user clicked 'Cancel' on the "
+                        f"Antigravity Plan Gate card{f' for job {jid}' if jid else ''}. "
+                        f"Call `agy_cancel_task({json.dumps(jid) if jid else ''})` right now."
+                    )
+                else:
+                    cmd_text = (
+                        f"[A2UI USER ACTION] surface={surface_id or 'unknown'} | "
+                        f"actionId={action_id or 'action'} | label={label} | "
+                        f"context={ctx_json}\n"
+                        "Process this interactive card action cleanly and respond concisely."
+                    )
+
+                print(f"🧩 [WS BRIDGE] A2UI userAction received: {action_id} (surface={surface_id})")
+                ui_command_queue.put({
+                    "text": cmd_text,
+                    "images": [],
+                    "reasoning_effort": "none",
+                })
+                if not _current_state["isAwake"] and _wake_event is not None:
+                    _wake_event.set()
 
             elif msg_type in ("voice_arm", "voice_start"):
                 print("🎙️ [WS BRIDGE] Voice mode armed.")

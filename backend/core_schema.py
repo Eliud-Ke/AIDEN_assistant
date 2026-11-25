@@ -383,6 +383,86 @@ CORE_TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_a2ui_surface",
+            "description": (
+                "Renders a rich interactive Liquid-Glass A2UI v0.9 card inside AIDEN's 466px pill using the "
+                "trusted `aiden.glass.v1` component catalog. Use this generously whenever interactive widgets, "
+                "live reactive calculators/converters (with sliders & computed formulas), checklists with progress, "
+                "tabbed comparisons, quick mini-forms, quizzes/flashcards, editable action confirmations, or "
+                "visual PC/data snapshots give a better experience than plain text. NEVER use it to duplicate "
+                "existing dedicated cards (Weather, Gmail inbox, Calendar, Spotify, Location, Volume/Brightness, "
+                "or live Antigravity execution progress)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "components": {
+                        "type": "array",
+                        "description": (
+                            "Flat adjacency list of UI nodes (<= 40 nodes, root id='root'). Allowed `component` values: "
+                            "Card, Column, Row (max 2-3 compact items), Text (props: text, variant='title'|'subtitle'|'body'|'caption'|'mono'), "
+                            "Badge (props: text, tone='emerald'|'amber'|'rose'|'sky'), Divider, "
+                            "Button (props: label, variant='primary'|'emerald'|'danger'|'ghost', actionId, disableWhen, lockOnClick, resolvedLabel, resolvedTone, clientPrefill, copyText), "
+                            "TextField (props: label, bind, placeholder, multiline, disableWhen), "
+                            "CheckBox (props: label, bind, strikeOnCheck, disableWhen), "
+                            "ChoiceChips (props: label, options[], bind, actionId, disableWhen), "
+                            "Slider (props: label, min, max, step, unit, prefix, bind, disableWhen), "
+                            "Tabs (props: bind, tabs=[{id, label, childId}]), "
+                            "Metric (props: label, value, sub), "
+                            "Progress (props: label, value, tone), "
+                            "ListItem (props: left, right, tone). "
+                            "Dynamic text/value/tone props can bind to data_model via `{\"path\": \"/key\"}` or `\"{{/key}}\"`."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "component": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Card", "Column", "Row", "Text", "Badge", "Divider",
+                                        "Button", "TextField", "CheckBox", "ChoiceChips",
+                                        "Slider", "Tabs", "Metric", "Progress", "ListItem",
+                                    ],
+                                },
+                                "props": {"type": "object"},
+                                "children": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["id", "component"],
+                        },
+                    },
+                    "data_model": {
+                        "type": "object",
+                        "description": "Initial reactive JSON state bound by sliders, text fields, checkboxes, tabs, chips, and metrics (e.g. {'bill': 120, 'tip': 18, 'people': '4'}).",
+                    },
+                    "computed": {
+                        "type": "object",
+                        "description": (
+                            "Optional safe local reactive formulas recomputed at 60fps in React whenever data_model changes. "
+                            "Map output key -> {expr, prefix?, suffix?, decimals?}. "
+                            "Supports +, -, *, /, (), round(x,d), floor, ceil, abs, min, max, pow, clamp, countTrue('prefix'), pctTrue('prefix'). "
+                            "Example: {'perPerson': {'expr': '(bill * (1 + tip / 100)) / people', 'prefix': '$', 'decimals': 2}}."
+                        ),
+                    },
+                    "surface_id": {
+                        "type": "string",
+                        "description": "Optional short unique surface identifier (e.g. 's_split_calc').",
+                    },
+                    "root_id": {
+                        "type": "string",
+                        "description": "Root component ID (defaults to 'root').",
+                    },
+                },
+                "required": ["components"],
+            },
+        },
+    },
 ]
 
 

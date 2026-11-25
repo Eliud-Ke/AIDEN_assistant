@@ -16,6 +16,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { PipSquareEyes } from "./PipSquareEyes";
 import { ConjoinedSearchTray, SearchItem } from "./SearchDrawer";
 import { AntigravityWorkCard, AgyWorkJobState } from "./AntigravityWorkCard";
+import { A2UISurface, A2UISurfacePayload, A2UIActionEvent } from "./A2UISurface";
 import "./ChatPill.css";
 
 interface UnifiedSearchResponse {
@@ -246,6 +247,7 @@ interface ChatPillProps {
   proactiveTurnKind?: string | null;
   onDismissAgyCard?: (jobId: string) => void;
   onStopAgyTask?: (jobId: string) => void;
+  onA2UIAction?: (event: A2UIActionEvent) => void;
 }
 
 interface MediaGalleryItem {
@@ -309,7 +311,9 @@ type MessagePart =
   | { type: "spotify_tracks"; data: SpotifyTracksCardData }
   | { type: "spotify_albums"; data: SpotifyAlbumsCardData }
   | { type: "spotify_playlists"; data: SpotifyPlaylistsCardData }
-  | { type: "spotify_library_playlists"; data: SpotifyLibraryPlaylistsCardData };
+  | { type: "spotify_library_playlists"; data: SpotifyLibraryPlaylistsCardData }
+  | { type: "a2ui"; data: A2UISurfacePayload }
+  | { type: "loading_a2ui" };
 
 const POLISH_STATUS_TAGS = [
   "Finishing up",
@@ -350,10 +354,72 @@ function parseSpotifyPlaylistItems(raw: any, maxCount: number): SpotifyPlaylistI
     }));
 }
 
+function normalizeA2UICardPayload(rawPayload: string): A2UISurfacePayload | null {
+  const trimmed = (rawPayload || "").trim();
+  if (!trimmed) return null;
+
+  const tryParse = (candidate: string): any => {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      try {
+        return JSON.parse(candidate.replace(/[\r\n]+/g, " "));
+      } catch {
+        return null;
+      }
+    }
+  };
+
+  let parsed = tryParse(trimmed);
+  // Self-heal shorthand where model omits `{"components":` before `[...],"data_model":...}`
+  if (!parsed && trimmed.startsWith("[")) {
+    parsed = tryParse(`{"components":${trimmed}`);
+    if (!parsed && !trimmed.endsWith("}")) {
+      parsed = tryParse(`{"components":${trimmed}}`);
+    }
+  }
+  if (!parsed) return null;
+
+  if (Array.isArray(parsed)) {
+    return {
+      version: "v0.9",
+      createSurface: { surfaceId: "s_a2ui_inline", catalogId: "aiden.glass.v1" },
+      updateDataModel: { data: {} },
+      updateComponents: { rootId: parsed[0]?.id || "root", components: parsed },
+    };
+  }
+  if (typeof parsed !== "object") return null;
+
+  if (parsed.updateComponents && Array.isArray(parsed.updateComponents.components)) {
+    return parsed as A2UISurfacePayload;
+  }
+
+  // Normalize shorthand `{ components, data_model, computed, surface_id, root_id }`
+  if (Array.isArray(parsed.components)) {
+    const sid = String(parsed.surface_id || parsed.surfaceId || "s_a2ui_inline");
+    const rootId = String(parsed.root_id || parsed.rootId || parsed.components[0]?.id || "root");
+    return {
+      version: "v0.9",
+      createSurface: { surfaceId: sid, catalogId: "aiden.glass.v1" },
+      updateDataModel: {
+        surfaceId: sid,
+        data: (parsed.data_model || parsed.dataModel || {}) as Record<string, any>,
+      },
+      updateComponents: {
+        surfaceId: sid,
+        rootId,
+        components: parsed.components,
+      },
+      computed: parsed.computed,
+    };
+  }
+  return null;
+}
+
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|a2ui-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -714,6 +780,16 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
         type: "system_slider",
         data: { type: sliderType, level, muted },
       });
+    } else if (tagType === "a2ui-card") {
+      const normalized = normalizeA2UICardPayload(rawPayload);
+      if (normalized) {
+        parts.push({
+          type: "a2ui",
+          data: normalized,
+        });
+      } else {
+        console.warn("Failed to parse a2ui-card JSON:", rawPayload.slice(0, 120));
+      }
     } else {
       const items: MediaGalleryItem[] = [];
 
@@ -770,7 +846,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[[\s\S]*$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|a2ui-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*)$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -780,6 +856,25 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
         parts.push({ type: "loading_gallery" });
       } else if (partialMatch[1].toLowerCase().startsWith("location")) {
         parts.push({ type: "loading_location" });
+      } else if (partialMatch[1].toLowerCase() === "a2ui-card") {
+        parts.push({ type: "loading_a2ui" });
+      }
+    } else if (partialMatch && !isStreaming && partialMatch[1].toLowerCase() === "a2ui-card") {
+      // Self-heal unclosed ::a2ui-card[...] if a model dropped the trailing ]::
+      const textBeforePartial = remaining.slice(0, partialMatch.index);
+      if (textBeforePartial) {
+        parts.push({ type: "text", text: textBeforePartial });
+      }
+      const recovered = normalizeA2UICardPayload("[" + partialMatch[2]);
+      if (recovered) {
+        parts.push({ type: "a2ui", data: recovered });
+      } else {
+        const directRecovered = normalizeA2UICardPayload(partialMatch[2]);
+        if (directRecovered) {
+          parts.push({ type: "a2ui", data: directRecovered });
+        } else {
+          parts.push({ type: "text", text: remaining });
+        }
       }
     } else {
       parts.push({ type: "text", text: remaining });
@@ -1107,6 +1202,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   proactiveTurnKind = null,
   onDismissAgyCard,
   onStopAgyTask,
+  onA2UIAction,
 }) => {
   void _onClearResponse;
   void _onStartRecording;
@@ -1226,7 +1322,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const [hasTextSelection, setHasTextSelection] = useState(false);
   const [caretPos, setCaretPos] = useState<{ left: number; top: number; visible: boolean }>({
     left: 0,
-    top: 3,
+    top: 2,
     visible: true,
   });
 
@@ -1250,7 +1346,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   attachedImagesRef.current = attachedImages;
   const [deepReason, setDeepReason] = useState(false);
   const [isPlusTrayOpen, setIsPlusTrayOpen] = useState(false);
-  const [isIdleTrayOpen, setIsIdleTrayOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef<number>(0);
@@ -1448,7 +1543,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     if (pillMode === "responding") {
       respondingMountedAtRef.current = Date.now();
       setIsHovered(false);
-      setIsIdleTrayOpen(false);
     } else {
       setIsHovered(false);
       setIsPlusTrayOpen(false);
@@ -1464,7 +1558,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       setAttachedImages([]);
       setDeepReason(false);
       setIsPlusTrayOpen(false);
-      setIsIdleTrayOpen(false);
       setIsDragOver(false);
       dragDepthRef.current = 0;
     }
@@ -1502,7 +1595,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     });
     if (addedIds.length > 0) {
       setIsPlusTrayOpen(false);
-      setIsIdleTrayOpen(false);
       setDrawerForceOpen(false);
       setDrawerSelectedIndex(-1);
       setSearchResult(null);
@@ -1631,14 +1723,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   // Close open [+] action tray cleanly on outside click
   useEffect(() => {
-    if (!isPlusTrayOpen && !isIdleTrayOpen) return;
+    if (!isPlusTrayOpen) return;
     const handleDocClick = () => {
       setIsPlusTrayOpen(false);
-      setIsIdleTrayOpen(false);
     };
     window.addEventListener("click", handleDocClick);
     return () => window.removeEventListener("click", handleDocClick);
-  }, [isPlusTrayOpen, isIdleTrayOpen]);
+  }, [isPlusTrayOpen]);
 
   const lastReportedHRef = useRef<number>(0);
 
@@ -1746,13 +1837,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const markerRect = marker.getBoundingClientRect();
     if (mirrorRect.width <= 0) return;
 
-    const cursorH = isFollowup ? 18 : 20;
-    const markerH = markerRect.height > 2 ? markerRect.height : isFollowup ? 22 : 22.4;
+    const cursorH = 18;
+    const markerH = markerRect.height > 2 ? markerRect.height : 22;
     const rawLeft = markerRect.left - mirrorRect.left - textarea.scrollLeft;
     const rawTop =
       markerRect.top -
       mirrorRect.top +
-      (markerH - cursorH) / 2 -
+      (markerH - cursorH) / 2 +
+      (isFollowup ? 0 : 0.5) -
       textarea.scrollTop;
 
     const maxLeft = Math.max(0, textarea.clientWidth - 2);
@@ -2292,7 +2384,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     if (
       !shouldShowSearchDrawer &&
       !hasActiveImages &&
-      !isIdleTrayOpen &&
       lastIdleReportedHRef.current !== 60
     ) {
       lastIdleReportedHRef.current = 60;
@@ -2332,7 +2423,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       setFollowupExtraH(0);
       const nextPillH = isMulti ? Math.min(198, Math.max(60, Math.ceil(targetH + 34))) : 60;
       lastTextareaIdleHRef.current = nextPillH;
-      const totalIdleH = nextPillH + (hasActiveImages ? 60 : 0) + (isIdleTrayOpen ? 56 : 0);
+      const totalIdleH = nextPillH + (hasActiveImages ? 60 : 0);
       if (!shouldShowSearchDrawer && pillMode === "idle" && !voiceActive && onHeightChange) {
         if (Math.abs(totalIdleH - lastIdleReportedHRef.current) >= 2) {
           lastIdleReportedHRef.current = totalIdleH;
@@ -2365,7 +2456,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       !isSubmitting &&
       !isMultiline &&
       !hasActiveImages &&
-      !isIdleTrayOpen &&
       !inputText.includes("\n")
   );
   const trimmedSearchQuery = inputText.trim();
@@ -2468,17 +2558,16 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [isSearchEligible, trimmedSearchQuery, drawerForceOpen, runUnifiedSearch]);
 
-  // Morph the single conjoined AIDEN HWND height seamlessly when the app tray, image strip, or [+] tray opens/closes
+  // Morph the single conjoined AIDEN HWND height seamlessly when the app tray or image strip opens/closes
   useEffect(() => {
     drawerVisiblePrevRef.current = shouldShowSearchDrawer;
     if (pillMode !== "idle" || voiceActive || !onHeightChange) return;
     const baseBarH = isMultiline ? Math.max(60, lastTextareaIdleHRef.current) : 60;
     const imgStripH = hasActiveImages ? 60 : 0;
-    const actionTrayH = isIdleTrayOpen ? 56 : 0;
     const desiredH =
       shouldShowSearchDrawer && searchResult
         ? 60 + 1 + computeSearchDrawerHeight(searchResult)
-        : baseBarH + imgStripH + actionTrayH;
+        : baseBarH + imgStripH;
     if (Math.abs(desiredH - lastIdleReportedHRef.current) >= 2) {
       lastIdleReportedHRef.current = desiredH;
       onHeightChange(desiredH, 210);
@@ -2488,7 +2577,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     voiceActive,
     isMultiline,
     hasActiveImages,
-    isIdleTrayOpen,
     shouldShowSearchDrawer,
     searchResult,
     onHeightChange,
@@ -2514,9 +2602,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   );
 
   closeSearchDrawerRef.current = () => {
-    if (isPlusTrayOpen || isIdleTrayOpen) {
+    if (isPlusTrayOpen) {
       setIsPlusTrayOpen(false);
-      setIsIdleTrayOpen(false);
       return true;
     }
     if (!shouldShowSearchDrawer) return false;
@@ -2583,8 +2670,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      if (isIdleTrayOpen || isPlusTrayOpen) {
-        setIsIdleTrayOpen(false);
+      if (isPlusTrayOpen) {
         setIsPlusTrayOpen(false);
       } else if (shouldShowSearchDrawer) {
         setDrawerForceOpen(false);
@@ -2619,7 +2705,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setDrawerSelectedIndex(-1);
     setSearchResult(null);
     setIsPlusTrayOpen(false);
-    setIsIdleTrayOpen(false);
     setAttachedImages([]);
     setIsSubmitting(true);
     if (onSendMessage) {
@@ -2631,7 +2716,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     setInputText("");
     setSelectionIndex(0);
     setHasTextSelection(false);
-    setCaretPos({ left: 0, top: showReplyWindow ? 2 : 3, visible: true });
+    setCaretPos({ left: 0, top: 2, visible: true });
     resetTextarea();
     followupInputRef.current?.blur();
     setIsInputFocused(false);
@@ -2639,6 +2724,28 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       setIsSubmitting(false);
     }, 450);
   };
+
+  const handleA2UIPrefill = useCallback((prefillText: string) => {
+    setInputText(prefillText);
+    inputTextRef.current = prefillText;
+    setIsInputFocused(true);
+    setIsHovered(true);
+    window.requestAnimationFrame(() => {
+      const el = followupInputRef.current || pillInputRef.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      const end = prefillText.length;
+      try {
+        el.setSelectionRange(end, end);
+      } catch {
+        // Ignore if not yet selectable
+      }
+      setSelectionIndex(end);
+      setHasTextSelection(false);
+      adjustTextareaHeight(el);
+      measureActiveCaret();
+    });
+  }, [measureActiveCaret]);
 
   useEffect(() => {
     return () => {
@@ -2698,7 +2805,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           )
         );
     setIsPlusTrayOpen(false);
-    setIsIdleTrayOpen(false);
     setIsHovered(false);
     setIsInputFocused(false);
     followupInputRef.current?.blur();
@@ -2732,7 +2838,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         pillMode === "thinking"
           ? 60
           : Math.max(60, lastIdleReportedHRef.current || 60);
-      setIsIdleTrayOpen(false);
       setIsPlusTrayOpen(false);
       setIsHovered(false);
       setIsInputFocused(false);
@@ -2875,7 +2980,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               ? "hover-active"
               : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
-            (shouldShowSearchDrawer || isIdleTrayOpen) && pillMode === "idle"
+            shouldShowSearchDrawer && pillMode === "idle"
               ? "search-tray-open"
               : ""
           } ${hasActiveImages && pillMode === "idle" ? "idle-has-images" : ""} ${
@@ -3053,38 +3158,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               )}
 
               <div className="siri-idle-top-bar">
-                {/* Minimalist Bare + Icon on Left (matches Bare Mic on Right) */}
-                <button
-                  type="button"
-                  className={`siri-idle-plus-btn ${isIdleTrayOpen ? "tray-open" : ""} ${
-                    effectiveEnteringVoice ? "entering-voice" : ""
-                  }`}
-                  title="Add image or toggle Deep Reason"
-                  aria-label="Open actions tray"
-                  aria-expanded={isIdleTrayOpen}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDrawerForceOpen(false);
-                    setDrawerSelectedIndex(-1);
-                    setSearchResult(null);
-                    setIsIdleTrayOpen((prev) => !prev);
-                  }}
-                >
-                  <svg
-                    className="siri-idle-plus-svg"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
-
                 <div
                   className={`siri-pill-input-wrap ${
                     effectiveEnteringVoice ? "entering-voice" : ""
@@ -3197,7 +3270,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   aria-label="Voice input"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsIdleTrayOpen(false);
                     toggleVoiceMode(true);
                   }}
                 >
@@ -3222,68 +3294,6 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               {pillMode === "idle" && !effectiveEnteringVoice && (
                 <>
                   <div className="siri-conjoined-divider" aria-hidden="true" />
-                  {/* Conjoined Action Tray inside Compact Idle Pill */}
-                  <div
-                    className={`siri-idle-conjoined-tray ${
-                      isIdleTrayOpen && !shouldShowSearchDrawer ? "is-open" : ""
-                    }`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="siri-idle-conjoined-inner">
-                      <div className="siri-idle-tray-row">
-                        <button
-                          type="button"
-                          className="siri-idle-tray-pill-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsIdleTrayOpen(false);
-                            fileInputRef.current?.click();
-                          }}
-                        >
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <rect x="3" y="3" width="18" height="18" rx="3" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="M21 15l-5-5L5 21" />
-                          </svg>
-                          <span>Add image</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`siri-idle-tray-pill-btn ${deepReason ? "is-enabled" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeepReason((prev) => !prev);
-                            setIsIdleTrayOpen(false);
-                          }}
-                        >
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.9"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-                            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-                            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-                          </svg>
-                          <span>Deep Reason</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                   <ConjoinedSearchTray
                     open={shouldShowSearchDrawer}
                     query={trimmedSearchQuery}
@@ -3738,6 +3748,27 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                                 level={part.data.level}
                                 muted={part.data.muted}
                                 onHardwareChange={onHardwareChange}
+                              />
+                            );
+                          }
+
+                          if (part.type === "loading_a2ui") {
+                            return (
+                              <div key={idx} className="a2ui-loading-card">
+                                <span className="a2ui-loading-dot" aria-hidden="true" />
+                                <span>Polishing interactive UI…</span>
+                              </div>
+                            );
+                          }
+
+                          if (part.type === "a2ui") {
+                            return (
+                              <A2UISurface
+                                key={part.data.createSurface?.surfaceId || idx}
+                                surface={part.data}
+                                onAction={onA2UIAction}
+                                onPrefillInput={handleA2UIPrefill}
+                                onLayoutChange={() => window.requestAnimationFrame(updateScrollMask)}
                               />
                             );
                           }
@@ -5402,6 +5433,30 @@ export const ChatPillWindow: React.FC = () => {
     }
   }, []);
 
+  const handleA2UIAction = useCallback((event: A2UIActionEvent) => {
+    const bubbleLabel = event.label && event.label.trim() ? event.label.trim() : null;
+    enterTurnPending(bubbleLabel, true, true);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "a2ui_action",
+          userAction: event,
+        })
+      );
+    } else {
+      finalizeChatTurn(
+        {
+          id: "offline-a2ui-" + Date.now(),
+          userPrompt: bubbleLabel,
+          assistantReply: "Aiden's backend is not running. Boot up Aiden from the Control Panel first.",
+          isStreaming: false,
+        },
+        true,
+        null
+      );
+    }
+  }, []);
+
   return (
     <div className="chat-pill-desktop-window">
       <ChatPill
@@ -5446,6 +5501,7 @@ export const ChatPillWindow: React.FC = () => {
         proactiveTurnKind={proactiveTurnKind}
         onDismissAgyCard={handleDismissAgyCard}
         onStopAgyTask={handleStopAgyTask}
+        onA2UIAction={handleA2UIAction}
       />
     </div>
   );

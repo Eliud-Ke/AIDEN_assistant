@@ -19,14 +19,9 @@ Built with **Tauri v2 + Rust**, **React 19 + TypeScript**, and an autonomous **P
 
 ---
 
-<!-- MEDIA SLOT 1/6: HERO DEMO VIDEO (Recommended: 8-10s 60fps .mp4, 1280x720)
-     Show: Press Win + Space -> liquid-glass pill blooms in upper third -> instant fuzzy search
-     across Apps / Browser Bookmarks / Files -> ask AIDEN a question with live streaming + card.
-     To embed: Drag-and-drop the .mp4 into a GitHub issue/PR comment to get a native video URL
-     and replace the block below, or save to docs/media/hero-spotlight-chat.mp4. -->
-> [!TIP]
-> **Media Slot 1 / 6 — Hero Demo (`.mp4`, 8–10s)**
-> *Upload slot for: `Win + Space` wake bloom ➔ Conjoined Spotlight search (Apps, Bookmarks, Files) ➔ Live AI chat response.*
+<div align="center">
+  <img src="docs/media/01-hero-spotlight-chat.gif" alt="AIDEN Win+Space Spotlight Launcher & Live Chat Demo" width="860" />
+</div>
 
 ---
 
@@ -62,12 +57,9 @@ When asleep or minimized, AIDEN morphs smoothly into a draggable **68×68 Pictur
 * **Spotify Groove Mode (`pip_headphones` + `audio_beat.rs`)**: Automatically detects Spotify playback via Windows GSMTC, equips an animated **AirPods Max headphones overlay**, and bops the cube in sync with your live bass beat via **WASAPI loopback audio analysis**.
 * **Antigravity Work Expression**: When an Antigravity CLI job runs in the background, AIDEN switches to a calm **breathing emerald-green rim glow**, focused working eyes, and a floating **rotating grey gear bubble**, followed by a celebratory **finished animation** (happy arched eyes, bounce, sparkle, and green `✓` bubble) when complete.
 
-<!-- MEDIA SLOT 2/6: LIVING PIP CUBE SHOWCASE (Recommended: 6-8s .mp4 or .gif, cropped around cube)
-     Show: 68x68 cube eyes tracking cursor -> battery speech bubble or dizzy drag -> Spotify starts
-     playing and AirPods Max headphones appear while the cube bops to the beat. -->
-> [!TIP]
-> **Media Slot 2 / 6 — Living 68×68 PiP Cube (`.mp4` or `.gif`, 6–8s)**
-> *Upload slot for: Cursor-tracking eyes, battery speech bubble, and Spotify AirPods Max headphones + beat bopping.*
+<div align="center">
+  <img src="docs/media/02-living-pip-cube.gif" alt="AIDEN 68x68 Living PiP Cube Eyes, Battery Bubble & Spotify AirPods Max" width="860" />
+</div>
 
 ### ⚙️ Antigravity Work Mode (Headless CLI Agent Delegation)
 For complex multi-step coding, refactoring, file organization, or PC automation tasks, AIDEN delegates work asynchronously to the local **Google Antigravity CLI (`agy.exe`)** without blocking your chat:
@@ -76,13 +68,15 @@ For complex multi-step coding, refactoring, file organization, or PC automation 
 * **Hover-Minimize to Background**: Hover over the inline card to reveal its springy **Minimize** button — collapsing the card tells AIDEN you've seen it and want to keep chatting normally while Antigravity keeps working quietly in the background.
 * **Collision-Safe Turn-Barrier Mailbox (`server.py` + `main.py`)**: Background completions queue cleanly between active LLM turns (never clobbering an active stream or erasing your unsent draft in `Ask Aiden`), hold silently while minimized/asleep until you open AIDEN, and preserve the `antigravity_work` connector across `×` Sleep/Wake cycles.
 
-<!-- MEDIA SLOT 3/6: ANTIGRAVITY WORK MODE SHOWCASE (Recommended: 10-12s 60fps .mp4, 1280x720)
-     Show: AIDEN presenting read-only Plan Gate -> user approves -> Live Inline Antigravity Card
-     streaming real CLI steps -> hover-minimize card to keep chatting -> 68x68 Living Cube breathing
-     emerald-green glow + rotating grey gear bubble -> finished animation + smart completion report. -->
-> [!TIP]
-> **Media Slot 3 / 6 — Antigravity Work Showcase (`.mp4`, 10–12s)**
-> *Upload slot for: Plan Gate approval ➔ Live Inline Antigravity Card streaming real CLI steps & hover-minimize ➔ 68×68 Cube emerald-green working glow + spinning gear ➔ Finished animation & smart completion report.*
+### 🧩 Dynamic Google A2UI v0.9 Generative Surfaces (`A2UISurface.tsx`)
+Beyond static markdown and fixed cards, AIDEN runs a custom **Google A2UI v0.9** renderer (`tools_a2ui.py` + `A2UISurface.tsx`) backed by a zero-latency side-channel auto-mounter and safe zero-`eval` reactive formulas (`aiden.glass.v1` catalog):
+* **Live Checklists & Progress Tracking**: Packing lists, onboarding checklists, and multi-step routines with live checkable items, strikethrough completion, and automatic `pctTrue(...)` / `countTrue(...)` progress bars.
+* **60fps Interactive Calculators**: Dinner bill splitters, loan/budget sliders, and unit converters that recalculate locally in real time as you drag sliders — zero network round-trips or card flicker.
+* **Decision Matrices, Quizzes & Plan Gates**: Switchable `Tabs` comparisons, `ChoiceChips` selectors, inline mini-forms, PC diagnostics dashboards, and interactive Antigravity **Plan Gate** cards (`Approve & Run` / `Revise` / `Cancel`).
+
+<div align="center">
+  <img src="docs/media/03-a2ui-generative-surfaces.gif" alt="AIDEN Dynamic Google A2UI v0.9 Interactive Surfaces Demo" width="860" />
+</div>
 
 ### 🃏 Zero-Yapping Interactive Glass Cards
 Instead of dumping walls of text, AIDEN answers with one crisp conversational line paired with a rich interactive card inside the pill:
@@ -94,23 +88,14 @@ Instead of dumping walls of text, AIDEN answers with one crisp conversational li
 * **Hardware Glass Sliders (`SystemSlider`)** — Interactive volume and display brightness controls right inside the reply.
 * **Rich Markdown (`MarkdownContent`)** — GitHub Flavored Markdown, comparison tables, syntax-highlighted code blocks (`highlight.js`), and inline/display LaTeX math (`KaTeX`).
 
-<!-- MEDIA SLOT 4/6: RICH INTERACTIVE GLASS CARDS COLLAGE (Recommended: 1 clean 2x2 PNG, 1600x1000)
-     Show: WeatherCard + CalendarCard (or GmailCard) + SpotifyTracksCard + SystemSlider in Dark/Light glass. -->
-> [!TIP]
-> **Media Slot 4 / 6 — Interactive Glass Cards Showcase (`.png` collage)**
-> *Upload slot for: 2×2 showcase of Weather, Calendar/Gmail, Spotify, and Hardware Volume/Brightness Glass Slider cards.*
+<div align="center">
+  <img src="docs/media/04-glass-cards-collage.gif" alt="AIDEN Interactive Glass Cards Showcase (Weather, Calendar, Gmail, Spotify, System Sliders)" width="860" />
+</div>
 
 ### 👁️ Screen Vision, Live Web Grounding & Hardware Awareness
 * **Screen Vision (`look_at_screen`)**: Inspects your full screen, active window, or a specific background window by name to read errors, explain code, or summarize what you're looking at.
 * **Live Grounded Web Search (`grounded_web_search`)**: Searches live web sources for current events, docs, and real-time facts with clean clickable citations.
 * **Autonomic Nervous System (`ans.py`)**: Feeds real-time system vitals (battery, CPU, RAM, active focus, open windows, currently playing media, active Antigravity jobs, notification counts) directly into AIDEN's context.
-
-<!-- MEDIA SLOT 5/6: SCREEN VISION OR LIVE SEARCH DEMO (Recommended: 6-8s .mp4 or crisp .png)
-     Show: AIDEN inspecting an open code/error window via look_at_screen OR returning a grounded
-     live web answer with syntax-highlighted code & KaTeX math. -->
-> [!TIP]
-> **Media Slot 5 / 6 — Screen Vision & Rich AI Output (`.mp4` or `.png`)**
-> *Upload slot for: `look_at_screen` debugging an open window or a streamed response with code + KaTeX math.*
 
 ### 🎛️ Control Launcher, Dual Theme & Long-Term Memory
 * **Dual-Theme Circular Wipe**: Instant origin-aware circular ripple transition between **Dark Velvet** and **Warm Biscuit Cream**.
@@ -118,11 +103,9 @@ Instead of dumping walls of text, AIDEN answers with one crisp conversational li
 * **Personality & Rules Editor**: Customize AIDEN's identity vibe and custom operational rules in `user_preferences.json`.
 * **System Tray & Process Supervision**: One-click **Boot up**, **Restart**, **Shutdown**, and **Exit** from the Launcher or Windows System Tray, with all secrets encrypted in **Windows Credential Manager**.
 
-<!-- MEDIA SLOT 6/6: LAUNCHER & DUAL THEME SHOWCASE (Recommended: 4-5s .gif or .mp4)
-     Show: Launcher circular theme ripple (Dark Velvet <-> Warm Biscuit Cream) + Integrations & Memory tabs. -->
-> [!TIP]
-> **Media Slot 6 / 6 — Control Launcher & Theme Transition (`.gif` or `.mp4`, 4–5s)**
-> *Upload slot for: Dark Velvet ↔ Warm Biscuit Cream circular wipe, Integrations setup, and Memory Manager.*
+<div align="center">
+  <img src="docs/media/05-launcher-theme-memory.gif" alt="AIDEN Control Launcher Dual-Theme Circular Wipe, Integrations & Memory Manager" width="860" />
+</div>
 
 ---
 
@@ -133,6 +116,7 @@ AIDEN uses an MCP-style dynamic connector registry (`backend/connectors.py`) tha
 | Category | Status | Capabilities |
 | :--- | :---: | :--- |
 | **Core OS & Media** | ✅ Active | App launching, active window inspection & closing, Windows Settings deep-links, Recycle Bin, volume & brightness sliders, universal media playback (`play/pause/next/prev/restart`), power management, Bible passages |
+| **Dynamic UI (`A2UI v0.9`)** | ✅ Active | Generative interactive glass surfaces (`render_a2ui_surface`): live progress checklists, 60fps reactive calculators, tabbed comparisons, forms, quizzes, and Antigravity Plan Gate cards |
 | **Vision & Web** | ✅ Active | Screen Vision (`look_at_screen`: whole screen / active / background window), Live Grounded Web Search, Weather Forecast, Live Location |
 | **Gmail** | ✅ Active | Persistent warm IMAP + SMTP: unread inbox, fast search, read, draft, send, reply, mark read, archive |
 | **Google Calendar** | ✅ Active | OAuth 2.0: daily/weekly agenda, availability & conflict detection, event creation, update, cancellation |
@@ -171,7 +155,7 @@ flowchart TD
         Connectors["Dynamic Connectors (Gmail, Calendar, Spotify, Antigravity Work)"]
         AgyWorker["Headless Antigravity CLI Worker (agy.exe)"]
         Memory["Semantic & Episodic Memory Manager"]
-        SysTools["OS, Vision, Weather & Web Grounding Tools"]
+        SysTools["OS, Vision, Weather, Web & A2UI Tools"]
     end
 
     ChatPill <--> |WebSocket JSON & Token Stream| WSServer
@@ -207,6 +191,7 @@ AIDEN_assistant/
 │   ├── tools_gmail.py            # Persistent warm IMAP/SMTP Gmail tools
 │   ├── tools_calendar.py         # Google Calendar OAuth & conflict-aware scheduling tools
 │   ├── tools_spotify.py          # Spotify Web API search, library & playback tools
+│   ├── tools_a2ui.py             # Google A2UI v0.9 validator & side-channel surface queue
 │   ├── tools_antigravity.py      # Headless Antigravity CLI Plan Gate & async Turbo worker
 │   ├── memory_manager.py         # Semantic facts (memory.json) & episodic ledger
 │   ├── configuration.py          # Identity vibe, operational rules & preferences
@@ -217,6 +202,7 @@ AIDEN_assistant/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ChatPill.tsx             # Upper-third Liquid Glass pill & conjoined search tray
+│   │   │   ├── A2UISurface.tsx          # Google A2UI v0.9 renderer & zero-eval reactive engine
 │   │   │   ├── AntigravityWorkCard.tsx  # Live inline Antigravity card with hover-minimize & stop
 │   │   │   ├── PipSquareEyes.tsx        # 68x68 living cube eyes, working green glow & Spotify state
 │   │   │   ├── PipCommentBubble.tsx     # Floating battery, spinning gear & status speech bubble

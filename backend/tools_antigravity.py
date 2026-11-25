@@ -366,6 +366,31 @@ def _format_plan_brief(job: Dict[str, Any]) -> str:
     steps_text = "\n".join(f"{idx + 1}. {s}" for idx, s in enumerate(steps[:6])) or "1. Execute requested task"
     paths_text = ", ".join(str(p) for p in paths[:6]) or job.get("working_dir", "")
 
+    plan_card_tag = ""
+    try:
+        try:
+            from tools_a2ui import build_antigravity_plan_a2ui_tag
+        except ImportError:
+            from backend.tools_a2ui import build_antigravity_plan_a2ui_tag  # type: ignore
+        plan_card_tag = build_antigravity_plan_a2ui_tag(job)
+    except Exception as exc:
+        print(f"⚠️ [AGY PLAN A2UI] Failed to build plan card tag: {exc}")
+
+    card_directive = (
+        "\n[A2UI PLAN GATE CARD QUEUED AUTOMATICALLY]: The interactive Plan Gate glass card (with one-click "
+        "Approve & Run / Revise / Cancel buttons) will mount automatically below your reply.\n"
+        "[DIRECTIVE FOR AIDEN]: Summarize the plan and any serious risks in 1-2 crisp conversational sentences "
+        "in your natural voice and ask for approval. Do NOT write any JSON or `::a2ui-card` tags and do NOT "
+        "recite the full step list in prose (the card displays it). "
+        "Do NOT call `agy_execute_task` until the user explicitly approves (via button or text). "
+        "If they deny, call `agy_cancel_task`. If they request changes, call `agy_revise_plan`."
+        if plan_card_tag
+        else "\n[DIRECTIVE FOR AIDEN]: Explain this plan, key affected locations, and any serious risks/harm "
+        "to the user in 2-4 concise conversational sentences and ask for their approval before executing. "
+        "Do NOT call `agy_execute_task` until the user explicitly approves. "
+        "If they deny, call `agy_cancel_task`. If they request modifications, call `agy_revise_plan`."
+    )
+
     return (
         f"[ANTIGRAVITY PLAN READY - JOB {job['job_id']}]\n"
         f"MODEL: {job['model']} | PROJECT: {job['project']} | CWD: {job['working_dir']}\n"
@@ -373,11 +398,8 @@ def _format_plan_brief(job: Dict[str, Any]) -> str:
         f"SUMMARY: {summary}\n"
         f"STEPS:\n{steps_text}\n"
         f"PATHS_AFFECTED: {paths_text}\n"
-        f"SERIOUS_HARM_OR_RISKS: {risks}\n\n"
-        "[DIRECTIVE FOR AIDEN]: Explain this plan, key affected locations, and any serious risks/harm "
-        "to the user in 2-4 concise conversational sentences and ask for their approval before executing. "
-        "Do NOT call `agy_execute_task` until the user explicitly approves. "
-        "If the user denies, call `agy_cancel_task`. If they request modifications, call `agy_revise_plan`."
+        f"SERIOUS_HARM_OR_RISKS: {risks}\n"
+        f"{card_directive}"
     )
 
 
