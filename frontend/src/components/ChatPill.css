@@ -749,6 +749,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3331,6 +3332,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3913,6 +3915,7 @@
 
 /* Center Colourless Clear Glass Capsule Field ("Ask Aiden") */
 .siri-command-capsule {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 48px;
@@ -3968,6 +3971,227 @@
     inset 0 -1px 1px rgba(0, 0, 0, 0.10),
     0 8px 20px rgba(0, 0, 0, 0.14);
   transition-delay: 0ms !important;
+}
+
+/* ==========================================================================
+   SCROLL-TO-BOTTOM MINI PILL ("↓ Latest") — CLEAN SPRING POP DETACH
+   ========================================================================== */
+
+.siri-capsule-rim-bloom {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 48px;
+  height: 6px;
+  transform: translateX(-50%) scaleX(0.4);
+  border-radius: 999px;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0) 75%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.siri-capsule-rim-bloom.pulse {
+  animation: scrollPillRimSwell 0.44s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes scrollPillRimSwell {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(2px) scaleX(0.45);
+  }
+  34% {
+    opacity: 0.92;
+    transform: translateX(-50%) translateY(-1px) scaleX(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px) scaleX(0.65);
+  }
+}
+
+@keyframes scrollPillSpringPop {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.72);
+  }
+  65% {
+    opacity: 1;
+    transform: translate3d(0, -2.5px, 0) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes scrollPillSpringTuck {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.76);
+  }
+}
+
+@keyframes scrollPillChevronNudge {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+.siri-scroll-bubble-anchor {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  z-index: 15;
+  pointer-events: none;
+  transition:
+    bottom 0.36s cubic-bezier(0.22, 1.18, 0.36, 1),
+    opacity 0.16s ease;
+}
+
+/* When unhovered (command bar tucked away), dock gently near the pill floor */
+.siri-unified-pill:not(.controls-visible) .siri-scroll-bubble-anchor {
+  bottom: 2px;
+}
+
+/* Keep clear whenever [+] morph tray is open or while in PiP / voice modes */
+.siri-hover-followup-bar.tray-open .siri-scroll-bubble-anchor,
+.siri-unified-pill.expanded-voice-active .siri-scroll-bubble-anchor,
+.siri-unified-pill.is-pip .siri-scroll-bubble-anchor,
+.siri-unified-pill.is-morphing-to-pip .siri-scroll-bubble-anchor {
+  opacity: 0;
+  pointer-events: none !important;
+}
+
+/* Pure colourless clear glass identical to +, Mic, and Ask Aiden
+   (zero dark/grey tint and zero nested CSS backdrop-filter; backed directly by live #aiden-stream-lens-blur) */
+.siri-scroll-bottom-pill {
+  position: relative;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  border: none !important;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
+    0 6px 16px rgba(0, 0, 0, 0.28);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", system-ui, sans-serif;
+  font-size: 11.4px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
+  user-select: none;
+  opacity: 0;
+  pointer-events: none;
+  transform-origin: center bottom;
+  --arc-top-peak: 0.56;
+  --arc-top-mid: 0.24;
+  --arc-bot-peak: 0.25;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.siri-scroll-bottom-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.15px;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    rgba(255, 255, 255, var(--arc-top-peak)) 0deg,
+    rgba(255, 255, 255, var(--arc-top-mid)) 34deg,
+    rgba(255, 255, 255, 0) 58deg,
+    rgba(255, 255, 255, 0) 156deg,
+    rgba(255, 255, 255, var(--arc-bot-peak)) 180deg,
+    rgba(255, 255, 255, 0) 204deg,
+    rgba(255, 255, 255, 0) 302deg,
+    rgba(255, 255, 255, var(--arc-top-mid)) 326deg,
+    rgba(255, 255, 255, var(--arc-top-peak)) 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.siri-scroll-bottom-pill.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.siri-hover-followup-bar.tray-open .siri-scroll-bottom-pill.is-visible {
+  pointer-events: none;
+}
+
+.siri-scroll-bottom-pill.is-entering {
+  animation: scrollPillSpringPop 0.34s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.siri-scroll-bottom-pill.is-leaving {
+  pointer-events: none;
+  animation: scrollPillSpringTuck 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.siri-scroll-bottom-pill.is-visible:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  transform: translateY(-2px) scale(1.06);
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    0 8px 20px rgba(0, 0, 0, 0.34);
+  --arc-top-peak: 0.70;
+  --arc-top-mid: 0.32;
+  --arc-bot-peak: 0.33;
+}
+
+.siri-scroll-bottom-pill.is-visible:hover svg {
+  animation: scrollPillChevronNudge 0.85s ease-in-out infinite;
+}
+
+.siri-scroll-bottom-pill.is-visible:active {
+  transform: translateY(1px) scale(0.92);
+  transition-duration: 0.09s;
+}
+
+.siri-unified-pill.light-mode .siri-scroll-bottom-pill {
+  background: rgba(255, 255, 255, 0.18);
+  border: none !important;
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.10);
+  --arc-top-peak: 0.94;
+  --arc-top-mid: 0.44;
+  --arc-bot-peak: 0.50;
+}
+
+.siri-unified-pill.light-mode .siri-scroll-bottom-pill.is-visible:hover {
+  background: rgba(255, 255, 255, 0.24);
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 -1px 1px rgba(0, 0, 0, 0.10),
+    0 8px 20px rgba(0, 0, 0, 0.14);
+  --arc-top-peak: 0.98;
+  --arc-top-mid: 0.52;
+  --arc-bot-peak: 0.56;
 }
 
 .siri-command-input {

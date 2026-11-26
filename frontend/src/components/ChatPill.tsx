@@ -142,6 +142,7 @@ export interface ChatTurn {
   isStreaming?: boolean;
   connectors?: string[];
   reasoningEffort?: "none" | "high";
+  isProactive?: boolean;
 }
 
 export interface ConnectorMeta {
@@ -1449,6 +1450,15 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const lastLensSigRef = useRef<string>("");
   const [isLensBlurActive, setIsLensBlurActive] = useState(false);
 
+  // Scroll-to-Bottom Mini Pill ("↓ Latest") detaching from the Ask Aiden capsule
+  const [scrollBottomState, setScrollBottomState] = useState<"hidden" | "visible" | "leaving">("hidden");
+  const scrollBottomStateRef = useRef<"hidden" | "visible" | "leaving">("hidden");
+  const scrollBottomLeaveTimerRef = useRef<number | null>(null);
+  const scrollBottomAnchorRef = useRef<HTMLDivElement>(null);
+  const scrollBottomBtnRef = useRef<HTMLButtonElement>(null);
+  const scrollBottomRimRef = useRef<HTMLDivElement>(null);
+  const scrollBottomCancelRef = useRef<{ current: boolean }>({ current: false });
+
   // Dynamic Island wake/hide choreography phase for inner content stagger
   const prevBloomStateRef = useRef<{ isAwake: boolean; isBackendOnline: boolean }>({
     isAwake,
@@ -1499,6 +1509,46 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, []);
 
+  const showScrollBottomPill = useCallback(() => {
+    if (scrollBottomLeaveTimerRef.current !== null) {
+      window.clearTimeout(scrollBottomLeaveTimerRef.current);
+      scrollBottomLeaveTimerRef.current = null;
+    }
+    if (scrollBottomStateRef.current === "visible") return;
+    scrollBottomStateRef.current = "visible";
+    setScrollBottomState("visible");
+    const bloomEl = scrollBottomRimRef.current;
+    if (bloomEl) {
+      bloomEl.classList.remove("pulse");
+      void bloomEl.offsetWidth;
+      bloomEl.classList.add("pulse");
+    }
+  }, []);
+
+  const hideScrollBottomPill = useCallback((immediate = false) => {
+    if (scrollBottomStateRef.current === "hidden") return;
+    if (immediate) {
+      if (scrollBottomLeaveTimerRef.current !== null) {
+        window.clearTimeout(scrollBottomLeaveTimerRef.current);
+        scrollBottomLeaveTimerRef.current = null;
+      }
+      scrollBottomStateRef.current = "hidden";
+      setScrollBottomState("hidden");
+      return;
+    }
+    if (scrollBottomStateRef.current === "leaving") return;
+    scrollBottomStateRef.current = "leaving";
+    setScrollBottomState("leaving");
+    if (scrollBottomLeaveTimerRef.current !== null) {
+      window.clearTimeout(scrollBottomLeaveTimerRef.current);
+    }
+    scrollBottomLeaveTimerRef.current = window.setTimeout(() => {
+      scrollBottomLeaveTimerRef.current = null;
+      scrollBottomStateRef.current = "hidden";
+      setScrollBottomState("hidden");
+    }, 220);
+  }, []);
+
   const updateScrollMask = useCallback(() => {
     const el = streamContainerRef.current;
     if (!el) return;
@@ -1507,6 +1557,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const maxScroll = scrollHeight - clientHeight;
 
     if (maxScroll <= 4) {
+      hideScrollBottomPill();
       if (el.dataset.currentMask !== "none") {
         el.dataset.currentMask = "none";
         el.style.maskImage = "none";
@@ -1518,6 +1569,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const topFade = scrollTop <= 4 ? 0 : Math.min(20, scrollTop);
     const bottomRemaining = maxScroll - scrollTop;
     const bottomFade = bottomRemaining <= 4 ? 0 : Math.min(34, bottomRemaining);
+
+    if (bottomRemaining > 42) {
+      showScrollBottomPill();
+    } else if (bottomRemaining <= 16) {
+      hideScrollBottomPill();
+    }
 
     let mask = "none";
     if (topFade > 0 && bottomFade > 0) {
@@ -1533,6 +1590,29 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       el.style.maskImage = mask;
       el.style.webkitMaskImage = mask;
     }
+  }, [hideScrollBottomPill, showScrollBottomPill]);
+
+  const handleScrollToBottom = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const container = streamContainerRef.current;
+      if (!container) return;
+      scrollBottomCancelRef.current.current = true;
+      const cancelToken = { current: false };
+      scrollBottomCancelRef.current = cancelToken;
+      const targetTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      animateStreamScroll(container, targetTop, 380, scrollAnimRafRef, cancelToken, updateScrollMask);
+    },
+    [updateScrollMask]
+  );
+
+  useEffect(() => {
+    return () => {
+      scrollBottomCancelRef.current.current = true;
+      if (scrollBottomLeaveTimerRef.current !== null) {
+        window.clearTimeout(scrollBottomLeaveTimerRef.current);
+      }
+    };
   }, []);
 
   const activeTurns: ChatTurn[] = turns && turns.length > 0
@@ -2255,7 +2335,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, [pillMode, hasFollowupPending, followupThinkingPrompt, activeTurns.length, updateScrollMask]);
 
-  // Synchronize SVG #aiden-stream-lens-blur cutout shapes frame-by-frame with the 4 controls'
+  // Synchronize SVG #aiden-stream-lens-blur cutout shapes frame-by-frame with the floating glass controls'
   // real live bounding boxes and opacities (zero React re-renders during transitions)
   const syncLensMaskToDom = useCallback(() => {
     const streamEl = streamContainerRef.current;
@@ -2271,9 +2351,13 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     const sx = w / elRect.width;
     const sy = h / elRect.height;
 
-    const shapeFor = (node: HTMLElement | null, rxBase: number | "circle"): string => {
-      if (!node) return "";
-      const op = parseFloat(window.getComputedStyle(node).opacity || "0");
+    const shapeFor = (
+      node: HTMLElement | null,
+      rxBase: number | "circle" | "pill",
+      opacityScale = 1
+    ): string => {
+      if (!node || opacityScale <= 0.01) return "";
+      const op = parseFloat(window.getComputedStyle(node).opacity || "0") * opacityScale;
       if (!Number.isFinite(op) || op <= 0.01) return "";
       const r = node.getBoundingClientRect();
       const x = (r.left - elRect.left) * sx;
@@ -2281,16 +2365,27 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       const bw = r.width * sx;
       const bh = r.height * sy;
       if (bw <= 0 || bh <= 0) return "";
-      const rx = rxBase === "circle" ? bw / 2 : Math.min(rxBase, bw / 2, bh / 2);
+      const rx =
+        rxBase === "circle"
+          ? bw / 2
+          : rxBase === "pill"
+          ? Math.min(bw / 2, bh / 2)
+          : Math.min(rxBase, bw / 2, bh / 2);
       return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${rx.toFixed(1)}" fill="white" fill-opacity="${Math.min(1, op).toFixed(3)}"/>`;
     };
+
+    const rawScrollAnchorOp = scrollBottomAnchorRef.current
+      ? parseFloat(window.getComputedStyle(scrollBottomAnchorRef.current).opacity || "1")
+      : 1;
+    const scrollAnchorOp = Number.isFinite(rawScrollAnchorOp) ? rawScrollAnchorOp : 1;
 
     const shapes =
       shapeFor(sleepBtnRef.current, "circle") +
       shapeFor(closeBtnRef.current, "circle") +
       shapeFor(plusBtnRef.current, isPlusTrayOpen ? 22 : 24) +
       shapeFor(capsuleRef.current, hasActiveImages ? 20 : 24) +
-      shapeFor(micBtnRef.current, "circle");
+      shapeFor(micBtnRef.current, "circle") +
+      shapeFor(scrollBottomBtnRef.current, "pill", scrollAnchorOp);
 
     const sig = `${w}x${h}:${shapes}`;
     if (sig === lastLensSigRef.current) return;
@@ -2339,8 +2434,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   useEffect(() => () => stopLensSync(), [stopLensSync]);
 
-  // Drive SVG lens filter activation & frame-synced motion when controls show/hide
+  // Drive SVG lens filter activation & frame-synced motion when controls or the ↓ Latest pill show/hide
   const wasLensControlsVisibleRef = useRef(false);
+  const isScrollBottomRendered = scrollBottomState !== "hidden";
   useLayoutEffect(() => {
     if (!showReplyWindow || voiceActive || pipPhase !== "max") {
       wasLensControlsVisibleRef.current = false;
@@ -2349,7 +2445,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       return;
     }
 
-    if (isControlsVisible) {
+    const needsLensBlur = isControlsVisible || isScrollBottomRendered;
+
+    if (needsLensBlur) {
       wasLensControlsVisibleRef.current = true;
       if (lensHideTimerRef.current !== null) {
         window.clearTimeout(lensHideTimerRef.current);
@@ -2369,21 +2467,21 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         setIsLensBlurActive(false);
       }, 260);
     }
-  }, [showReplyWindow, voiceActive, isControlsVisible, runLensSyncFor, stopLensSync]);
+  }, [showReplyWindow, voiceActive, pipPhase, isControlsVisible, isScrollBottomRendered, scrollBottomState, runLensSyncFor, stopLensSync]);
 
   // Keep SVG lens filter cutouts tracking smooth height morph when expanding to 620px on Turn 2+
   useLayoutEffect(() => {
-    if (showReplyWindow && isControlsVisible && !voiceActive && isMultiTurnMode) {
+    if (showReplyWindow && (isControlsVisible || isScrollBottomRendered) && !voiceActive && isMultiTurnMode) {
       runLensSyncFor(320);
     }
-  }, [isMultiTurnMode, showReplyWindow, isControlsVisible, voiceActive, runLensSyncFor]);
+  }, [isMultiTurnMode, showReplyWindow, isControlsVisible, isScrollBottomRendered, voiceActive, runLensSyncFor]);
 
-  // Track organic [+] morph into liquid-glass tray, Ask Aiden stretch, and attached-image expansion at 60fps
+  // Track organic [+] morph into liquid-glass tray, Ask Aiden stretch, attached-image expansion, and ↓ Latest ride at 60fps
   useLayoutEffect(() => {
-    if (showReplyWindow && isControlsVisible && !voiceActive && pipPhase === "max") {
+    if (showReplyWindow && (isControlsVisible || isScrollBottomRendered) && !voiceActive && pipPhase === "max") {
       runLensSyncFor(560);
     }
-  }, [isPlusTrayOpen, hasActiveImages, deepReason, showReplyWindow, isControlsVisible, voiceActive, pipPhase, runLensSyncFor]);
+  }, [isPlusTrayOpen, hasActiveImages, deepReason, followupExtraH, showReplyWindow, isControlsVisible, isScrollBottomRendered, voiceActive, pipPhase, runLensSyncFor]);
 
   // Keep stream top/bottom scroll-fade mask & SVG lens filter synchronized with container resizes and scrolling
   useLayoutEffect(() => {
@@ -2805,24 +2903,41 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
   }, []);
 
-  // Auto-scroll smoothly when a proactive system turn starts or completes in multi-turn chat
+  useEffect(() => {
+    if (pillMode !== "responding" || pipPhase !== "max" || voiceActive) {
+      hideScrollBottomPill(true);
+    }
+  }, [pillMode, pipPhase, voiceActive, hideScrollBottomPill]);
+
+  // Auto-scroll smoothly ONLY when a proactive system turn (e.g. Antigravity completion)
+  // starts or lands in multi-turn chat — never hijack scroll on normal user turns.
   const prevTurnCountForProactiveRef = useRef<number>(activeTurns.length);
   useEffect(() => {
     const prevCount = prevTurnCountForProactiveRef.current;
     prevTurnCountForProactiveRef.current = activeTurns.length;
     if (pillMode !== "responding" || pipPhase !== "max" || !streamContainerRef.current) return;
-    if (isProactiveThinkingInStream || (activeTurns.length > prevCount && !hasFollowupPending)) {
+    const latestTurn = activeTurns[activeTurns.length - 1];
+    const isNewProactiveTurn =
+      activeTurns.length > prevCount && Boolean(latestTurn?.isProactive);
+    if (isProactiveThinkingInStream || isNewProactiveTurn) {
       const container = streamContainerRef.current;
       window.requestAnimationFrame(() => {
         if (!streamContainerRef.current) return;
-        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-        if (maxScroll > 2) {
-          container.scrollTo({ top: maxScroll, behavior: "smooth" });
+        const padTop = container.parentElement?.classList.contains("controls-visible") ? 56 : 28;
+        const turnEls = container.querySelectorAll(".siri-turn-item");
+        const targetEl = turnEls.length > 0 ? (turnEls[turnEls.length - 1] as HTMLElement) : null;
+        const targetTop = isProactiveThinkingInStream
+          ? Math.max(0, container.scrollHeight - container.clientHeight)
+          : targetEl
+          ? Math.max(0, targetEl.offsetTop - padTop)
+          : 0;
+        if (targetTop > 2) {
+          container.scrollTo({ top: targetTop, behavior: "smooth" });
           window.requestAnimationFrame(updateScrollMask);
         }
       });
     }
-  }, [pillMode, pipPhase, isProactiveThinkingInStream, activeTurns.length, hasFollowupPending, updateScrollMask]);
+  }, [pillMode, pipPhase, isProactiveThinkingInStream, activeTurns, updateScrollMask]);
 
   const formatStatusTag = (raw: string): string => {
     const trimmed = raw.trim();
@@ -4032,8 +4147,47 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               {/* Apple-style Persistent Follow-up Command Bar */}
               <div
                 ref={followupBarRef}
-                className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""}`}
+                className={`siri-hover-followup-bar ${isControlsVisible ? "controls-visible" : ""} ${
+                  isPlusTrayOpen ? "tray-open" : ""
+                }`}
               >
+                {/* Floating Scroll-to-Bottom Mini Pill ("↓ Latest") — detaches upward from Ask Aiden */}
+                <div ref={scrollBottomAnchorRef} className="siri-scroll-bubble-anchor">
+                  <button
+                    ref={scrollBottomBtnRef}
+                    type="button"
+                    className={`siri-scroll-bottom-pill ${
+                      scrollBottomState === "visible"
+                        ? "is-visible is-entering"
+                        : scrollBottomState === "leaving"
+                        ? "is-visible is-leaving"
+                        : ""
+                    }`}
+                    tabIndex={scrollBottomState === "visible" && !isPlusTrayOpen ? 0 : -1}
+                    title="Scroll to latest"
+                    aria-label="Scroll to latest"
+                    onMouseEnter={() => runLensSyncFor(240)}
+                    onMouseLeave={() => runLensSyncFor(240)}
+                    onMouseDown={() => runLensSyncFor(180)}
+                    onClick={handleScrollToBottom}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.35"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 5v13M6 13l6 6 6-6" />
+                    </svg>
+                    <span>Latest</span>
+                  </button>
+                </div>
+
                 <div className={`siri-apple-command-bar ${isPlusTrayOpen ? "tray-open" : ""}`}>
                   {/* Animated spacer reserving [+] slot; collapses smoothly to 0px so Ask Aiden stretches left */}
                   <div className="plus-slot-spacer" aria-hidden="true" />
@@ -4147,6 +4301,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                       isProactiveAnnouncementActive ? "announcement-locked" : ""
                     } ${announcementBlockPulse ? "announcement-pulse" : ""}`}
                   >
+                    <div ref={scrollBottomRimRef} className="siri-capsule-rim-bloom" aria-hidden="true" />
                     <div className={`siri-attached-strip-collapse ${hasActiveImages ? "is-open" : ""}`}>
                       <div className="siri-attached-strip-collapse-inner">
                         <div className="siri-attached-images-strip">
@@ -5206,6 +5361,7 @@ export const ChatPillWindow: React.FC = () => {
                 assistantReply: finalContent,
                 isStreaming: false,
                 connectors: turnConnectorsList.length > 0 ? turnConnectorsList : undefined,
+                isProactive: Boolean(proactiveKind),
               };
 
               // Ensure natural polish dwell time (~300ms) while keeping follow-up bubble & in-stream
