@@ -1189,21 +1189,11 @@ def get_weather_forecast(location: str) -> str:
         return f"❌ Weather API Error: {str(e)}"
 
 
-def open_in_browser(url: str) -> str:
-    """Opens a given URL in the user's default system web browser."""
-    clean_url = url.strip()
-    if not clean_url.startswith(("http://", "https://")):
-        clean_url = f"https://{clean_url}"
+def open_in_browser(url: str, mode: str = "inbuilt") -> str:
+    """Delegates to tools_browser.open_in_browser (inbuilt Aiden Browser by default)."""
+    import tools_browser
 
-    try:
-        print(f"\n🌐 [BROWSER] Opening URL: {clean_url}")
-        success = webbrowser.open(clean_url)
-        if success:
-            return f"Successfully opened {clean_url} in your default browser."
-        else:
-            return f"Failed to launch web browser for {clean_url}."
-    except Exception as e:
-        return f"Error opening browser: {str(e)}"
+    return tools_browser.open_in_browser(url=url, mode=mode)
 
 
 def get_bible_passage(reference: str, translation: str = "web") -> str:

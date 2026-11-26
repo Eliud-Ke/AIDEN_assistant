@@ -1,0 +1,671 @@
+/* ==========================================================================
+   AIDEN LIQUID-GLASS FILE EXPLORER SWARM CARD
+   Headerless Dotted Canvas · Opaque Grey Floating Pills + Cushioned Zoom Pill
+   Slim Folder Pills · Elastic Drag-to-Pan Gravity · Clean Neutral Bottom Bar
+   Dual-Theme (Dark Velvet & Warm Biscuit Light) — Calibrated for 466px Pill
+   ========================================================================== */
+
+@keyframes faCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes faPillPop {
+  from {
+    opacity: 0;
+    transform: scale(0.84);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes faDashFlow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes faDotPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 0.45;
+  }
+}
+
+.fa-card {
+  width: 100%;
+  margin: 8px 0 4px;
+  border-radius: 18px;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  animation: faCardEnter 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+
+  /* Dark Velvet Palette */
+  --fa-hairline: rgba(255, 255, 255, 0.09);
+  --fa-canvas-bg: rgba(0, 0, 0, 0.18);
+  --fa-dot-grid: rgba(255, 255, 255, 0.075);
+  --fa-bar-bg: rgba(255, 255, 255, 0.035);
+
+  --fa-text: rgba(255, 255, 255, 0.94);
+  --fa-text-dim: rgba(255, 255, 255, 0.62);
+  --fa-text-muted: rgba(255, 255, 255, 0.42);
+
+  --fa-float-bg: #272c35;
+  --fa-float-hover-bg: #2f3540;
+  --fa-float-border: rgba(255, 255, 255, 0.14);
+  --fa-float-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 16px rgba(0, 0, 0, 0.36);
+
+  --fa-node-bg: #242932;
+  --fa-node-border: rgba(255, 255, 255, 0.15);
+  --fa-node-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 4px 12px rgba(0, 0, 0, 0.28);
+
+  --fa-btn-bg: rgba(255, 255, 255, 0.08);
+  --fa-btn-border: rgba(255, 255, 255, 0.14);
+  --fa-btn-hover: rgba(255, 255, 255, 0.15);
+
+  --fa-cyan: #38bdf8;
+  --fa-cyan-bg: #173042;
+  --fa-cyan-border: rgba(56, 189, 248, 0.56);
+  --fa-cyan-text: #bae6fd;
+  --fa-cyan-glow: rgba(56, 189, 248, 0.36);
+
+  --fa-purple: #a78bfa;
+  --fa-purple-bg: #2a2440;
+  --fa-purple-border: rgba(167, 139, 250, 0.52);
+
+  --fa-red: #ef4444;
+  --fa-red-bg: #3b1c22;
+  --fa-red-border: rgba(248, 113, 113, 0.54);
+  --fa-red-text: #fecaca;
+  --fa-red-glow: rgba(239, 68, 68, 0.28);
+
+  --fa-green: #22c55e;
+  --fa-green-bg: #163426;
+  --fa-green-strong: #1b4d34;
+  --fa-green-border: rgba(74, 222, 128, 0.68);
+  --fa-green-text: #dcfce7;
+  --fa-green-glow: rgba(34, 197, 94, 0.44);
+
+  --fa-halt: rgba(148, 163, 184, 0.48);
+  --fa-halt-bg: #232730;
+  --fa-halt-border: rgba(148, 163, 184, 0.28);
+}
+
+.siri-unified-pill.light-mode .fa-card {
+  background: rgba(255, 255, 255, 0.64);
+  border-color: rgba(23, 22, 21, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 8px 22px rgba(23, 22, 21, 0.09);
+
+  --fa-hairline: rgba(23, 22, 21, 0.085);
+  --fa-canvas-bg: rgba(23, 22, 21, 0.028);
+  --fa-dot-grid: rgba(23, 22, 21, 0.085);
+  --fa-bar-bg: rgba(255, 255, 255, 0.50);
+
+  --fa-text: #171615;
+  --fa-text-dim: rgba(23, 22, 21, 0.62);
+  --fa-text-muted: rgba(23, 22, 21, 0.45);
+
+  --fa-float-bg: #e4e0da;
+  --fa-float-hover-bg: #ece8e2;
+  --fa-float-border: rgba(23, 22, 21, 0.14);
+  --fa-float-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 4px 12px rgba(23, 22, 21, 0.10);
+
+  --fa-node-bg: #eae6e0;
+  --fa-node-border: rgba(23, 22, 21, 0.15);
+  --fa-node-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 3px 10px rgba(23, 22, 21, 0.08);
+
+  --fa-btn-bg: rgba(23, 22, 21, 0.055);
+  --fa-btn-border: rgba(23, 22, 21, 0.11);
+  --fa-btn-hover: rgba(23, 22, 21, 0.10);
+
+  --fa-cyan: #0284c7;
+  --fa-cyan-bg: #dceefa;
+  --fa-cyan-border: rgba(2, 132, 199, 0.48);
+  --fa-cyan-text: #075985;
+  --fa-cyan-glow: rgba(2, 132, 199, 0.24);
+
+  --fa-purple: #7c3aed;
+  --fa-purple-bg: #eae2fc;
+  --fa-purple-border: rgba(124, 58, 237, 0.44);
+
+  --fa-red: #dc2626;
+  --fa-red-bg: #fae0e0;
+  --fa-red-border: rgba(220, 38, 38, 0.46);
+  --fa-red-text: #991b1b;
+  --fa-red-glow: rgba(220, 38, 38, 0.18);
+
+  --fa-green: #16a34a;
+  --fa-green-bg: #dcf7e5;
+  --fa-green-strong: #bcefd0;
+  --fa-green-border: rgba(22, 163, 74, 0.56);
+  --fa-green-text: #14532d;
+  --fa-green-glow: rgba(22, 163, 74, 0.30);
+
+  --fa-halt: rgba(100, 116, 139, 0.46);
+  --fa-halt-bg: #e2e4e8;
+  --fa-halt-border: rgba(100, 116, 139, 0.28);
+}
+
+/* ==========================================================================
+   DOTTED CANVAS STAGE (Dynamic height + Elastic Drag-Pan + Opaque HUD Pills)
+   ========================================================================== */
+.fa-canvas {
+  position: relative;
+  width: 100%;
+  height: 246px;
+  background-color: var(--fa-canvas-bg);
+  background-image: radial-gradient(var(--fa-dot-grid) 1.1px, transparent 1.1px);
+  background-size: 14px 14px;
+  background-position: 0px 0px;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: height 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fa-canvas.dragging {
+  cursor: grabbing;
+}
+
+/* Top Floating Opaque Grey Pills (Headerless!) */
+.fa-top-left-cluster {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.fa-float-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fa-float-bg);
+  border: 1px solid var(--fa-float-border);
+  box-shadow: var(--fa-float-shadow);
+  font-size: 10.6px;
+  font-weight: 600;
+  color: var(--fa-text);
+  letter-spacing: -0.005em;
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.fa-float-status {
+  pointer-events: none;
+}
+
+/* Cushioned Hover-Expanding Zoom Slider Pill (- on left, + on right, NO numbers!) */
+.fa-zoom-pill {
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 13px;
+  transition:
+    height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    gap 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.22s ease;
+}
+
+.fa-zoom-pill:hover,
+.fa-zoom-pill.is-sliding {
+  height: 52px;
+  border-radius: 20px;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--fa-float-hover-bg);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 10px 24px rgba(0, 0, 0, 0.44);
+}
+
+.siri-unified-pill.light-mode .fa-zoom-pill:hover,
+.siri-unified-pill.light-mode .fa-zoom-pill.is-sliding {
+  border-color: rgba(23, 22, 21, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.90), 0 8px 20px rgba(23, 22, 21, 0.15);
+}
+
+.fa-zoom-step {
+  width: 17px;
+  height: 17px;
+  border: none;
+  background: transparent;
+  color: var(--fa-text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: width 0.24s ease, height 0.24s ease, font-size 0.22s ease, color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+.fa-zoom-pill:hover .fa-zoom-step,
+.fa-zoom-pill.is-sliding .fa-zoom-step {
+  width: 24px;
+  height: 24px;
+  font-size: 15px;
+}
+
+.fa-zoom-step:hover {
+  color: var(--fa-text);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.siri-unified-pill.light-mode .fa-zoom-step:hover {
+  background: rgba(23, 22, 21, 0.08);
+}
+
+.fa-zoom-step:active {
+  transform: scale(0.88);
+}
+
+.fa-zoom-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 44px;
+  height: 22px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  transition:
+    width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fa-zoom-pill:hover .fa-zoom-range,
+.fa-zoom-pill.is-sliding .fa-zoom-range {
+  width: 78px;
+  height: 44px;
+}
+
+.fa-zoom-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.20);
+  transition: height 0.22s ease, background 0.2s ease;
+}
+
+.fa-zoom-pill:hover .fa-zoom-range::-webkit-slider-runnable-track,
+.fa-zoom-pill.is-sliding .fa-zoom-range::-webkit-slider-runnable-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.siri-unified-pill.light-mode .fa-zoom-range::-webkit-slider-runnable-track {
+  background: rgba(23, 22, 21, 0.18);
+}
+
+.siri-unified-pill.light-mode .fa-zoom-pill:hover .fa-zoom-range::-webkit-slider-runnable-track,
+.siri-unified-pill.light-mode .fa-zoom-pill.is-sliding .fa-zoom-range::-webkit-slider-runnable-track {
+  background: rgba(23, 22, 21, 0.24);
+}
+
+.fa-zoom-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid rgba(0, 0, 0, 0.24);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  transition: width 0.22s ease, height 0.22s ease, margin-top 0.22s ease, transform 0.14s ease, box-shadow 0.2s ease;
+}
+
+.fa-zoom-pill:hover .fa-zoom-range::-webkit-slider-thumb,
+.fa-zoom-pill.is-sliding .fa-zoom-range::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14), 0 2px 6px rgba(0, 0, 0, 0.42);
+}
+
+.fa-zoom-range::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.08);
+}
+
+.siri-unified-pill.light-mode .fa-zoom-range::-webkit-slider-thumb {
+  background: #1c1b1a;
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.siri-unified-pill.light-mode .fa-zoom-pill:hover .fa-zoom-range::-webkit-slider-thumb,
+.siri-unified-pill.light-mode .fa-zoom-pill.is-sliding .fa-zoom-range::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(23, 22, 21, 0.10), 0 2px 5px rgba(23, 22, 21, 0.24);
+}
+
+.fa-float-right {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--fa-float-bg);
+  border: 1px solid var(--fa-float-border);
+  box-shadow: var(--fa-float-shadow);
+  font-family: inherit;
+  font-size: 10.6px;
+  font-weight: 600;
+  color: var(--fa-red-text);
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.siri-unified-pill.light-mode .fa-float-right {
+  color: #b91c1c;
+}
+
+.fa-float-right:hover {
+  background: #36252a;
+  border-color: rgba(248, 113, 113, 0.45);
+  transform: scale(1.03);
+}
+
+.siri-unified-pill.light-mode .fa-float-right:hover {
+  background: #f5d8d8;
+  border-color: rgba(220, 38, 38, 0.36);
+}
+
+.fa-float-right:active {
+  transform: scale(0.95);
+}
+
+.fa-float-right.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.90);
+}
+
+.fa-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fa-cyan);
+  box-shadow: 0 0 8px var(--fa-cyan-glow);
+  flex-shrink: 0;
+  animation: faDotPulse 1.25s ease-in-out infinite;
+}
+
+.fa-live-dot.found {
+  background: var(--fa-green);
+  box-shadow: 0 0 8px var(--fa-green-glow);
+  animation: none;
+}
+
+.fa-live-dot.dead {
+  background: var(--fa-red);
+  box-shadow: 0 0 7px var(--fa-red-glow);
+  animation: none;
+}
+
+.fa-live-dot.stopped {
+  background: #94a3b8;
+  box-shadow: none;
+  animation: none;
+}
+
+/* Draggable Slim-Pill Tree World */
+.fa-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 22px;
+  padding: 42px 20px 18px;
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.fa-world.spring-back {
+  transition: transform 0.44s cubic-bezier(0.22, 1.18, 0.36, 1);
+}
+
+.fa-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.fa-edge {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke 0.28s ease, opacity 0.28s ease, stroke-width 0.24s ease;
+}
+
+.fa-edge.scan {
+  stroke: var(--fa-cyan);
+  stroke-dasharray: 5 4;
+  animation: faDashFlow 0.7s linear infinite;
+  filter: drop-shadow(0 0 4px var(--fa-cyan-glow));
+}
+
+.fa-edge.zero {
+  stroke: var(--fa-purple);
+  stroke-dasharray: 3 3;
+}
+
+.fa-edge.dead {
+  stroke: var(--fa-red);
+  opacity: 0.72;
+  stroke-width: 1.85;
+}
+
+.fa-edge.found {
+  stroke: var(--fa-green);
+  stroke-width: 2.45;
+  filter: drop-shadow(0 0 5px var(--fa-green-glow));
+}
+
+.fa-edge.halt {
+  stroke: var(--fa-halt);
+  stroke-dasharray: 3 4;
+  opacity: 0.55;
+}
+
+.fa-dot.scan  { fill: var(--fa-cyan); }
+.fa-dot.zero  { fill: var(--fa-purple); }
+.fa-dot.dead  { fill: var(--fa-red); }
+.fa-dot.found { fill: var(--fa-green); }
+.fa-dot.halt  { fill: var(--fa-halt); }
+
+.fa-col {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.fa-fpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5.5px 9.5px;
+  border-radius: 10px;
+  background: var(--fa-node-bg);
+  border: 1px solid var(--fa-node-border);
+  box-shadow: var(--fa-node-shadow);
+  font-size: 10.8px;
+  font-weight: 600;
+  color: var(--fa-text);
+  white-space: nowrap;
+  animation: faPillPop 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: background 0.28s ease, border-color 0.28s ease, color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+}
+
+.fa-fpill.scan  { background: var(--fa-cyan-bg);   border-color: var(--fa-cyan-border);   color: var(--fa-cyan-text);  box-shadow: 0 0 12px var(--fa-cyan-glow); }
+.fa-fpill.zero  { background: var(--fa-purple-bg); border-color: var(--fa-purple-border); color: var(--fa-text); }
+.fa-fpill.dead  { background: var(--fa-red-bg);    border-color: var(--fa-red-border);    color: var(--fa-red-text);   opacity: 0.86; box-shadow: 0 0 8px var(--fa-red-glow); }
+.fa-fpill.found { background: var(--fa-green-bg);  border-color: var(--fa-green-border);  color: var(--fa-green-text); box-shadow: 0 0 13px var(--fa-green-glow); }
+.fa-fpill.halt  { background: var(--fa-halt-bg);   border-color: var(--fa-halt-border);   color: var(--fa-text-muted); opacity: 0.62; }
+
+.fa-fpill.match-card {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3.5px;
+  padding: 6px 9.5px;
+  border-radius: 11px;
+  background: var(--fa-green-bg);
+  border: 1px solid var(--fa-green-border);
+  box-shadow: 0 0 16px var(--fa-green-glow);
+}
+
+.fa-fpill-dir-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  font-size: 9.8px;
+  font-weight: 640;
+  color: var(--fa-green-text);
+  opacity: 0.92;
+}
+
+.fa-fpill-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  padding: 2.5px 7px;
+  border-radius: 6px;
+  background: var(--fa-green-strong);
+  border: 1px solid var(--fa-green-border);
+  color: var(--fa-green-text);
+  font-size: 10.4px;
+  font-weight: 700;
+}
+
+.fa-drag-hint {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  z-index: 6;
+  font-size: 9.4px;
+  color: var(--fa-text-muted);
+  pointer-events: none;
+  opacity: 0.72;
+}
+
+/* ==========================================================================
+   CLEAN NEUTRAL INTEGRATED BOTTOM BAR (NO GREEN GLOW — Path + Open / Open in Folder)
+   ========================================================================== */
+.fa-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--fa-bar-bg);
+  border-top: 1px solid var(--fa-hairline);
+  min-height: 44px;
+}
+
+.fa-bar-path-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.fa-bar-filename {
+  font-size: 11.4px;
+  font-weight: 620;
+  color: var(--fa-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fa-bar-path {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 9.8px;
+  color: var(--fa-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fa-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.fa-bar-btn {
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--fa-btn-border);
+  background: var(--fa-btn-bg);
+  color: var(--fa-text);
+  font-family: inherit;
+  font-size: 10.6px;
+  font-weight: 580;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+}
+
+.fa-bar-btn:hover {
+  background: var(--fa-btn-hover);
+}
+
+.fa-bar-btn:active {
+  transform: scale(0.95);
+}
+
+.fa-bar-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+  pointer-events: none;
+}

@@ -2,7 +2,7 @@ import React, { useMemo, useCallback } from "react";
 import { Marked } from "marked";
 import markedKatex from "marked-katex-extension";
 import hljs from "highlight.js";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInAidenBrowser } from "../utils/aidenBrowser";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/atom-one-dark.css";
 import "./MarkdownContent.css";
@@ -109,16 +109,12 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       return;
     }
 
-    // Handle link clicks with external browser opener
+    // Handle link clicks with Aiden Browser (hold Shift for external OS browser)
     const linkEl = target.closest("a.siri-markdown-link") as HTMLAnchorElement | null;
     if (linkEl && linkEl.href) {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        openUrl(linkEl.href).catch(() => window.open(linkEl.href, "_blank"));
-      } catch {
-        window.open(linkEl.href, "_blank");
-      }
+      openInAidenBrowser(linkEl.href, e.shiftKey);
     }
   }, []);
 

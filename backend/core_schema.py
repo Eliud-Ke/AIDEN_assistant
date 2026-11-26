@@ -40,16 +40,80 @@ CORE_TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "open_in_browser",
-            "description": "Opens a web URL directly in the default browser.",
+            "description": "Opens a web URL cleanly inside Aiden's single-view inbuilt browser (mode='inbuilt' by default), or launches the user's external system browser only when mode='external' is explicitly requested. Prioritize this tool (with mode='inbuilt') whenever the user asks to open a website, Gmail/Google Calendar/YouTube in the browser, or a web link — do NOT use launch_app for web links or Gmail/Calendar.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "Full HTTPS URL to open.",
-                    }
+                        "description": "Full HTTPS URL to open (e.g., 'https://mail.google.com', 'https://calendar.google.com', 'https://www.youtube.com/watch?v=...').",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["inbuilt", "external"],
+                        "description": "Defaults to 'inbuilt' (opens inside Aiden Browser). Use 'external' ONLY when the user explicitly asks to open in Chrome, Edge, Firefox, or an external browser.",
+                    },
                 },
                 "required": ["url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_navigate",
+            "description": "Navigates inside the currently active Aiden Browser ('back', 'forward', 'reload', or 'goto' a new URL).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["back", "forward", "reload", "goto"],
+                        "description": "Navigation command for the active Aiden Browser view.",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Destination HTTPS URL (required when action is 'goto'; pass empty string otherwise).",
+                    },
+                },
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_scroll",
+            "description": "Scrolls smoothly inside the currently open Aiden Browser webpage.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "direction": {
+                        "type": "string",
+                        "enum": ["down", "up", "top", "bottom"],
+                        "description": "Direction or edge to scroll toward.",
+                    },
+                    "amount": {
+                        "type": "string",
+                        "enum": ["small", "half", "page"],
+                        "description": "Distance for 'up'/'down' scrolls (defaults to 'half').",
+                    },
+                },
+                "required": ["direction"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_close",
+            "description": "Closes and destroys the active Aiden Browser view completely, returning the window to chat mode.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },

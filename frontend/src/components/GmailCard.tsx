@@ -1,5 +1,5 @@
 import React from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInAidenBrowser } from "../utils/aidenBrowser";
 
 export interface GmailEmailItem {
   id: string;
@@ -71,11 +71,7 @@ export const GmailCard: React.FC<GmailCardProps> = ({
       const url = id
         ? `https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(id)}`
         : "https://mail.google.com/mail/u/0/#inbox";
-      try {
-        openUrl(url).catch(() => window.open(url, "_blank"));
-      } catch {
-        window.open(url, "_blank");
-      }
+      openInAidenBrowser(url);
     };
 
     return (
@@ -253,11 +249,7 @@ export const GmailCard: React.FC<GmailCardProps> = ({
     }
 
     const url = "https://mail.google.com/mail/u/0/#inbox";
-    try {
-      openUrl(url).catch(() => window.open(url, "_blank"));
-    } catch {
-      window.open(url, "_blank");
-    }
+    openInAidenBrowser(url);
   };
 
   return (

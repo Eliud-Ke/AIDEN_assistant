@@ -9,6 +9,7 @@ import tools_calendar
 import tools_spotify
 import tools_antigravity
 import tools_obsidian
+import tools_files
 
 CONNECTORS_SCHEMA = {
     "gmail": {
@@ -38,8 +39,8 @@ CONNECTORS_SCHEMA = {
     },
     "file_system": {
         "display_name": "Local Files",
-        "description": "Search and locate local files, folders, and documents on disk.",
-        "tools": [],
+        "description": "Zero-read privacy-first local file locator (Tier 1 instant Everything index + Tier 2 async parallel Hive-Mind Swarm) and everyday file management (list, open, reveal, create, move/rename, copy, Recycle Bin trash).",
+        "tools": tools_files.FILES_TOOLS_SCHEMA,
     },
 }
 

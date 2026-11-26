@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInAidenBrowser } from "../utils/aidenBrowser";
 import "./YouTubeCard.css";
 
 export interface YouTubeVideoItem {
@@ -93,13 +93,9 @@ export const YouTubeCard: React.FC<YouTubeCardProps> = ({ data, onLayoutChange }
     [activeIdx, isCarousel, videos.length, onLayoutChange]
   );
 
-  const handleOpenVideo = useCallback((video: YouTubeVideoItem) => {
+  const handleOpenVideo = useCallback((video: YouTubeVideoItem, forceExternal = false) => {
     const targetUrl = getSafeWatchUrl(video);
-    try {
-      openUrl(targetUrl).catch(() => window.open(targetUrl, "_blank", "noopener,noreferrer"));
-    } catch {
-      window.open(targetUrl, "_blank", "noopener,noreferrer");
-    }
+    openInAidenBrowser(targetUrl, forceExternal);
   }, []);
 
   const handleCopyLink = useCallback((e: React.MouseEvent, video: YouTubeVideoItem) => {

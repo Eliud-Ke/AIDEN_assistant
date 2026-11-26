@@ -1,5 +1,5 @@
 import React from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInAidenBrowser } from "../utils/aidenBrowser";
 
 export interface CalendarEventItem {
   id?: string;
@@ -65,11 +65,7 @@ export const CalendarCard: React.FC<CalendarCardProps> = ({
 }) => {
   const handleOpenLink = (url?: string) => {
     const targetUrl = url || "https://calendar.google.com";
-    try {
-      openUrl(targetUrl).catch(() => window.open(targetUrl, "_blank"));
-    } catch {
-      window.open(targetUrl, "_blank");
-    }
+    openInAidenBrowser(targetUrl);
   };
 
   const handleEventClick = (ev: CalendarEventItem) => {

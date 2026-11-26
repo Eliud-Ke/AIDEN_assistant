@@ -21,7 +21,9 @@ use base64::Engine as _;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, State, WebviewWindow,
+    webview::{NewWindowResponse, PageLoadEvent, Url, WebviewBuilder},
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, Position, State,
+    WebviewUrl, WebviewWindow,
 };
 
 #[cfg(target_os = "windows")]
@@ -42,6 +44,10 @@ struct PipBubbleState {
 
 struct PipHeadphonesState {
     visible: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+}
+
+struct AidenBrowserState {
     generation: Arc<AtomicU64>,
 }
 
@@ -264,6 +270,7 @@ fn is_tracked_backend_alive(state: &BackendState) -> bool {
 }
 
 fn reset_chat_pill_on_stop(app: &AppHandle) {
+    close_inbuilt_browser_internal(app);
     stop_pip_bop_immediately(app);
     stop_pip_cursor_watcher(app);
     hide_pip_bubble_immediately(app);
@@ -1117,6 +1124,276 @@ fn resize_chat_pill(app: AppHandle, expanded: bool) -> Result<(), String> {
     morph_pill(app, 466.0, target_h, Some(280))
 }
 
+const INVISIBLE_SCROLLBAR_JS: &str = r#"(function(){
+  try {
+    var css = "html, body, * { scrollbar-width: none !important; -ms-overflow-style: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }";
+    var inject = function() {
+      var target = document.head || document.documentElement;
+      if (!target) return;
+      if (document.getElementById("__aiden_invisible_sb")) return;
+      var s = document.createElement("style");
+      s.id = "__aiden_invisible_sb";
+      s.textContent = css;
+      target.appendChild(s);
+    };
+    if (document.documentElement) inject();
+    document.addEventListener("DOMContentLoaded", inject, { once: true });
+  } catch (_) {}
+})();"#;
+
+fn normalize_browser_url(raw: &str) -> Result<Url, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("URL cannot be empty.".to_string());
+    }
+    let with_scheme = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{}", trimmed)
+    };
+    let parsed = Url::parse(&with_scheme).map_err(|e| format!("Invalid URL: {}", e))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(parsed),
+        other => Err(format!("Unsupported URL scheme '{}'; only http and https are allowed.", other)),
+    }
+}
+
+fn close_inbuilt_browser_internal(app: &AppHandle) {
+    if let Some(browser_state) = app.try_state::<AidenBrowserState>() {
+        browser_state.generation.fetch_add(1, Ordering::SeqCst);
+    }
+    if let Some(bv) = app.get_webview("aiden_browser") {
+        let _ = bv.close();
+    }
+}
+
+#[tauri::command]
+fn open_inbuilt_browser(
+    app: AppHandle,
+    url: String,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<String, String> {
+    let parsed = normalize_browser_url(&url)?;
+    let target_w = width.unwrap_or(960.0).clamp(640.0, 1440.0);
+    let target_h = height.unwrap_or(600.0).clamp(440.0, 960.0);
+    let view_w = (target_w - 16.0).max(320.0);
+    let view_h = (target_h - 54.0).max(240.0);
+
+    let browser_state = app.state::<AidenBrowserState>();
+    let seq_gen = browser_state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        let _ = pill_win.set_ignore_cursor_events(false);
+        let _ = pill_win.show();
+    }
+
+    morph_pill(app.clone(), target_w, target_h, Some(240))?;
+
+    if let Some(existing_bv) = app.get_webview("aiden_browser") {
+        let _ = existing_bv.set_position(LogicalPosition::new(8.0, 46.0));
+        let _ = existing_bv.set_size(LogicalSize::new(view_w, view_h));
+        existing_bv
+            .navigate(parsed.clone())
+            .map_err(|e| format!("Failed to navigate Aiden Browser: {}", e))?;
+        let _ = existing_bv.set_focus();
+        let _ = app.emit_to(
+            "chat_pill",
+            "aiden-browser-navigated",
+            serde_json::json!({ "url": parsed.as_str() }),
+        );
+        return Ok(parsed.to_string());
+    }
+
+    let _ = app.emit_to(
+        "chat_pill",
+        "aiden-browser-navigated",
+        serde_json::json!({ "url": parsed.as_str() }),
+    );
+    let _ = app.emit_to(
+        "chat_pill",
+        "aiden-browser-loading",
+        serde_json::json!({ "loading": true }),
+    );
+
+    let app_handle = app.clone();
+    let parsed_clone = parsed.clone();
+    std::thread::spawn(move || {
+        // Wait for the liquid-glass 960x600 morph to finish before attaching WebView2 off the main IPC thread.
+        std::thread::sleep(Duration::from_millis(250));
+        let state = app_handle.state::<AidenBrowserState>();
+        if state.generation.load(Ordering::SeqCst) != seq_gen {
+            return;
+        }
+        if let Some(existing_bv) = app_handle.get_webview("aiden_browser") {
+            let _ = existing_bv.set_position(LogicalPosition::new(8.0, 46.0));
+            let _ = existing_bv.set_size(LogicalSize::new(view_w, view_h));
+            let _ = existing_bv.navigate(parsed_clone);
+            return;
+        }
+        let Some(pill_host) = app_handle.get_window("chat_pill") else {
+            return;
+        };
+
+        let profile_dir = get_user_data_dir().join("browser_profile");
+        let _ = std::fs::create_dir_all(&profile_dir);
+
+        let app_for_nav = app_handle.clone();
+        let app_for_load = app_handle.clone();
+        let app_for_new = app_handle.clone();
+
+        let builder = WebviewBuilder::new("aiden_browser", WebviewUrl::External(parsed_clone))
+            .data_directory(profile_dir)
+            .initialization_script_for_all_frames(INVISIBLE_SCROLLBAR_JS)
+            .on_navigation(move |nav_url| {
+                let allowed = matches!(
+                    nav_url.scheme(),
+                    "http" | "https" | "about" | "blob" | "data"
+                );
+                if allowed && (nav_url.scheme() == "http" || nav_url.scheme() == "https") {
+                    let _ = app_for_nav.emit_to(
+                        "chat_pill",
+                        "aiden-browser-navigated",
+                        serde_json::json!({ "url": nav_url.as_str() }),
+                    );
+                }
+                allowed
+            })
+            .on_page_load(move |wv, payload| {
+                let is_loading = matches!(payload.event(), PageLoadEvent::Started);
+                let _ = app_for_load.emit_to(
+                    "chat_pill",
+                    "aiden-browser-loading",
+                    serde_json::json!({ "loading": is_loading }),
+                );
+                let u = payload.url().as_str();
+                if u.starts_with("http://") || u.starts_with("https://") {
+                    let _ = app_for_load.emit_to(
+                        "chat_pill",
+                        "aiden-browser-navigated",
+                        serde_json::json!({ "url": u }),
+                    );
+                }
+                if !is_loading {
+                    let _ = wv.eval(INVISIBLE_SCROLLBAR_JS);
+                }
+            })
+            .on_new_window(move |target_url, _features| {
+                if target_url.scheme() == "http" || target_url.scheme() == "https" {
+                    if let Some(bv) = app_for_new.get_webview("aiden_browser") {
+                        let _ = bv.navigate(target_url);
+                    }
+                }
+                NewWindowResponse::Deny
+            });
+
+        match pill_host.add_child(
+            builder,
+            LogicalPosition::new(8.0, 46.0),
+            LogicalSize::new(view_w, view_h),
+        ) {
+            Ok(bv) => {
+                let _ = bv.set_focus();
+            }
+            Err(err) => {
+                eprintln!("[BROWSER] Failed to attach aiden_browser Webview: {}", err);
+                let _ = app_handle.emit_to(
+                    "chat_pill",
+                    "aiden-browser-loading",
+                    serde_json::json!({ "loading": false }),
+                );
+            }
+        }
+    });
+
+    Ok(parsed.to_string())
+}
+
+#[tauri::command]
+fn close_inbuilt_browser(app: AppHandle) -> Result<(), String> {
+    close_inbuilt_browser_internal(&app);
+    let _ = app.emit_to(
+        "chat_pill",
+        "aiden-browser-loading",
+        serde_json::json!({ "loading": false }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+fn browser_navigate_action(
+    app: AppHandle,
+    action: String,
+    url: Option<String>,
+) -> Result<String, String> {
+    let Some(bv) = app.get_webview("aiden_browser") else {
+        return Err("Aiden Browser is not currently open.".to_string());
+    };
+    match action.trim().to_ascii_lowercase().as_str() {
+        "back" => {
+            bv.eval("window.history.back();")
+                .map_err(|e| format!("Back failed: {}", e))?;
+            Ok("Navigated back in Aiden Browser.".to_string())
+        }
+        "forward" => {
+            bv.eval("window.history.forward();")
+                .map_err(|e| format!("Forward failed: {}", e))?;
+            Ok("Navigated forward in Aiden Browser.".to_string())
+        }
+        "reload" | "refresh" => {
+            bv.eval("window.location.reload();")
+                .map_err(|e| format!("Reload failed: {}", e))?;
+            Ok("Reloaded page in Aiden Browser.".to_string())
+        }
+        "goto" | "navigate" | "open" => {
+            let raw = url.ok_or_else(|| "URL is required for goto navigation.".to_string())?;
+            let parsed = normalize_browser_url(&raw)?;
+            bv.navigate(parsed.clone())
+                .map_err(|e| format!("Navigate failed: {}", e))?;
+            let _ = app.emit_to(
+                "chat_pill",
+                "aiden-browser-navigated",
+                serde_json::json!({ "url": parsed.as_str() }),
+            );
+            Ok(format!("Navigated Aiden Browser to {}", parsed))
+        }
+        other => Err(format!("Unsupported browser navigation action '{}'.", other)),
+    }
+}
+
+#[tauri::command]
+fn browser_scroll_action(
+    app: AppHandle,
+    direction: String,
+    amount: Option<String>,
+) -> Result<(), String> {
+    let Some(bv) = app.get_webview("aiden_browser") else {
+        return Err("Aiden Browser is not currently open.".to_string());
+    };
+    let dir = direction.trim().to_ascii_lowercase();
+    let amt = amount.unwrap_or_else(|| "half".to_string()).trim().to_ascii_lowercase();
+    let script = match dir.as_str() {
+        "top" => "window.scrollTo({ top: 0, behavior: 'smooth' });".to_string(),
+        "bottom" => {
+            "window.scrollTo({ top: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight), behavior: 'smooth' });"
+                .to_string()
+        }
+        "up" | "down" => {
+            let delta_expr = match amt.as_str() {
+                "small" | "short" => "220",
+                "page" | "full" => "Math.round(window.innerHeight * 0.88)",
+                _ => "Math.round(window.innerHeight * 0.55)",
+            };
+            let sign = if dir == "up" { "-" } else { "" };
+            format!("window.scrollBy({{ top: {}{}, behavior: 'smooth' }});", sign, delta_expr)
+        }
+        _ => return Err(format!("Unsupported scroll direction '{}'.", direction)),
+    };
+    bv.eval(&script)
+        .map_err(|e| format!("Scroll failed: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
     stop_pip_cursor_watcher(&app);
@@ -1132,6 +1409,7 @@ fn hide_chat_pill(app: AppHandle) -> Result<(), String> {
             }
         }
     }
+    close_inbuilt_browser_internal(&app);
     stop_pip_bop_immediately(&app);
     hide_pip_bubble_immediately(&app);
     hide_pip_headphones_immediately(&app);
@@ -2409,6 +2687,7 @@ fn compute_pip_dock_rect(
 
 #[tauri::command]
 fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    close_inbuilt_browser_internal(&app);
     hide_search_drawer_immediately(&app);
     let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
     let pill_win = app
@@ -2471,6 +2750,7 @@ fn minimize_to_pip(app: AppHandle, size: Option<f64>) -> Result<serde_json::Valu
 
 #[tauri::command]
 fn enter_asleep_square(app: AppHandle, size: Option<f64>) -> Result<serde_json::Value, String> {
+    close_inbuilt_browser_internal(&app);
     hide_search_drawer_immediately(&app);
     let pip_logical = size.unwrap_or(68.0).clamp(48.0, 120.0);
     let pill_win = app
@@ -2998,6 +3278,9 @@ pub fn run() {
         })
         .manage(PipPowerState(Mutex::new(None)))
         .manage(PipSpotifyState(Mutex::new(None)))
+        .manage(AidenBrowserState {
+            generation: Arc::new(AtomicU64::new(0)),
+        })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Auto-boot Aiden backend automatically on app launch
@@ -3153,6 +3436,7 @@ pub fn run() {
                     }
                     "exit" => {
                         win_hotkey::stop_hook();
+                        close_inbuilt_browser_internal(app);
                         stop_pip_bop_immediately(app);
                         stop_pip_cursor_watcher(app);
                         hide_pip_bubble_immediately(app);
@@ -3258,7 +3542,11 @@ pub fn run() {
             restart_aiden,
             get_aiden_status,
             get_windows_accent_color,
-            read_dropped_images
+            read_dropped_images,
+            open_inbuilt_browser,
+            close_inbuilt_browser,
+            browser_navigate_action,
+            browser_scroll_action
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

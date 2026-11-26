@@ -132,11 +132,11 @@ def pop_ready_system_turn() -> Optional[Dict[str, Any]]:
 def clear_transient_system_turns_on_sleep() -> None:
     """
     Clears transient dismiss-acknowledgement turns on sleep while preserving any
-    unreported Antigravity completion reports so AIDEN announces them upon waking.
+    unreported Antigravity or File Explorer completion reports so AIDEN announces them upon waking.
     """
     with _system_mailbox_lock:
         _system_mailbox[:] = [
-            item for item in _system_mailbox if item.get("kind") == "agy_done"
+            item for item in _system_mailbox if item.get("kind") in ("agy_done", "file_agent_done")
         ]
 
 
@@ -549,6 +549,44 @@ async def handle_connection(websocket: Any):
                     args=(job_id,),
                     daemon=True,
                 ).start()
+
+            elif msg_type == "file_agent_stop":
+                job_id = str(data.get("job_id", "")).strip()
+                def _run_file_stop(jid: str):
+                    try:
+                        try:
+                            import file_agent
+                        except ImportError:
+                            from backend import file_agent  # type: ignore
+                        res_msg = file_agent.stop_file_hunt(jid)
+                        print(f"🛑 [WS BRIDGE] Direct file_agent_stop for {jid or 'active'}: {res_msg}")
+                    except Exception as stop_err:
+                        print(f"⚠️ [WS BRIDGE] Direct file_agent_stop error: {stop_err}")
+                threading.Thread(
+                    target=_run_file_stop,
+                    args=(job_id,),
+                    daemon=True,
+                ).start()
+
+            elif msg_type == "file_open_path":
+                target_path = str(data.get("path", "")).strip()
+                open_mode = str(data.get("mode", "open")).strip().lower() or "open"
+                if target_path:
+                    def _run_file_open(p: str, m: str):
+                        try:
+                            try:
+                                import tools_files
+                            except ImportError:
+                                from backend import tools_files  # type: ignore
+                            res_msg = tools_files.file_open(p, mode=m)
+                            print(f"📂 [WS BRIDGE] Direct file_open_path ({m}): {res_msg}")
+                        except Exception as open_err:
+                            print(f"⚠️ [WS BRIDGE] Direct file_open_path error: {open_err}")
+                    threading.Thread(
+                        target=_run_file_open,
+                        args=(target_path, open_mode),
+                        daemon=True,
+                    ).start()
 
             elif msg_type == "a2ui_action":
                 raw_action = data.get("userAction") if isinstance(data.get("userAction"), dict) else data

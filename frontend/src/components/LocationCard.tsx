@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInAidenBrowser } from "../utils/aidenBrowser";
 
 export interface LocationCardProps {
   lat: number;
@@ -84,11 +84,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({ lat, lon, title }) =
     e.preventDefault();
     e.stopPropagation();
     const url = `https://www.google.com/maps?q=${lat},${lon}`;
-    try {
-      await openUrl(url);
-    } catch {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
+    await openInAidenBrowser(url, e.shiftKey);
   };
 
   const locationLabel = title || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;

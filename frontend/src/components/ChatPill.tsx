@@ -16,8 +16,14 @@ import { MarkdownContent } from "./MarkdownContent";
 import { PipSquareEyes } from "./PipSquareEyes";
 import { ConjoinedSearchTray, SearchItem } from "./SearchDrawer";
 import { AntigravityWorkCard, AgyWorkJobState } from "./AntigravityWorkCard";
+import { FileAgentCard, FileAgentJobState, FileAgentTreeEdge, FileAgentTreeNode } from "./FileAgentCard";
 import { A2UISurface, A2UISurfacePayload, A2UIActionEvent } from "./A2UISurface";
 import { YouTubeCard, YouTubeCardData, YouTubeVideoItem, YouTubeLoadingSkeleton } from "./YouTubeCard";
+import {
+  AIDEN_BROWSER_OPEN_EVENT,
+  AidenBrowserOpenDetail,
+  openInAidenBrowser,
+} from "../utils/aidenBrowser";
 import "./ChatPill.css";
 
 interface UnifiedSearchResponse {
@@ -249,7 +255,12 @@ interface ChatPillProps {
   proactiveTurnKind?: string | null;
   onDismissAgyCard?: (jobId: string) => void;
   onStopAgyTask?: (jobId: string) => void;
+  fileAgentJob?: FileAgentJobState | null;
+  onStopFileAgent?: (jobId: string) => void;
+  onOpenFilePath?: (path: string, mode: "open" | "reveal") => void;
   onA2UIAction?: (event: A2UIActionEvent) => void;
+  browserSession?: { url: string; loading: boolean } | null;
+  onCloseBrowser?: () => void;
 }
 
 interface MediaGalleryItem {
@@ -1253,7 +1264,12 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   proactiveTurnKind = null,
   onDismissAgyCard,
   onStopAgyTask,
+  fileAgentJob = null,
+  onStopFileAgent,
+  onOpenFilePath,
   onA2UIAction,
+  browserSession = null,
+  onCloseBrowser,
 }) => {
   void _onClearResponse;
   void _onStartRecording;
@@ -1631,7 +1647,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   const hasReplyText =
     hasTurns ||
     Boolean((responseMessage && responseMessage.length > 0) || hasFollowupPending) ||
-    Boolean(showInlineAgyCard && isAgyRunning);
+    Boolean(showInlineAgyCard && isAgyRunning) ||
+    Boolean(fileAgentJob && fileAgentJob.status === "scan");
   const isThinking = Boolean(!hasReplyText && (activeUiTag || isSubmitting));
   const isProactiveThinkingInStream = Boolean(
     !hasFollowupPending && activeUiTag && proactiveTurnKind && hasReplyText
@@ -1872,6 +1889,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
   // Synchronize responding height (pure content + controls, or max 620px canvas on Turn 2+) with the native HWND pill
   useLayoutEffect(() => {
+    if (browserSession) {
+      return;
+    }
     if (pillMode !== "responding") {
       lastReportedHRef.current = 0;
       return;
@@ -1950,7 +1970,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
         observer.disconnect();
       }
     };
-  }, [pillMode, pipPhase, isMultiTurnMode, isControlsVisible, hasActiveImages, activeUiTag, followupThinkingPrompt, followupThinkingImages, activeTurns, isStreaming, agyWorkJob, proactiveTurnKind, onHeightChange, updateScrollMask]);
+  }, [browserSession, pillMode, pipPhase, isMultiTurnMode, isControlsVisible, hasActiveImages, activeUiTag, followupThinkingPrompt, followupThinkingImages, activeTurns, isStreaming, agyWorkJob, proactiveTurnKind, onHeightChange, updateScrollMask]);
 
   const clampedSelectionIndex = Math.max(0, Math.min(selectionIndex, inputText.length));
   const cursorPrefix = inputText.slice(0, clampedSelectionIndex);
@@ -2151,7 +2171,9 @@ export const ChatPill: React.FC<ChatPillProps> = ({
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (voiceActive) {
+        if (browserSession && onCloseBrowser) {
+          onCloseBrowser();
+        } else if (voiceActive) {
           toggleVoiceMode(false);
         } else if (closeSearchDrawerRef.current()) {
           return;
@@ -2163,6 +2185,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
 
       // Zero-click Type-Anywhere / Paste-Anywhere while AIDEN is awake & open
       if (
+        browserSession ||
         e.defaultPrevented ||
         e.isComposing ||
         !isAwake ||
@@ -2251,7 +2274,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [voiceActive, pillMode, isAwake, pipPhase, sleepUi, measureActiveCaret]);
+  }, [browserSession, onCloseBrowser, voiceActive, pillMode, isAwake, pipPhase, sleepUi, measureActiveCaret]);
 
   // Reset scroll to top when a new conversation prompt is submitted so the user reads from the beginning
   useEffect(() => {
@@ -2709,7 +2732,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
   // Morph the single conjoined AIDEN HWND height seamlessly when the app tray or image strip opens/closes
   useEffect(() => {
     drawerVisiblePrevRef.current = shouldShowSearchDrawer;
-    if (pillMode !== "idle" || voiceActive || !onHeightChange) return;
+    if (browserSession || pillMode !== "idle" || voiceActive || !onHeightChange) return;
     const baseBarH = isMultiline ? Math.max(60, lastTextareaIdleHRef.current) : 60;
     const imgStripH = hasActiveImages ? 60 : 0;
     const desiredH =
@@ -2728,6 +2751,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
     shouldShowSearchDrawer,
     searchResult,
     onHeightChange,
+    browserSession,
   ]);
 
   const triggerLaunchSearchItem = useCallback(
@@ -3145,6 +3169,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               ? "hover-active"
               : ""
           } ${isMultiline && pillMode === "idle" ? "multiline" : ""} ${
+            browserSession ? "browser-open" : ""
+          } ${
             shouldShowSearchDrawer && pillMode === "idle"
               ? "search-tray-open"
               : ""
@@ -3278,8 +3304,134 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               onRimToneChange={setPipRimTone}
             />
           )}
+          {/* 0. INBUILT AIDEN BROWSER (Single-View 960x600 Liquid-Glass Shell) */}
+          {pipPhase === "max" && browserSession && (
+            <div className="aiden-browser-shell">
+              <div className="aiden-browser-topbar" data-tauri-drag-region>
+                <div className="aiden-browser-brand" data-tauri-drag-region>
+                  {/* Clean monochrome globe icon (no boxed blue emoji look) */}
+                  <svg
+                    className="aiden-browser-globe-icon"
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M2 12h20" />
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                  </svg>
+                  <span className="aiden-browser-title" data-tauri-drag-region>
+                    Aiden Browser
+                  </span>
+                </div>
+
+                <div className="aiden-browser-nav-cluster">
+                  <button
+                    type="button"
+                    className="aiden-browser-icon-btn"
+                    title="Back"
+                    aria-label="Back"
+                    onClick={() => invoke("browser_navigate_action", { action: "back" }).catch(() => {})}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="aiden-browser-icon-btn"
+                    title="Forward"
+                    aria-label="Forward"
+                    onClick={() => invoke("browser_navigate_action", { action: "forward" }).catch(() => {})}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="aiden-browser-icon-btn"
+                    title="Reload page"
+                    aria-label="Reload page"
+                    onClick={() => invoke("browser_navigate_action", { action: "reload" }).catch(() => {})}
+                  >
+                    <svg width="13.5" height="13.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <polyline points="21 3 21 9 15 9" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="aiden-browser-url-pill" title={browserSession.url}>
+                  <svg
+                    className="aiden-browser-lock-icon"
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="4" y="11" width="16" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                  </svg>
+                  <span className="aiden-browser-url-text">
+                    {browserSession.url.replace(/^https?:\/\//i, "")}
+                  </span>
+                </div>
+
+                <div className="aiden-browser-right-actions">
+                  <button
+                    type="button"
+                    className="aiden-browser-icon-btn"
+                    title="Open in external browser"
+                    aria-label="Open in external browser"
+                    onClick={() => openInAidenBrowser(browserSession.url, true)}
+                  >
+                    <svg width="13.5" height="13.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="aiden-browser-return-btn"
+                    title="Close browser & return to chat"
+                    onClick={() => onCloseBrowser?.()}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M19 12H5" />
+                      <path d="M12 19l-7-7 7-7" />
+                    </svg>
+                    <span>Return to chat</span>
+                  </button>
+                </div>
+
+                {browserSession.loading && (
+                  <div className="aiden-browser-loading-bar" aria-hidden="true" />
+                )}
+              </div>
+
+              <div className="aiden-browser-viewport-frame">
+                <div className="aiden-browser-backdrop-status">
+                  <span>{browserSession.loading ? "Loading page..." : ""}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 1. IDLE / INPUT STATE */}
-          {(pillMode === "idle" || (effectiveEnteringVoice && pillMode !== "responding")) && (
+          {!browserSession && (pillMode === "idle" || (effectiveEnteringVoice && pillMode !== "responding")) && (
             <>
               {/* Organic Collapsible Image Thumbnail Strip inside Compact Idle Pill */}
               {pillMode === "idle" && !effectiveEnteringVoice && (
@@ -3477,7 +3629,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           )}
 
           {/* 1.5. VOICE / LISTENING STATE (Compact Plump Capsule with Apple Siri Aurora) */}
-          {pillMode === "listening" && !effectiveEnteringVoice && (
+          {!browserSession && pillMode === "listening" && !effectiveEnteringVoice && (
             <div
               className="siri-listening-content"
               onClick={(e) => {
@@ -3520,7 +3672,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           )}
 
           {/* 2. THINKING STATE (Pill shrinks by 1/3, glowing pulse, shows status tag) */}
-          {pillMode === "thinking" && (
+          {!browserSession && pillMode === "thinking" && (
             <div className="siri-thinking-content">
               <div className="siri-icon-morph-anchor">
                 <span
@@ -3547,7 +3699,7 @@ export const ChatPill: React.FC<ChatPillProps> = ({
           )}
 
           {/* 3. RESPONDING STATE (Expands back to full length and vertically into glass window) */}
-          {pillMode === "responding" && (
+          {!browserSession && pillMode === "responding" && (
             <>
               {/* Floating Circular Clear Glass Close / Sleep Button (Top-Left) */}
               {onToggleSleep && (
@@ -4001,6 +4153,19 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                           onStop={onStopAgyTask}
                         />
                       )}
+
+                    {/* Live Inline File Explorer Swarm Card anchored inside the turn that launched it */}
+                    {fileAgentJob &&
+                      fileAgentJob.anchorTurnId === turn.id &&
+                      onStopFileAgent &&
+                      onOpenFilePath && (
+                        <FileAgentCard
+                          job={fileAgentJob}
+                          onStop={onStopFileAgent}
+                          onOpenPath={onOpenFilePath}
+                          onLayoutChange={() => window.requestAnimationFrame(updateScrollMask)}
+                        />
+                      )}
                   </div>
                   );
                 })}
@@ -4016,6 +4181,21 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                         job={agyWorkJob}
                         onDismiss={onDismissAgyCard}
                         onStop={onStopAgyTask}
+                      />
+                    </div>
+                  )}
+
+                {/* Unanchored Live Inline File Explorer Swarm Card (mid-launch before turn finalizes) */}
+                {fileAgentJob &&
+                  (!fileAgentJob.anchorTurnId || !activeTurns.some((t) => t.id === fileAgentJob.anchorTurnId)) &&
+                  onStopFileAgent &&
+                  onOpenFilePath && (
+                    <div className="siri-turn-item agy-inline-orphan-turn">
+                      <FileAgentCard
+                        job={fileAgentJob}
+                        onStop={onStopFileAgent}
+                        onOpenPath={onOpenFilePath}
+                        onLayoutChange={() => window.requestAnimationFrame(updateScrollMask)}
                       />
                     </div>
                   )}
@@ -4673,6 +4853,17 @@ export const ChatPillWindow: React.FC = () => {
   const [agyFailedSeq, setAgyFailedSeq] = useState(0);
   const [proactiveTurnKind, setProactiveTurnKind] = useState<string | null>(null);
   const pendingAgyAnchorJobIdRef = useRef<string | null>(null);
+  const [fileAgentJob, setFileAgentJob] = useState<FileAgentJobState | null>(null);
+  const pendingFileAgentAnchorJobIdRef = useRef<string | null>(null);
+  const [browserSession, setBrowserSession] = useState<{
+    url: string;
+    loading: boolean;
+    width: number;
+    height: number;
+  } | null>(null);
+  const browserSessionRef = useRef(browserSession);
+  browserSessionRef.current = browserSession;
+  const preBrowserSizeRef = useRef<{ width: number; height: number }>({ width: 466, height: 60 });
 
   const stopStreamRaf = () => {
     if (rafIdRef.current !== null) {
@@ -4719,10 +4910,21 @@ export const ChatPillWindow: React.FC = () => {
       }
       return null;
     });
+    setFileAgentJob((prev) => {
+      if (!prev) return null;
+      if (prev.status === "scan") {
+        return { ...prev, anchorTurnId: null };
+      }
+      return null;
+    });
     targetTextRef.current = "";
     displayedLengthRef.current = 0;
     streamEndedRef.current = false;
     lastLineEmittedTimeRef.current = 0;
+    if (browserSessionRef.current) {
+      setBrowserSession(null);
+      invoke("close_inbuilt_browser").catch(() => {});
+    }
 
     if (!skipSocket && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "clear_response" }));
@@ -4800,7 +5002,8 @@ export const ChatPillWindow: React.FC = () => {
     ) ||
     Boolean(followupThinkingPrompt) ||
     Boolean(followupThinkingImages && followupThinkingImages.length > 0) ||
-    Boolean(agyWorkJob && !agyWorkJob.cardDismissed && agyWorkJob.status === "running");
+    Boolean(agyWorkJob && !agyWorkJob.cardDismissed && agyWorkJob.status === "running") ||
+    Boolean(fileAgentJob && fileAgentJob.status === "scan");
   const isThinking = Boolean(!hasReplyText && activeUiTag);
   const currentMode: "idle" | "listening" | "thinking" | "responding" = hasReplyText
     ? "responding"
@@ -4964,6 +5167,10 @@ export const ChatPillWindow: React.FC = () => {
       if (!isAwake || (pipPhaseRef.current !== "max" && pipPhaseRef.current !== "to-max")) {
         return;
       }
+      if (browserSessionRef.current) {
+        setBrowserSession(null);
+        invoke("close_inbuilt_browser").catch(() => {});
+      }
       clearPipTimer();
       pipRestoreHeightRef.current = restoreH;
       pipPhaseRef.current = "to-pip";
@@ -5077,7 +5284,7 @@ export const ChatPillWindow: React.FC = () => {
 
   const morphTo = useCallback(
     (targetWidth: number, targetHeight: number, durationMs = 280) => {
-      if (!isAwake || pipPhaseRef.current !== "max") return;
+      if (!isAwake || pipPhaseRef.current !== "max" || browserSessionRef.current) return;
       if (
         Math.abs(targetWidth - lastSyncWidthRef.current) < 2 &&
         Math.abs(targetHeight - lastSyncHeightRef.current) < 4
@@ -5097,7 +5304,7 @@ export const ChatPillWindow: React.FC = () => {
 
   // Sync mode changes with native HWND geometry
   useEffect(() => {
-    if (!isAwake || pipPhaseRef.current !== "max") return;
+    if (!isAwake || pipPhaseRef.current !== "max" || browserSessionRef.current) return;
     if (currentMode === "listening") {
       morphTo(280, idleTargetHeightRef.current, 260);
     } else if (currentMode === "idle") {
@@ -5118,7 +5325,7 @@ export const ChatPillWindow: React.FC = () => {
 
   const handlePillHeightChange = useCallback(
     (targetH: number, durationMs = 220) => {
-      if (!isAwake || pipPhaseRef.current !== "max") return;
+      if (!isAwake || pipPhaseRef.current !== "max" || browserSessionRef.current) return;
       if (currentMode === "idle") {
         idleTargetHeightRef.current = targetH;
         morphTo(466, targetH, durationMs);
@@ -5128,6 +5335,102 @@ export const ChatPillWindow: React.FC = () => {
     },
     [isAwake, currentMode, morphTo]
   );
+
+  const openAidenBrowser = useCallback(
+    (rawUrl: string, width = 960, height = 600) => {
+      const cleanUrl = (rawUrl || "").trim();
+      if (!cleanUrl) return;
+      if (!browserSessionRef.current) {
+        preBrowserSizeRef.current = {
+          width: lastSyncWidthRef.current || 466,
+          height: Math.max(60, lastSyncHeightRef.current || 60),
+        };
+      }
+      clearOfflineGraceTimer();
+      setIsBackendOnline(true);
+      if (!isAwakeRef.current) {
+        setIsAwake(true);
+        invoke("set_chat_pill_state", { isAwake: true }).catch(() => {});
+      }
+      if (pipPhaseRef.current !== "max") {
+        clearPipTimer();
+        pipPhaseRef.current = "max";
+        setPipPhase("max");
+      }
+      lastSyncWidthRef.current = width;
+      lastSyncHeightRef.current = height;
+      const nextSession = { url: cleanUrl, loading: true, width, height };
+      browserSessionRef.current = nextSession;
+      setBrowserSession(nextSession);
+      invoke("open_inbuilt_browser", { url: cleanUrl, width, height }).catch(() => {});
+    },
+    [clearOfflineGraceTimer]
+  );
+
+  const closeAidenBrowser = useCallback(() => {
+    if (!browserSessionRef.current) return;
+    browserSessionRef.current = null;
+    setBrowserSession(null);
+    invoke("close_inbuilt_browser").catch(() => {});
+    const restoreW = 466;
+    const restoreH =
+      currentModeRef.current === "idle"
+        ? Math.max(60, idleTargetHeightRef.current || 60)
+        : Math.max(140, Math.min(620, preBrowserSizeRef.current.height || 340));
+    lastSyncWidthRef.current = restoreW;
+    lastSyncHeightRef.current = restoreH;
+    invoke("morph_pill", {
+      targetWidth: restoreW,
+      targetHeight: restoreH,
+      durationMs: 240,
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const onOpenBrowserEvent = (ev: Event) => {
+      const customEv = ev as CustomEvent<AidenBrowserOpenDetail>;
+      const targetUrl = customEv?.detail?.url;
+      if (typeof targetUrl === "string" && targetUrl) {
+        openAidenBrowser(targetUrl, 960, 600);
+      }
+    };
+    window.addEventListener(AIDEN_BROWSER_OPEN_EVENT, onOpenBrowserEvent as EventListener);
+
+    let disposed = false;
+    let unlistenNav: (() => void) | undefined;
+    let unlistenLoad: (() => void) | undefined;
+
+    const attachBrowserEvents = async () => {
+      try {
+        const uNav = await listen<{ url?: string }>("aiden-browser-navigated", (event) => {
+          const nextUrl = typeof event.payload?.url === "string" ? event.payload.url : "";
+          if (!nextUrl) return;
+          setBrowserSession((prev) => (prev ? { ...prev, url: nextUrl } : prev));
+        });
+        const uLoad = await listen<{ loading?: boolean }>("aiden-browser-loading", (event) => {
+          const nextLoading = Boolean(event.payload?.loading);
+          setBrowserSession((prev) => (prev ? { ...prev, loading: nextLoading } : prev));
+        });
+        if (disposed) {
+          uNav();
+          uLoad();
+        } else {
+          unlistenNav = uNav;
+          unlistenLoad = uLoad;
+        }
+      } catch {
+        // Fallback outside Tauri
+      }
+    };
+    attachBrowserEvents();
+
+    return () => {
+      disposed = true;
+      window.removeEventListener(AIDEN_BROWSER_OPEN_EVENT, onOpenBrowserEvent as EventListener);
+      if (unlistenNav) unlistenNav();
+      if (unlistenLoad) unlistenLoad();
+    };
+  }, [openAidenBrowser]);
 
   // Sync state events from Tauri main process
   useEffect(() => {
@@ -5352,6 +5655,10 @@ export const ChatPillWindow: React.FC = () => {
               if (anchorPendingJobId) {
                 pendingAgyAnchorJobIdRef.current = null;
               }
+              const anchorPendingFileJobId = pendingFileAgentAnchorJobIdRef.current;
+              if (anchorPendingFileJobId) {
+                pendingFileAgentAnchorJobIdRef.current = null;
+              }
 
               const newTurn: ChatTurn = {
                 id: newTurnId,
@@ -5389,15 +5696,71 @@ export const ChatPillWindow: React.FC = () => {
                       : prev
                   );
                 }
+                if (anchorPendingFileJobId) {
+                  setFileAgentJob((prev) =>
+                    prev && prev.jobId === anchorPendingFileJobId
+                      ? { ...prev, anchorTurnId: newTurnId }
+                      : prev
+                  );
+                }
               }, delay);
             } else if (msgType === "proactive_turn_start") {
               const kind = typeof data.kind === "string" ? data.kind : "system";
               const tag = String(data.tag || "Thinking").trim() || "Thinking";
+              const conn =
+                typeof data.connector === "string" && data.connector
+                  ? data.connector
+                  : kind === "file_agent_done"
+                  ? "file_system"
+                  : "antigravity_work";
               setProactiveTurnKind(kind);
               setActiveUiTag(tag);
-              setActiveConnector("antigravity_work");
+              setActiveConnector(conn);
               if (turnsRef.current.length > 0) {
                 setIsMaxHeight(true);
+              }
+            } else if (
+              msgType === "file_agent_start" ||
+              msgType === "file_agent_update" ||
+              msgType === "file_agent_done"
+            ) {
+              const jid = String(data.job_id || "");
+              if (jid) {
+                if (msgType === "file_agent_start") {
+                  pendingFileAgentAnchorJobIdRef.current = jid;
+                  setIsMaxHeight(true);
+                }
+                const rawCols: FileAgentTreeNode[][] = Array.isArray(data.columns) ? data.columns : [];
+                const rawEdges: FileAgentTreeEdge[] = Array.isArray(data.edges) ? data.edges : [];
+                const nextStatus: "scan" | "found" | "dead" | "stopped" =
+                  data.status === "found" || data.status === "dead" || data.status === "stopped"
+                    ? data.status
+                    : "scan";
+                setFileAgentJob((prev) => ({
+                  jobId: jid,
+                  goal: String(data.goal || prev?.goal || ""),
+                  status: nextStatus,
+                  activeAgents: Number(data.active_agents ?? 0),
+                  foundPath: String(data.found_path || ""),
+                  foundName: String(data.found_name || ""),
+                  nearMiss:
+                    data.near_miss && typeof data.near_miss === "object"
+                      ? {
+                          name: String(data.near_miss.name || ""),
+                          path: String(data.near_miss.path || ""),
+                        }
+                      : null,
+                  barTitle: String(data.bar_title || prev?.barTitle || ""),
+                  barPath: String(data.bar_path || prev?.barPath || ""),
+                  columns: rawCols,
+                  edges: rawEdges,
+                  anchorTurnId:
+                    msgType === "file_agent_start"
+                      ? null
+                      : prev && prev.jobId === jid
+                      ? prev.anchorTurnId ?? null
+                      : null,
+                }));
               }
             } else if (msgType === "agy_work_start") {
               const jid = String(data.job_id || "");
@@ -5469,6 +5832,27 @@ export const ChatPillWindow: React.FC = () => {
               const jid = String(data.job_id || "");
               pendingAgyAnchorJobIdRef.current = null;
               setAgyWorkJob((prev) => (!jid || !prev || prev.jobId === jid ? null : prev));
+            } else if (msgType === "browser_open") {
+              const targetUrl = String(data.url || "").trim();
+              if (targetUrl) {
+                const bw = typeof data.width === "number" ? data.width : 960;
+                const bh = typeof data.height === "number" ? data.height : 600;
+                openAidenBrowser(targetUrl, bw, bh);
+              }
+            } else if (msgType === "browser_navigate") {
+              const action = String(data.action || "").trim();
+              if (action) {
+                invoke("browser_navigate_action", {
+                  action,
+                  url: typeof data.url === "string" ? data.url : undefined,
+                }).catch(() => {});
+              }
+            } else if (msgType === "browser_scroll") {
+              const direction = String(data.direction || "down").trim();
+              const amount = typeof data.amount === "string" ? data.amount : "half";
+              invoke("browser_scroll_action", { direction, amount }).catch(() => {});
+            } else if (msgType === "browser_close") {
+              closeAidenBrowser();
             } else if (msgType === "error") {
               stopStreamRaf();
               stopPolishShuffle();
@@ -5653,6 +6037,29 @@ export const ChatPillWindow: React.FC = () => {
     }
   }, []);
 
+  const handleStopFileAgent = useCallback((jobId: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "file_agent_stop",
+          job_id: jobId,
+        })
+      );
+    }
+  }, []);
+
+  const handleOpenFilePath = useCallback((path: string, mode: "open" | "reveal") => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "file_open_path",
+          path,
+          mode,
+        })
+      );
+    }
+  }, []);
+
   const handleA2UIAction = useCallback((event: A2UIActionEvent) => {
     const bubbleLabel = event.label && event.label.trim() ? event.label.trim() : null;
     enterTurnPending(bubbleLabel, true, true);
@@ -5721,7 +6128,12 @@ export const ChatPillWindow: React.FC = () => {
         proactiveTurnKind={proactiveTurnKind}
         onDismissAgyCard={handleDismissAgyCard}
         onStopAgyTask={handleStopAgyTask}
+        fileAgentJob={fileAgentJob}
+        onStopFileAgent={handleStopFileAgent}
+        onOpenFilePath={handleOpenFilePath}
         onA2UIAction={handleA2UIAction}
+        browserSession={browserSession ? { url: browserSession.url, loading: browserSession.loading } : null}
+        onCloseBrowser={closeAidenBrowser}
       />
     </div>
   );

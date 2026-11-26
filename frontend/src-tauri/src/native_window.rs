@@ -756,8 +756,15 @@ impl WindowMorpher {
         let target_w = target_width.round() as i32;
         let target_h = target_height.round() as i32;
         let cur_center_x = cur.x + cur.width / 2;
-        let target_x = cur_center_x - target_w / 2;
-        let target_y = self.resting_y.load(Ordering::Relaxed);
+        let mut target_x = cur_center_x - target_w / 2;
+        let mut target_y = self.resting_y.load(Ordering::Relaxed);
+
+        if target_w > 520 || target_h > 620 {
+            let bounds = get_virtual_screen_bounds();
+            let (cx, cy) = clamp_origin_to_bounds(target_x, target_y, target_w, target_h, bounds, 12);
+            target_x = cx;
+            target_y = cy;
+        }
 
         if cur.x == target_x && cur.y == target_y && cur.width == target_w && cur.height == target_h {
             return;

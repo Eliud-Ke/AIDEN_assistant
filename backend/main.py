@@ -551,17 +551,24 @@ async def main_loop():
             except Exception:
                 pass
             if is_system_turn:
-                if proactive_kind == "agy_done":
-                    active_turn_connectors.add("antigravity_work")
+                proactive_conn = (
+                    "file_system"
+                    if proactive_kind == "file_agent_done"
+                    else "antigravity_work"
+                )
+                if proactive_kind in ("agy_done", "file_agent_done"):
+                    active_turn_connectors.add(proactive_conn)
+                    active_connectors.add(proactive_conn)
                 await server.broadcast_event_async({
                     "type": "proactive_turn_start",
                     "kind": proactive_kind,
                     "job_id": proactive_job_id,
                     "tag": proactive_ui_tag or "Thinking",
+                    "connector": proactive_conn,
                 })
                 await server.broadcast_ui_tag_async(
                     proactive_ui_tag or "Thinking",
-                    connector="antigravity_work",
+                    connector=proactive_conn,
                 )
             elif reasoning_effort == "high":
                 await server.broadcast_ui_tag_async("Deep Reasoning")
