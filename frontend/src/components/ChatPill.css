@@ -7022,17 +7022,25 @@
 }
 
 /* =========================================================
-   AIDEN INBUILT BROWSER (960x600 Single-View Liquid-Glass)
+   AIDEN INBUILT BROWSER (960x600 Dedicated 44px Top Bar +
+   Edge-to-Edge Viewport with Concave Inner-Corner Bleed)
+   Matches Windows 11 DWMWCP_ROUND (8px) cleanly
    ========================================================= */
 .siri-unified-pill.browser-open {
   width: 100%;
   height: 100%;
   min-height: 100%;
   padding: 0;
-  border-radius: 18px;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: none;
+  background: #111318;
+}
+
+.siri-unified-pill.browser-open.light-mode {
+  background: #f2f4f8;
 }
 
 .aiden-browser-shell {
@@ -7041,25 +7049,39 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  background: #111318;
+}
+
+.siri-unified-pill.light-mode .aiden-browser-shell {
+  background: #f2f4f8;
 }
 
 .aiden-browser-topbar {
-  height: 46px;
+  height: 44px;
   flex-shrink: 0;
-  padding: 8px 10px 4px 12px;
+  padding: 0 10px 0 12px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   position: relative;
   user-select: none;
+  background: #111318;
+}
+
+.siri-unified-pill.light-mode .aiden-browser-topbar {
+  background: #f2f4f8;
 }
 
 .aiden-browser-brand {
+  height: 28px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding-right: 4px;
-  color: rgba(255, 255, 255, 0.88);
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.90);
   flex-shrink: 0;
 }
 
@@ -7070,7 +7092,7 @@
 
 .aiden-browser-title {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -7078,7 +7100,7 @@
 .aiden-browser-nav-cluster {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -7086,9 +7108,9 @@
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.86);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7098,7 +7120,7 @@
 
 .aiden-browser-icon-btn:hover {
   background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .aiden-browser-icon-btn:active {
@@ -7107,23 +7129,27 @@
 
 .aiden-browser-url-pill {
   flex: 1;
-  min-width: 0;
+  min-width: 120px;
+  max-width: 460px;
+  margin: 0 auto;
   height: 28px;
   padding: 0 11px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   display: flex;
   align-items: center;
-  gap: 7px;
-  color: rgba(255, 255, 255, 0.74);
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.78);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 11.8px;
+  position: relative;
+  overflow: hidden;
 }
 
 .aiden-browser-lock-icon {
   flex-shrink: 0;
-  opacity: 0.68;
+  opacity: 0.70;
 }
 
 .aiden-browser-url-text {
@@ -7143,8 +7169,8 @@
   height: 28px;
   padding: 0 11px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.10);
   color: rgba(255, 255, 255, 0.94);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
   font-size: 12px;
@@ -7157,8 +7183,8 @@
 }
 
 .aiden-browser-return-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.26);
 }
 
 .aiden-browser-return-btn:active {
@@ -7175,11 +7201,13 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0.72) 45%,
+    rgba(125, 211, 252, 0.92) 55%,
     transparent 100%
   );
   background-size: 200% 100%;
   animation: aidenBrowserShimmer 1.05s linear infinite;
+  pointer-events: none;
 }
 
 @keyframes aidenBrowserShimmer {
@@ -7193,23 +7221,119 @@
 
 .aiden-browser-viewport-frame {
   flex: 1;
-  margin: 0 8px 8px 8px;
-  border-radius: 12px;
-  background: rgba(12, 14, 18, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  width: 100%;
+  margin: 0;
+  border-radius: 12px 12px 0 0;
+  background: #151820;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
 }
 
-.aiden-browser-backdrop-status {
+.aiden-browser-aurora-curtain {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.aiden-browser-aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(58px);
+  opacity: 0.44;
+  pointer-events: none;
+}
+
+.aiden-browser-aurora-blob.blob-cyan {
+  width: 340px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.65), transparent 70%);
+  animation: aidenAuroraFloat1 3.6s ease-in-out infinite alternate;
+}
+
+.aiden-browser-aurora-blob.blob-violet {
+  width: 320px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.55), transparent 70%);
+  animation: aidenAuroraFloat2 4.1s ease-in-out infinite alternate;
+}
+
+.aiden-browser-aurora-blob.blob-white {
+  width: 260px;
+  height: 160px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.34), transparent 70%);
+  animation: aidenAuroraFloat1 2.9s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes aidenAuroraFloat1 {
+  from {
+    transform: translate(-48px, 14px) scale(0.96);
+  }
+  to {
+    transform: translate(52px, -16px) scale(1.1);
+  }
+}
+
+@keyframes aidenAuroraFloat2 {
+  from {
+    transform: translate(45px, -12px) scale(1.05);
+  }
+  to {
+    transform: translate(-45px, 18px) scale(0.95);
+  }
+}
+
+.aiden-browser-constellation {
+  width: 38px;
+  height: 38px;
+  position: relative;
+  z-index: 2;
+  animation: aidenConstellationSpin 2.6s linear infinite;
+}
+
+.aiden-browser-constellation span {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.aiden-browser-constellation span:nth-child(1) { top: 2px; left: 16px; opacity: 1; }
+.aiden-browser-constellation span:nth-child(2) { top: 9px; right: 4px; opacity: 0.72; transform: scale(0.85); }
+.aiden-browser-constellation span:nth-child(3) { bottom: 9px; right: 4px; opacity: 0.55; transform: scale(0.75); }
+.aiden-browser-constellation span:nth-child(4) { bottom: 2px; left: 16px; opacity: 0.4; transform: scale(0.68); }
+.aiden-browser-constellation span:nth-child(5) { bottom: 9px; left: 4px; opacity: 0.55; transform: scale(0.75); }
+.aiden-browser-constellation span:nth-child(6) { top: 9px; left: 4px; opacity: 0.72; transform: scale(0.85); }
+
+@keyframes aidenConstellationSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.aiden-browser-loading-caption {
+  position: relative;
+  z-index: 2;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', system-ui, sans-serif;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.48);
+  font-size: 13px;
+  font-weight: 540;
+  color: rgba(255, 255, 255, 0.88);
   user-select: none;
 }
 
 .siri-unified-pill.light-mode .aiden-browser-brand {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.10);
   color: rgba(15, 23, 42, 0.88);
 }
 
@@ -7218,9 +7342,9 @@
 }
 
 .siri-unified-pill.light-mode .aiden-browser-icon-btn {
-  border-color: rgba(15, 23, 42, 0.1);
   background: rgba(15, 23, 42, 0.05);
-  color: rgba(15, 23, 42, 0.8);
+  border-color: rgba(15, 23, 42, 0.10);
+  color: rgba(15, 23, 42, 0.82);
 }
 
 .siri-unified-pill.light-mode .aiden-browser-icon-btn:hover {
@@ -7230,14 +7354,14 @@
 
 .siri-unified-pill.light-mode .aiden-browser-url-pill {
   background: rgba(15, 23, 42, 0.05);
-  border-color: rgba(15, 23, 42, 0.1);
+  border-color: rgba(15, 23, 42, 0.10);
   color: rgba(15, 23, 42, 0.72);
 }
 
 .siri-unified-pill.light-mode .aiden-browser-return-btn {
-  border-color: rgba(15, 23, 42, 0.14);
   background: rgba(15, 23, 42, 0.08);
-  color: rgba(15, 23, 42, 0.9);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: rgba(15, 23, 42, 0.90);
 }
 
 .siri-unified-pill.light-mode .aiden-browser-return-btn:hover {
@@ -7249,17 +7373,21 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(15, 23, 42, 0.65) 50%,
+    rgba(15, 23, 42, 0.58) 45%,
+    rgba(56, 189, 248, 0.85) 55%,
     transparent 100%
   );
   background-size: 200% 100%;
 }
 
 .siri-unified-pill.light-mode .aiden-browser-viewport-frame {
-  background: rgba(244, 246, 250, 0.72);
-  border-color: rgba(15, 23, 42, 0.08);
+  background: #ffffff;
 }
 
-.siri-unified-pill.light-mode .aiden-browser-backdrop-status {
-  color: rgba(15, 23, 42, 0.45);
+.siri-unified-pill.light-mode .aiden-browser-constellation span {
+  background: rgba(15, 23, 42, 0.90);
+}
+
+.siri-unified-pill.light-mode .aiden-browser-loading-caption {
+  color: rgba(15, 23, 42, 0.88);
 }

@@ -21,9 +21,9 @@ use base64::Engine as _;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    webview::{NewWindowResponse, PageLoadEvent, Url, WebviewBuilder},
+    webview::{Color, NewWindowResponse, PageLoadEvent, Url, WebviewBuilder},
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, Position, State,
-    WebviewUrl, WebviewWindow,
+    WebviewUrl, WebviewWindow, WindowEvent,
 };
 
 #[cfg(target_os = "windows")]
@@ -49,6 +49,8 @@ struct PipHeadphonesState {
 
 struct AidenBrowserState {
     generation: Arc<AtomicU64>,
+    is_fullscreen: Arc<AtomicBool>,
+    is_dark_mode: Arc<AtomicBool>,
 }
 
 struct PipBopState {
@@ -1073,6 +1075,22 @@ fn set_pill_theme(
     app: AppHandle,
     dark_mode: bool,
 ) -> Result<(), String> {
+    if let Some(browser_state) = app.try_state::<AidenBrowserState>() {
+        browser_state.is_dark_mode.store(dark_mode, Ordering::SeqCst);
+    }
+    if let Some(bv) = app.get_webview("aiden_browser") {
+        let bg = if dark_mode {
+            Color(17, 19, 24, 255)
+        } else {
+            Color(242, 244, 248, 255)
+        };
+        let _ = bv.set_background_color(Some(bg));
+        let js = format!(
+            "window.__aidenBrowserDarkMode={};window.__aidenBrowserCornersApi&&window.__aidenBrowserCornersApi.setDarkMode({});",
+            dark_mode, dark_mode
+        );
+        let _ = bv.eval(&js);
+    }
     #[cfg(target_os = "windows")]
     {
         if let Some(pill_win) = app.get_webview_window("chat_pill") {
@@ -1141,6 +1159,40 @@ const INVISIBLE_SCROLLBAR_JS: &str = r#"(function(){
   } catch (_) {}
 })();"#;
 
+const AIDEN_BROWSER_BAR_H: f64 = 44.0;
+const AIDEN_BROWSER_HUD_JS: &str = include_str!("aiden_browser_hud.js");
+
+fn sync_inbuilt_browser_bounds(app: &AppHandle, phys_size: tauri::PhysicalSize<u32>) {
+    let Some(bv) = app.get_webview("aiden_browser") else {
+        return;
+    };
+    if phys_size.width == 0 || phys_size.height == 0 {
+        return;
+    }
+    let fs_flag = app
+        .try_state::<AidenBrowserState>()
+        .map(|s| s.is_fullscreen.load(Ordering::SeqCst))
+        .unwrap_or(false);
+    let win_fs = app
+        .get_webview_window("chat_pill")
+        .and_then(|w| w.is_fullscreen().ok())
+        .unwrap_or(false);
+
+    if fs_flag || win_fs {
+        let _ = bv.set_position(PhysicalPosition::new(0, 0));
+        let _ = bv.set_size(phys_size);
+    } else {
+        let scale = app
+            .get_webview_window("chat_pill")
+            .and_then(|w| w.scale_factor().ok())
+            .unwrap_or(1.0);
+        let bar_h = (AIDEN_BROWSER_BAR_H * scale).round() as i32;
+        let avail_h = (phys_size.height as i32 - bar_h).max(120) as u32;
+        let _ = bv.set_position(PhysicalPosition::new(0, bar_h));
+        let _ = bv.set_size(tauri::PhysicalSize::new(phys_size.width, avail_h));
+    }
+}
+
 fn normalize_browser_url(raw: &str) -> Result<Url, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -1161,10 +1213,39 @@ fn normalize_browser_url(raw: &str) -> Result<Url, String> {
 fn close_inbuilt_browser_internal(app: &AppHandle) {
     if let Some(browser_state) = app.try_state::<AidenBrowserState>() {
         browser_state.generation.fetch_add(1, Ordering::SeqCst);
+        browser_state.is_fullscreen.store(false, Ordering::SeqCst);
     }
     if let Some(bv) = app.get_webview("aiden_browser") {
         let _ = bv.close();
     }
+    if let Some(pill_win) = app.get_webview_window("chat_pill") {
+        if pill_win.is_fullscreen().unwrap_or(false) {
+            let _ = pill_win.set_fullscreen(false);
+        }
+    }
+}
+
+fn reveal_inbuilt_browser_on_main(app: AppHandle, seq_gen: u64) {
+    let st = app.state::<AidenBrowserState>();
+    if st.generation.load(Ordering::SeqCst) != seq_gen {
+        return;
+    }
+    let app_ui = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let st_inner = app_ui.state::<AidenBrowserState>();
+        if st_inner.generation.load(Ordering::SeqCst) != seq_gen {
+            return;
+        }
+        if let Some(bv) = app_ui.get_webview("aiden_browser") {
+            let _ = bv.show();
+            let _ = bv.set_focus();
+        }
+        if let Some(win) = app_ui.get_window("chat_pill") {
+            if let Ok(sz) = win.inner_size() {
+                sync_inbuilt_browser_bounds(&app_ui, sz);
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -1177,11 +1258,10 @@ fn open_inbuilt_browser(
     let parsed = normalize_browser_url(&url)?;
     let target_w = width.unwrap_or(960.0).clamp(640.0, 1440.0);
     let target_h = height.unwrap_or(600.0).clamp(440.0, 960.0);
-    let view_w = (target_w - 16.0).max(320.0);
-    let view_h = (target_h - 54.0).max(240.0);
 
     let browser_state = app.state::<AidenBrowserState>();
     let seq_gen = browser_state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    browser_state.is_fullscreen.store(false, Ordering::SeqCst);
 
     if let Some(pill_win) = app.get_webview_window("chat_pill") {
         let _ = pill_win.set_ignore_cursor_events(false);
@@ -1191,8 +1271,11 @@ fn open_inbuilt_browser(
     morph_pill(app.clone(), target_w, target_h, Some(240))?;
 
     if let Some(existing_bv) = app.get_webview("aiden_browser") {
-        let _ = existing_bv.set_position(LogicalPosition::new(8.0, 46.0));
-        let _ = existing_bv.set_size(LogicalSize::new(view_w, view_h));
+        if let Some(host) = app.get_window("chat_pill") {
+            if let Ok(inner) = host.inner_size() {
+                sync_inbuilt_browser_bounds(&app, inner);
+            }
+        }
         existing_bv
             .navigate(parsed.clone())
             .map_err(|e| format!("Failed to navigate Aiden Browser: {}", e))?;
@@ -1225,26 +1308,41 @@ fn open_inbuilt_browser(
         if state.generation.load(Ordering::SeqCst) != seq_gen {
             return;
         }
-        if let Some(existing_bv) = app_handle.get_webview("aiden_browser") {
-            let _ = existing_bv.set_position(LogicalPosition::new(8.0, 46.0));
-            let _ = existing_bv.set_size(LogicalSize::new(view_w, view_h));
-            let _ = existing_bv.navigate(parsed_clone);
-            return;
-        }
         let Some(pill_host) = app_handle.get_window("chat_pill") else {
             return;
         };
+        let full_size = pill_host.inner_size().ok();
+        if let Some(existing_bv) = app_handle.get_webview("aiden_browser") {
+            if let Some(sz) = full_size {
+                sync_inbuilt_browser_bounds(&app_handle, sz);
+            }
+            let _ = existing_bv.navigate(parsed_clone);
+            return;
+        }
 
         let profile_dir = get_user_data_dir().join("browser_profile");
         let _ = std::fs::create_dir_all(&profile_dir);
 
+        let initial_dark = state.is_dark_mode.load(Ordering::SeqCst);
+        let initial_bg = if initial_dark {
+            Color(17, 19, 24, 255)
+        } else {
+            Color(242, 244, 248, 255)
+        };
+        let theme_seed_js = format!("window.__aidenBrowserDarkMode={};", initial_dark);
+        let initial_revealed = Arc::new(AtomicBool::new(false));
+
         let app_for_nav = app_handle.clone();
         let app_for_load = app_handle.clone();
         let app_for_new = app_handle.clone();
+        let revealed_for_load = initial_revealed.clone();
 
         let builder = WebviewBuilder::new("aiden_browser", WebviewUrl::External(parsed_clone))
             .data_directory(profile_dir)
+            .background_color(initial_bg)
             .initialization_script_for_all_frames(INVISIBLE_SCROLLBAR_JS)
+            .initialization_script(theme_seed_js)
+            .initialization_script(AIDEN_BROWSER_HUD_JS)
             .on_navigation(move |nav_url| {
                 let allowed = matches!(
                     nav_url.scheme(),
@@ -1275,7 +1373,25 @@ fn open_inbuilt_browser(
                     );
                 }
                 if !is_loading {
+                    let is_dark = app_for_load
+                        .try_state::<AidenBrowserState>()
+                        .map(|s| s.is_dark_mode.load(Ordering::SeqCst))
+                        .unwrap_or(true);
                     let _ = wv.eval(INVISIBLE_SCROLLBAR_JS);
+                    let _ = wv.eval(&format!("window.__aidenBrowserDarkMode={};", is_dark));
+                    let _ = wv.eval(AIDEN_BROWSER_HUD_JS);
+                    let _ = wv.eval(&format!(
+                        "window.__aidenBrowserCornersApi&&window.__aidenBrowserCornersApi.setDarkMode({});",
+                        is_dark
+                    ));
+                    if u != "about:blank" && !revealed_for_load.swap(true, Ordering::SeqCst) {
+                        let app_reveal = app_for_load.clone();
+                        std::thread::spawn(move || {
+                            // Brief compositor settle so Chromium paints first frame before showing child HWND
+                            std::thread::sleep(Duration::from_millis(90));
+                            reveal_inbuilt_browser_on_main(app_reveal, seq_gen);
+                        });
+                    }
                 }
             })
             .on_new_window(move |target_url, _features| {
@@ -1287,12 +1403,78 @@ fn open_inbuilt_browser(
                 NewWindowResponse::Deny
             });
 
-        match pill_host.add_child(
-            builder,
-            LogicalPosition::new(8.0, 46.0),
-            LogicalSize::new(view_w, view_h),
-        ) {
+        let attach_res = if let Some(sz) = full_size {
+            let scale = app_handle
+                .get_webview_window("chat_pill")
+                .and_then(|w| w.scale_factor().ok())
+                .unwrap_or(1.0);
+            let bar_h = (AIDEN_BROWSER_BAR_H * scale).round() as i32;
+            let avail_h = (sz.height as i32 - bar_h).max(120) as u32;
+            pill_host.add_child(
+                builder,
+                PhysicalPosition::new(0, bar_h),
+                tauri::PhysicalSize::new(sz.width, avail_h),
+            )
+        } else {
+            pill_host.add_child(
+                builder,
+                LogicalPosition::new(0.0, AIDEN_BROWSER_BAR_H),
+                LogicalSize::new(target_w, (target_h - AIDEN_BROWSER_BAR_H).max(240.0)),
+            )
+        };
+
+        match attach_res {
             Ok(bv) => {
+                // Keep WebView2 hidden briefly while Siri Aurora plays cleanly during initial page load
+                let _ = bv.hide();
+                if let Ok(exact_sz) = pill_host.inner_size() {
+                    sync_inbuilt_browser_bounds(&app_handle, exact_sz);
+                }
+                let app_fallback = app_handle.clone();
+                let revealed_fallback = initial_revealed.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(1650));
+                    if !revealed_fallback.swap(true, Ordering::SeqCst) {
+                        reveal_inbuilt_browser_on_main(app_fallback, seq_gen);
+                    }
+                });
+                #[cfg(target_os = "windows")]
+                {
+                    let app_for_msg = app_handle.clone();
+                    let _ = bv.with_webview(move |platform_wv| {
+                        use webview2_com::{take_pwstr, WebMessageReceivedEventHandler};
+                        use windows::core::PWSTR;
+                        unsafe {
+                            if let Ok(core) = platform_wv.controller().CoreWebView2() {
+                                let mut token: i64 = 0;
+                                let handler = WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+                                    if let Some(args) = args {
+                                        let mut msg_ptr = PWSTR::null();
+                                        if args.TryGetWebMessageAsString(&mut msg_ptr).is_ok() {
+                                            let msg = take_pwstr(msg_ptr);
+                                            if msg == "__aiden_hud__:fs:1" || msg == "__aiden_hud__:fs:0" {
+                                                let enter_fs = msg.ends_with(":1");
+                                                if let Some(st) = app_for_msg.try_state::<AidenBrowserState>() {
+                                                    st.is_fullscreen.store(enter_fs, Ordering::SeqCst);
+                                                }
+                                                let app_fs = app_for_msg.clone();
+                                                let _ = app_for_msg.run_on_main_thread(move || {
+                                                    if let Some(win) = app_fs.get_window("chat_pill") {
+                                                        if let Ok(sz) = win.inner_size() {
+                                                            sync_inbuilt_browser_bounds(&app_fs, sz);
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }
+                                    Ok(())
+                                }));
+                                let _ = core.add_WebMessageReceived(&handler, &mut token);
+                            }
+                        }
+                    });
+                }
                 let _ = bv.set_focus();
             }
             Err(err) => {
@@ -1317,6 +1499,7 @@ fn close_inbuilt_browser(app: AppHandle) -> Result<(), String> {
         "aiden-browser-loading",
         serde_json::json!({ "loading": false }),
     );
+    focus_chat_pill_native(&app);
     Ok(())
 }
 
@@ -2145,8 +2328,13 @@ fn focus_chat_pill_native(app: &AppHandle) {
             if let Ok(hwnd) = pill_win.hwnd() {
                 native_window::force_foreground_window(hwnd);
             }
-            // Calls WebView2's MoveFocus so Chromium's inner renderer HWND receives keyboard focus
             let _ = pill_win.set_focus();
+            // With Tauri's `unstable` multi-webview mode, primary WebviewWindows are WebviewKind::WindowChild,
+            // so `Window::set_focus()` alone no longer forwards WM_SETFOCUS -> MoveFocus to WebView2.
+            // Explicitly focus the `"chat_pill"` WebView controller so Chromium receives keyboard focus.
+            if let Some(pill_wv) = app_for_main.get_webview("chat_pill") {
+                let _ = pill_wv.set_focus();
+            }
             let _ = app_for_main.emit_to("chat_pill", "aiden-focus-input", serde_json::json!({}));
         }
     });
@@ -3280,6 +3468,8 @@ pub fn run() {
         .manage(PipSpotifyState(Mutex::new(None)))
         .manage(AidenBrowserState {
             generation: Arc::new(AtomicU64::new(0)),
+            is_fullscreen: Arc::new(AtomicBool::new(false)),
+            is_dark_mode: Arc::new(AtomicBool::new(true)),
         })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -3304,6 +3494,14 @@ pub fn run() {
 
                 // 1. Center the pill window in the upper third first
                 center_chat_pill_in_upper_third(&app.handle(), &pill_win);
+
+                // Keep child Aiden Browser synced cleanly beneath the 44px bar (or 0,0 full-bleed in YouTube Fullscreen!)
+                let app_for_resize = app.handle().clone();
+                pill_win.on_window_event(move |event| {
+                    if let WindowEvent::Resized(phys_size) = event {
+                        sync_inbuilt_browser_bounds(&app_for_resize, *phys_size);
+                    }
+                });
 
                 #[cfg(target_os = "windows")]
                 {

@@ -3423,8 +3423,14 @@ export const ChatPill: React.FC<ChatPillProps> = ({
               </div>
 
               <div className="aiden-browser-viewport-frame">
-                <div className="aiden-browser-backdrop-status">
-                  <span>{browserSession.loading ? "Loading page..." : ""}</span>
+                <div className="aiden-browser-aurora-curtain" aria-hidden={!browserSession.loading}>
+                  <div className="aiden-browser-aurora-blob blob-cyan" />
+                  <div className="aiden-browser-aurora-blob blob-violet" />
+                  <div className="aiden-browser-aurora-blob blob-white" />
+                  <div className="aiden-browser-constellation" aria-hidden="true">
+                    <span /><span /><span /><span /><span /><span />
+                  </div>
+                  <div className="aiden-browser-loading-caption">Just a sec...</div>
                 </div>
               </div>
             </div>
@@ -5399,6 +5405,8 @@ export const ChatPillWindow: React.FC = () => {
     let disposed = false;
     let unlistenNav: (() => void) | undefined;
     let unlistenLoad: (() => void) | undefined;
+    let unlistenClosed: (() => void) | undefined;
+    let unlistenExternal: (() => void) | undefined;
 
     const attachBrowserEvents = async () => {
       try {
@@ -5411,12 +5419,25 @@ export const ChatPillWindow: React.FC = () => {
           const nextLoading = Boolean(event.payload?.loading);
           setBrowserSession((prev) => (prev ? { ...prev, loading: nextLoading } : prev));
         });
+        const uClosed = await listen("aiden-browser-closed", () => {
+          closeAidenBrowser();
+        });
+        const uExternal = await listen<{ url?: string }>("aiden-browser-open-external", (event) => {
+          const extUrl = typeof event.payload?.url === "string" ? event.payload.url : "";
+          if (extUrl) {
+            openInAidenBrowser(extUrl, true);
+          }
+        });
         if (disposed) {
           uNav();
           uLoad();
+          uClosed();
+          uExternal();
         } else {
           unlistenNav = uNav;
           unlistenLoad = uLoad;
+          unlistenClosed = uClosed;
+          unlistenExternal = uExternal;
         }
       } catch {
         // Fallback outside Tauri
@@ -5429,8 +5450,10 @@ export const ChatPillWindow: React.FC = () => {
       window.removeEventListener(AIDEN_BROWSER_OPEN_EVENT, onOpenBrowserEvent as EventListener);
       if (unlistenNav) unlistenNav();
       if (unlistenLoad) unlistenLoad();
+      if (unlistenClosed) unlistenClosed();
+      if (unlistenExternal) unlistenExternal();
     };
-  }, [openAidenBrowser]);
+  }, [openAidenBrowser, closeAidenBrowser]);
 
   // Sync state events from Tauri main process
   useEffect(() => {

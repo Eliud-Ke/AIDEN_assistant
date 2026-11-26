@@ -2,7 +2,7 @@
 
 # AIDEN Assistant
 
-**A shortcut-summoned, living Windows desktop companion with instant Spotlight launching, rich interactive glass cards, background Antigravity Work delegation, and autonomous OS & cloud tools.**
+**A shortcut-summoned, living Windows desktop companion with instant Spotlight launching, rich interactive glass cards, a seamless single-view inbuilt browser, privacy-first local file hunting, and background Antigravity Work delegation.**
 
 Built with **Tauri v2 + Rust**, **React 19 + TypeScript**, and an autonomous **Python AI engine**.
 
@@ -93,6 +93,24 @@ Instead of dumping walls of text, AIDEN answers with one crisp conversational li
   <img src="docs/media/04-glass-cards-collage.gif" alt="AIDEN Interactive Glass Cards Showcase (Weather, Calendar, Gmail, Spotify, System Sliders)" width="860" />
 </div>
 
+### 🌐 Aiden Browser (`960×600` Single-View Inbuilt WebView2)
+Instead of scattering links across external tabs when you only want a quick view or watch, AIDEN morphs smoothly from her chat pill into a distraction-free, native **WebView2** browser right inside her Liquid Glass window:
+* **Single-View Simplicity (Zero Tab Clutter)**: Strictly one active view per link — no `+` new-tab bar, no bookmark strips, and invisible scrollbars. Clicking **`← Return to chat`** (or pressing `Esc` / sleeping AIDEN) **destroys** the `aiden_browser` child WebView immediately with zero lingering background memory or zombie audio.
+* **Seamless `44px` Top Bar & Concave Corner Bleed**: Houses a clean monochrome globe brand pill, `Back` / `Forward` / `Reload`, a frosted URL pill, `External ↗` launch, and `Return to chat`, paired with subtle `12px` concave inner-corner SVG fillets bleeding directly into the edge-to-edge viewport below.
+* **Siri Aurora Horizon Loading Curtain**: While a page initializes off-screen behind the themed WebView2 surface, AIDEN plays a smooth dark/light **Siri Aurora Horizon** glow with spinning Constellation dots (**`Just a sec...`**) and reveals the page cleanly on first paint — eliminating cold white flashes.
+* **True Fullscreen & Persistent Session**: Cookies and sign-ins persist cleanly in `%LOCALAPPDATA%\AidenAssistant\browser_profile`, and HTML5 fullscreen video (like YouTube) expands `aiden_browser` cleanly across the full display while hiding the corner fillets until exit.
+* **Smart App-vs-Browser Routing & Escape Hatch**: Desktop/Store/PWA apps (`Spotify`, `VS Code`, `Obsidian`, `WhatsApp`, `Calculator`) still launch natively via `launch_app`, while websites, Gmail/Calendar browser opens, direct YouTube URLs, and links inside chat cards (`YouTubeCard`, `GmailCard`, `CalendarCard`, `LocationCard`, `MarkdownContent`) prioritize **Aiden Browser** (`browser_navigate`, `browser_scroll`, `browser_close`). Hold **`Shift + Click`** or ask to *"open in Chrome/Edge"* anytime to launch your external browser instead.
+
+<div align="center">
+  <img src="docs/media/06-aiden-browser.gif" alt="Aiden Browser 960x600 Single-View Inbuilt WebView2, Siri Aurora Loading & Return to Chat Demo" width="860" />
+</div>
+
+### 🗂️ AI File Agent (`file_system` — Zero-Read Privacy Connector)
+Everyday file hunting, inspecting, organizing, and cleanup without ever opening or reading personal file contents:
+* **Tier 1 Instant Index (`file_search`)**: Queries local **Everything (`es.exe`)** in milliseconds to return top matching files and folders (no read content, noise paths excluded).
+* **Tier 2 Async Parallel Hive-Mind Swarm (`file_agent_search` + `FileAgentCard.tsx`)**: When Tier 1 misses or is offline, dispatches a live branching visual swarm across your user directories (and wakes you automatically via the Turn-Barrier Mailbox to finish any chained move/copy/open action).
+* **Native Win32 File Operations**: Highlights items directly inside File Explorer using native `SHOpenFolderAndSelectItems` PIDLs (`file_open`), resolves shorthand destinations cleanly (`Desktop`, `Downloads`, `Documents`, `Pictures`, `Videos`, `Music`), copies with 2 GB guardrails (`file_copy`), and moves deleted items safely to the Windows **Recycle Bin** via `SHFileOperationW` (`file_trash`) — never permanent deletion.
+
 ### 👁️ Screen Vision, Live Web Grounding & Hardware Awareness
 * **Screen Vision (`look_at_screen`)**: Inspects your full screen, active window, or a specific background window by name to read errors, explain code, or summarize what you're looking at.
 * **Live Grounded Web Search (`grounded_web_search`)**: Searches live web sources for current events, docs, and real-time facts with clean clickable citations.
@@ -117,7 +135,8 @@ AIDEN uses an MCP-style dynamic connector registry (`backend/connectors.py`) tha
 | Category | Status | Capabilities |
 | :--- | :---: | :--- |
 | **Core OS & Media** | ✅ Active | App launching, active window inspection & closing, Windows Settings deep-links, Recycle Bin, volume & brightness sliders, universal media playback (`play/pause/next/prev/restart`), power management, Bible passages |
-| **YouTube (Core)** | ✅ Active | Zero-config direct tools (`search_youtube` 4-dot Hero Carousel + selective `video_suggestion` Hero Walkthrough) with optional `YOUTUBE_API_KEY` override — no connector handshake or setup required |
+| **Aiden Browser (Core)** | ✅ Active | Single-view `960×600` inbuilt WebView2 browser (`open_in_browser`, `browser_navigate`, `browser_scroll`, `browser_close`) with Siri Aurora loading curtain, persistent profile, fullscreen video sync, and instant destruction on return |
+| **YouTube (Core)** | ✅ Active | Zero-config direct tools (`search_youtube` 4-dot Hero Carousel + selective `video_suggestion` Hero Walkthrough) with optional `YOUTUBE_API_KEY` override — opens directly into Aiden Browser |
 | **Dynamic UI (`A2UI v0.9`)** | ✅ Active | Generative interactive glass surfaces (`render_a2ui_surface`): live progress checklists, 60fps reactive calculators, tabbed comparisons, forms, quizzes, and Antigravity Plan Gate cards |
 | **Vision & Web** | ✅ Active | Screen Vision (`look_at_screen`: whole screen / active / background window), Live Grounded Web Search, Weather Forecast, Live Location |
 | **Gmail** | ✅ Active | Persistent warm IMAP + SMTP: unread inbox, fast search, read, draft, send, reply, mark read, archive |
@@ -125,7 +144,7 @@ AIDEN uses an MCP-style dynamic connector registry (`backend/connectors.py`) tha
 | **Spotify** | ✅ Active | OAuth 2.0: search tracks/artists/albums/playlists, browse personal library playlists, play items/playlists, shuffle/repeat, like/unlike tracks, active device check |
 | **Notes Vault (Obsidian)** | ✅ Active | Auto-discover local Obsidian vaults, scan folders, full-text note search, read/create/edit Markdown notes (`overwrite`/`append`/`insert_after_text`/`replace_text`), `obsidian://` deep-link open, and `[[wikilink]]` graph mapping |
 | **Antigravity Work** | ✅ Active | Headless `agy.exe` delegation: read-only Plan Gate (`agy_plan_task` / `agy_revise_plan`), async Full Turbo execution (`agy_execute_task`) with live inline CLI streaming & hover-minimize, status checks (`agy_check_status`), and process-tree cancel (`agy_cancel_task`) |
-| **AI File Agent** | 🚧 Planned | Registered connector slot (`file_system`) — instant file/folder search is currently provided natively via the Rust Spotlight tray |
+| **AI File Agent** | ✅ Active | Zero-read privacy connector (`file_system`): Tier 1 Everything (`es.exe`) search + Tier 2 async Hive-Mind Swarm (`file_agent_search` / `file_agent_stop`), directory listing, folder/file creation, smart moves/copies, native Explorer reveal (`SHOpenFolderAndSelectItems`), and Recycle-Bin-only trash |
 
 ---
 
@@ -133,16 +152,17 @@ AIDEN uses an MCP-style dynamic connector registry (`backend/connectors.py`) tha
 
 ```mermaid
 flowchart TD
-    subgraph UI ["4-Window Desktop UI (Tauri v2 + React 19)"]
+    subgraph UI ["Multi-Surface Desktop UI (Tauri v2 + React 19)"]
         Main["Launcher & Settings Hub (main)"]
         ChatPill["Liquid Glass Pill / 68x68 PiP Cube (chat_pill)"]
+        InbuiltBrowser["Aiden Browser Child WebView2 (aiden_browser)"]
         Bubble["Battery & Reaction Bubble (pip_bubble)"]
         Headphones["AirPods Max Overlay (pip_headphones)"]
         Tray["Windows System Tray"]
     end
 
     subgraph RustCore ["Native Rust Core (frontend/src-tauri)"]
-        ProcMgr["Backend Supervisor & Async IPC (lib.rs)"]
+        ProcMgr["Backend Supervisor, Multi-Webview & IPC (lib.rs)"]
         NativeWin["DWM Acrylic, WindowMorpher & GSMTC (native_window.rs)"]
         WinHook["Win32 Low-Level Win+Space Hook (win_hotkey.rs)"]
         SearchIdx["Unified Fuzzy Search & Bookmarks (search_index.rs, bookmarks.rs)"]
@@ -153,15 +173,16 @@ flowchart TD
         WSServer["Async WebSocket Server & Turn-Barrier Mailbox (Port 8765)"]
         ANS["Autonomic Nervous System Telemetry (ans.py)"]
         Brain["OpenAI Responses API Core (gpt-5.6-luna / gpt-6-luna)"]
-        Connectors["Dynamic Connectors (Gmail, Calendar, Spotify, Obsidian, Antigravity Work)"]
-        AgyWorker["Headless Antigravity CLI Worker (agy.exe)"]
+        Connectors["Dynamic Connectors (Gmail, Calendar, Spotify, Obsidian, Antigravity Work, File Agent)"]
+        AgyWorker["Headless Antigravity CLI & Swarm Workers (agy.exe / file_agent.py)"]
         Memory["Semantic & Episodic Memory Manager"]
-        SysTools["OS, Vision, Weather, Web, YouTube & A2UI Tools"]
+        SysTools["OS, Inbuilt Browser, Vision, Weather, Web, YouTube & A2UI Tools"]
     end
 
     ChatPill <--> |WebSocket JSON & Token Stream| WSServer
     Main <--> |Async Tauri IPC| ProcMgr
     ChatPill <--> |Tauri IPC & Events| NativeWin
+    ChatPill --- |Child WebView2 Host| InbuiltBrowser
     ChatPill <--> |Instant Fuzzy Search| SearchIdx
     WinHook --> |Toggle Awake / PiP| ChatPill
     AudioBeat --> |VSync Beat Bop| NativeWin
@@ -189,10 +210,13 @@ AIDEN_assistant/
 │   ├── connectors.py             # Dynamic on-demand connector registry
 │   ├── tool_registry.py          # Unified tool dispatch map
 │   ├── tools_system.py           # OS controls, look_at_screen, web search, weather, media
+│   ├── tools_browser.py          # Single-view Aiden Browser open, navigate, scroll & close tools
 │   ├── tools_gmail.py            # Persistent warm IMAP/SMTP Gmail tools
 │   ├── tools_calendar.py         # Google Calendar OAuth & conflict-aware scheduling tools
 │   ├── tools_spotify.py          # Spotify Web API search, library & playback tools
 │   ├── tools_obsidian.py         # Obsidian vault discovery, search, CRUD, deep-link & wikilink graph
+│   ├── tools_files.py            # Zero-read local file search, Explorer reveal, move/copy & Recycle Bin
+│   ├── file_agent.py             # Tier 2 async parallel Hive-Mind File Explorer swarm engine
 │   ├── tools_youtube.py          # Zero-config YouTube search & silent walkthrough side-channel tools
 │   ├── tools_a2ui.py             # Google A2UI v0.9 validator & side-channel surface queue
 │   ├── tools_antigravity.py      # Headless Antigravity CLI Plan Gate & async Turbo worker
@@ -205,10 +229,11 @@ AIDEN_assistant/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── ChatPill.tsx             # Upper-third Liquid Glass pill & conjoined search tray
+│   │   │   ├── ChatPill.tsx             # Upper-third Liquid Glass pill, search tray & Aiden Browser top bar
 │   │   │   ├── A2UISurface.tsx          # Google A2UI v0.9 renderer & zero-eval reactive engine
 │   │   │   ├── YouTubeCard.tsx          # Headerless Hero Video Card & 4-dot morphing carousel
 │   │   │   ├── AntigravityWorkCard.tsx  # Live inline Antigravity card with hover-minimize & stop
+│   │   │   ├── FileAgentCard.tsx        # Live parallel File Explorer Hive-Mind swarm visualizer
 │   │   │   ├── PipSquareEyes.tsx        # 68x68 living cube eyes, working green glow & Spotify state
 │   │   │   ├── PipCommentBubble.tsx     # Floating battery, spinning gear & status speech bubble
 │   │   │   ├── PipHeadphones.tsx        # Animated AirPods Max overlay window
@@ -219,11 +244,14 @@ AIDEN_assistant/
 │   │   │   ├── GmailCard.tsx            # Inbox & email search card
 │   │   │   ├── Spotify*Card.tsx         # Tracks, Artist, Albums, Playlists & Library cards
 │   │   │   └── SystemSlider.tsx         # Native-feel glass volume & brightness slider
+│   │   ├── utils/
+│   │   │   └── aidenBrowser.ts          # Card & Markdown link router into Aiden Browser
 │   │   ├── App.tsx                      # Control Launcher (Auth, Integrations, Memory, Prefs)
 │   │   └── main.tsx                     # Multi-window entrypoint router
 │   └── src-tauri/
 │       ├── src/
-│       │   ├── lib.rs                   # Async Tauri IPC commands, 4-window coordinator & tray
+│       │   ├── lib.rs                   # Async Tauri IPC commands, multi-webview browser & tray
+│       │   ├── aiden_browser_hud.js     # Concave inner-corner bleed fillets & HTML5 fullscreen bridge
 │       │   ├── native_window.rs         # DWM Acrylic, WindowMorpher, bounded WinRT GSMTC
 │       │   ├── win_hotkey.rs            # Native Win32 WH_KEYBOARD_LL hook (Win + Space)
 │       │   ├── search_index.rs          # Fuzzy app/file/folder indexer & Win32 launcher
@@ -246,6 +274,8 @@ AIDEN_assistant/
 | **Send / Launch** | `Enter` | Opens the highlighted search result, or sends your message to AIDEN |
 | **Run as Admin / Newline** | `Shift + Enter` | Launches the selected app/item elevated as Administrator; when typing a prompt, inserts a newline and dismisses the search tray |
 | **Reveal in Folder / Copy URL** | `Ctrl + Enter` | Opens File Explorer selecting the file/folder (resolves `.lnk` shortcuts to their real `.exe` target), or copies a bookmark URL to clipboard |
+| **Open Link in Aiden / External** | Click / **`Shift + Click`** on chat card links | Normal clicks open inside **Aiden Browser** (`960×600`); `Shift + Click` or the `↗` bar button opens your OS default browser |
+| **Return from Aiden Browser** | `← Return to chat` or `Esc` | Destroys the child `aiden_browser` WebView completely and morphs smoothly back to chat |
 | **Minimize to PiP Cube** | `Ctrl + M` or top-right minimize button | Collapses the pill into the draggable 68×68 living companion cube while preserving chat history |
 | **Close / Sleep AIDEN** | `Esc`, top-left `×`, or sleep shortcut | Consolidates session memory and transitions AIDEN to her asleep 68×68 cube (preserving active Antigravity jobs) |
 | **Open Launcher** | Left-click System Tray icon | Opens Authentication, Integrations, Preferences, and Memory Manager |
