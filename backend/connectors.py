@@ -8,6 +8,7 @@ import tools_gmail
 import tools_calendar
 import tools_spotify
 import tools_antigravity
+import tools_obsidian
 
 CONNECTORS_SCHEMA = {
     "gmail": {
@@ -32,13 +33,8 @@ CONNECTORS_SCHEMA = {
     },
     "notes_vault": {
         "display_name": "Notes Vault",
-        "description": "Read, search, create, and edit markdown notes in the user's vault.",
-        "tools": [],
-    },
-    "youtube_visual": {
-        "display_name": "YouTube",
-        "description": "Search and retrieve YouTube videos and channels.",
-        "tools": [],
+        "description": "Discover Obsidian vaults, scan folders, search, read, create, edit, open, and map [[wikilink]] graphs across Markdown notes.",
+        "tools": tools_obsidian.OBSIDIAN_TOOLS_SCHEMA,
     },
     "file_system": {
         "display_name": "Local Files",
@@ -56,8 +52,9 @@ _ALIASES = {
     "calendar": "google_calendar",
     "notes_vault_stack": "notes_vault",
     "notes": "notes_vault",
-    "youtube_visual_stack": "youtube_visual",
-    "youtube": "youtube_visual",
+    "obsidian": "notes_vault",
+    "obsidian_vault": "notes_vault",
+    "vault": "notes_vault",
     "file_stack": "file_system",
     "files": "file_system",
     "antigravity": "antigravity_work",

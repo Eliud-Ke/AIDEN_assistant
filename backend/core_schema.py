@@ -3,6 +3,8 @@ Core OpenAI tool schemas loaded directly into RAM.
 Replaces tool_registry.json to eliminate disk reads and PyInstaller pathing traps.
 """
 
+import tools_youtube
+
 CORE_TOOLS_SCHEMA = [
     {
         "type": "function",
@@ -372,7 +374,6 @@ CORE_TOOLS_SCHEMA = [
                             "google_calendar",
                             "antigravity_work",
                             "notes_vault",
-                            "youtube_visual",
                             "file_system",
                         ],
                         "description": "External service connector to mount (e.g. 'gmail', 'antigravity_work').",
@@ -463,6 +464,7 @@ CORE_TOOLS_SCHEMA = [
             },
         },
     },
+    *tools_youtube.YOUTUBE_TOOLS_SCHEMA,
 ]
 
 
@@ -470,7 +472,7 @@ def get_core_tool_names() -> list:
     """Extracts all function names declared in the core schema directly in RAM."""
     names = []
     for tool in CORE_TOOLS_SCHEMA:
-        fn = tool.get("function", {})
+        fn = tool.get("function", tool)
         if "name" in fn:
             names.append(fn["name"])
     return names

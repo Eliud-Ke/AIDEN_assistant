@@ -79,9 +79,9 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
         return "spotify"
     if func_name.startswith("calendar_"):
         return "google_calendar"
-    if func_name.startswith("notes_") or func_name.startswith("obsidian_"):
+    if func_name.startswith("notes_") or func_name.startswith("obsidian_") or "_obsidian" in func_name:
         return "notes_vault"
-    if func_name.startswith("youtube_"):
+    if func_name in ("search_youtube", "video_suggestion") or func_name.startswith("youtube_") or "youtube" in func_name:
         return "youtube_visual"
     if func_name.startswith("file_"):
         return "file_system"
@@ -89,79 +89,8 @@ def get_connector_for_tool(func_name: str, args: dict = None) -> str:
         return "antigravity_work"
     return ""
 
-# ⚡ THE STATUS DICTIONARY (Minimalist Text Only)
-TOOL_STATUS_MAP = {
-    # System Hardware & Settings & Vision
-    "look_at_screen": "Looking at your screen",
-    "get_active_windows": "Scanning active windows",
-    "set_system_brightness": "Adjusting screen brightness",
-    "manage_system_power": "Applying power settings",
-    "open_windows_setting": "Opening Windows settings",
-    "manage_recycle_bin": "Emptying the recycle bin",
-
-    # Utilities & OS Apps
-    "get_live_location": "Acquiring your location",
-    "get_weather_forecast": "Checking the weather",
-    "get_bible_passage": "Fetching Bible scripture",
-    "launch_app": "Launching application",
-    "close_application": "Closing application",
-    "list_installed_apps": "Searching installed apps",
-    "open_in_browser": "Opening link in browser",
-
-    # Media & Volume (System Level)
-    "get_currently_playing": "Checking current media",
-    "media_play": "Resuming media",
-    "media_pause": "Pausing media",
-    "media_next_track": "Skipping track",
-    "media_previous_track": "Playing previous track",
-    "media_restart_track": "Restarting track",
-    "set_system_volume": "Adjusting system volume",
-
-    # Web & Grounding
-    "grounded_web_search": "Searching the web",
-
-    # Gmail Connector Tools
-    "gmail_list_unread_emails": "Checking unread emails",
-    "gmail_search_emails": "Searching your inbox",
-    "gmail_read_email": "Reading email message",
-    "gmail_draft_email": "Drafting an email",
-    "gmail_send_email": "Sending your email",
-    "gmail_reply_email": "Sending your reply",
-    "gmail_mark_emails_as_read": "Marking emails as read",
-    "gmail_archive_email": "Archiving email message",
-
-    # Google Calendar Connector Tools
-    "calendar_get_agenda": "Checking your agenda",
-    "calendar_create_event": "Scheduling your event",
-    "calendar_search_events": "Searching your calendar",
-    "calendar_update_event": "Updating your event",
-    "calendar_delete_event": "Canceling your event",
-    "calendar_check_availability": "Checking schedule availability",
-
-    # Spotify Connector Tools
-    "spotify_check_active_device": "Checking Spotify devices",
-    "spotify_search_tracks": "Searching tracks on Spotify",
-    "spotify_search_artists": "Searching for the artist on Spotify",
-    "spotify_search_albums": "Searching for the album on Spotify",
-    "spotify_search_playlists": "Searching For Playlist in Spotify",
-    "spotify_search_my_playlists": "Searching your library for the playlist",
-    "spotify_list_my_playlists": "Searching and listing what's in your Library",
-    "spotify_play_playlist": "Starting the playlist",
-    "spotify_play_item": "Playing the music track",
-    "spotify_set_playback_mode": "Changing playback mode",
-    "spotify_like_track": "Saving song to library",
-    "spotify_unlike_track": "Removing song from library",
-
-    # Antigravity Work Connector Tools
-    "agy_plan_task": "Planning with Antigravity",
-    "agy_revise_plan": "Revising Antigravity plan",
-    "agy_execute_task": "Launching Antigravity worker",
-    "agy_check_status": "Checking Antigravity progress",
-    "agy_cancel_task": "Canceling Antigravity task",
-
-    # A2UI Generative Liquid-Glass Surface Tool
-    "render_a2ui_surface": "Polishing interactive UI",
-}
+# ⚡ THE STATUS DICTIONARY (10 Organic Variations per Tool via status_tags.py)
+from status_tags import TOOL_STATUS_MAP, pick_tool_status_tag
 
 # ---------------------------------------------------------
 # 1. UI EVENT BRIDGE & ROUTERS
@@ -616,6 +545,11 @@ async def main_loop():
                 tools_a2ui.clear_pending_surfaces()
             except Exception:
                 pass
+            try:
+                import tools_youtube
+                tools_youtube.clear_pending_youtube_cards()
+            except Exception:
+                pass
             if is_system_turn:
                 if proactive_kind == "agy_done":
                     active_turn_connectors.add("antigravity_work")
@@ -825,11 +759,9 @@ async def main_loop():
                                 if func_name != "unknown" and func_name not in live_tool_names:
                                     live_tool_names.append(func_name)
                                     if func_name != "connect_service":
-                                        status_payload = (
-                                            TOOL_STATUS_MAP.get(
-                                                live_tool_names[0], "Processing request")
-                                            if len(live_tool_names) == 1
-                                            else "Processing tasks"
+                                        status_payload = pick_tool_status_tag(
+                                            live_tool_names[0],
+                                            is_multi_tool=(len(live_tool_names) > 1),
                                         )
                                         print(f"\n⚡ [STATUS]: {status_payload}")
                                         tool_conn = get_connector_for_tool(func_name)
@@ -976,6 +908,28 @@ async def main_loop():
                                 )
                         except Exception as a2ui_err:
                             print(f"⚠️ [A2UI SIDE-CHANNEL] Attachment error: {a2ui_err}")
+
+                        try:
+                            import tools_youtube
+                            pending_yt = tools_youtube.pop_pending_youtube_cards()
+                            if pending_yt:
+                                cleaned_yt_prose = re.sub(
+                                    r"::youtube-card\[[\s\S]*?(?:\]::|$)",
+                                    "",
+                                    ui_full_msg or "",
+                                    flags=re.IGNORECASE,
+                                ).strip()
+                                yt_tags = "\n".join(
+                                    tools_youtube.serialize_youtube_card_tag(card)
+                                    for card in pending_yt
+                                )
+                                ui_full_msg = (
+                                    f"{cleaned_yt_prose}\n\n{yt_tags}"
+                                    if cleaned_yt_prose
+                                    else yt_tags
+                                )
+                        except Exception as yt_err:
+                            print(f"⚠️ [YOUTUBE SIDE-CHANNEL] Attachment error: {yt_err}")
 
                         await server.broadcast_stream_end(
                             ui_full_msg,

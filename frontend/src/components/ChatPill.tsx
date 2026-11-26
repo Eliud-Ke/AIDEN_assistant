@@ -17,6 +17,7 @@ import { PipSquareEyes } from "./PipSquareEyes";
 import { ConjoinedSearchTray, SearchItem } from "./SearchDrawer";
 import { AntigravityWorkCard, AgyWorkJobState } from "./AntigravityWorkCard";
 import { A2UISurface, A2UISurfacePayload, A2UIActionEvent } from "./A2UISurface";
+import { YouTubeCard, YouTubeCardData, YouTubeVideoItem, YouTubeLoadingSkeleton } from "./YouTubeCard";
 import "./ChatPill.css";
 
 interface UnifiedSearchResponse {
@@ -313,7 +314,9 @@ type MessagePart =
   | { type: "spotify_playlists"; data: SpotifyPlaylistsCardData }
   | { type: "spotify_library_playlists"; data: SpotifyLibraryPlaylistsCardData }
   | { type: "a2ui"; data: A2UISurfacePayload }
-  | { type: "loading_a2ui" };
+  | { type: "loading_a2ui" }
+  | { type: "youtube"; data: YouTubeCardData }
+  | { type: "loading_youtube" };
 
 const POLISH_STATUS_TAGS = [
   "Finishing up",
@@ -419,7 +422,7 @@ function normalizeA2UICardPayload(rawPayload: string): A2UISurfacePayload | null
 function parseMessageWithGalleries(rawText: string, isStreaming: boolean): MessagePart[] {
   if (!rawText) return [];
 
-  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|a2ui-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*?)\]::/gi;
+  const embedRegex = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|a2ui-card|youtube-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*?)\]::/gi;
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -790,6 +793,51 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
       } else {
         console.warn("Failed to parse a2ui-card JSON:", rawPayload.slice(0, 120));
       }
+    } else if (tagType === "youtube-card") {
+      try {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawPayload);
+        } catch {
+          parsed = JSON.parse(rawPayload.replace(/[\r\n]+/g, " "));
+        }
+        const rawVideos = Array.isArray(parsed?.videos)
+          ? parsed.videos
+          : Array.isArray(parsed)
+          ? parsed
+          : parsed && typeof parsed === "object" && (parsed.videoId || parsed.url)
+          ? [parsed]
+          : [];
+        const videos: YouTubeVideoItem[] = rawVideos
+          .filter((v: any) => v && typeof v === "object" && (v.videoId || v.url))
+          .slice(0, 4)
+          .map((v: any) => {
+            const vid = String(v.videoId || "").trim();
+            return {
+              videoId: vid,
+              title: String(v.title || "YouTube Video"),
+              channel: String(v.channel || "YouTube"),
+              duration: v.duration ? String(v.duration) : undefined,
+              views: v.views ? String(v.views) : undefined,
+              published: v.published ? String(v.published) : undefined,
+              description: v.description ? String(v.description) : undefined,
+              thumb: String(v.thumb || (vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "")),
+              url: String(v.url || (vid ? `https://www.youtube.com/watch?v=${vid}` : "https://www.youtube.com")),
+            };
+          });
+        if (videos.length > 0) {
+          parts.push({
+            type: "youtube",
+            data: {
+              mode: parsed?.mode === "suggestion" ? "suggestion" : "search",
+              query: parsed?.query ? String(parsed.query) : undefined,
+              videos,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to parse youtube-card JSON:", err);
+      }
     } else {
       const items: MediaGalleryItem[] = [];
 
@@ -846,7 +894,7 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
 
   const remaining = rawText.slice(lastIndex);
   if (remaining) {
-    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|a2ui-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*)$/i.exec(remaining);
+    const partialMatch = /::(media-(?:gallery|strip)|location-card|gmail-card|calendar-card|system-slider|weather-card|a2ui-card|youtube-card|spotify-(?:artist|tracks|albums|playlists|library-playlists)-card)\[([\s\S]*)$/i.exec(remaining);
     if (partialMatch && isStreaming) {
       const textBeforePartial = remaining.slice(0, partialMatch.index);
       if (textBeforePartial) {
@@ -858,6 +906,8 @@ function parseMessageWithGalleries(rawText: string, isStreaming: boolean): Messa
         parts.push({ type: "loading_location" });
       } else if (partialMatch[1].toLowerCase() === "a2ui-card") {
         parts.push({ type: "loading_a2ui" });
+      } else if (partialMatch[1].toLowerCase() === "youtube-card") {
+        parts.push({ type: "loading_youtube" });
       }
     } else if (partialMatch && !isStreaming && partialMatch[1].toLowerCase() === "a2ui-card") {
       // Self-heal unclosed ::a2ui-card[...] if a model dropped the trailing ]::
@@ -3768,6 +3818,20 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                                 surface={part.data}
                                 onAction={onA2UIAction}
                                 onPrefillInput={handleA2UIPrefill}
+                                onLayoutChange={() => window.requestAnimationFrame(updateScrollMask)}
+                              />
+                            );
+                          }
+
+                          if (part.type === "loading_youtube") {
+                            return <YouTubeLoadingSkeleton key={idx} />;
+                          }
+
+                          if (part.type === "youtube") {
+                            return (
+                              <YouTubeCard
+                                key={idx}
+                                data={part.data}
                                 onLayoutChange={() => window.requestAnimationFrame(updateScrollMask)}
                               />
                             );

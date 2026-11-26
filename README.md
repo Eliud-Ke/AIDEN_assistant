@@ -85,6 +85,7 @@ Instead of dumping walls of text, AIDEN answers with one crisp conversational li
 * **Google Calendar (`CalendarCard`)** — Agenda view, quick scheduling, cancellation, and automatic overlap/conflict detection cards.
 * **Gmail (`GmailCard`)** — Unread inbox & search cards powered by a warm persistent IMAP session with batched `UID FETCH` (~350–730ms tool latency), plus reading, drafting, sending, replying, and archiving.
 * **Spotify (`Spotify*Card`)** — Dedicated interactive cards for Tracks, Artists, Albums, Public Playlists, and your Personal Library Playlists, plus direct playback, shuffle/repeat, and Liked Songs control.
+* **YouTube (`YouTubeCard`)** — Zero-config Hero Video Card with a 4-dot morphing carousel (`search_youtube`) and quiet single-video walkthrough suggestions (`video_suggestion`), complete with one-click browser playback and link copy.
 * **Hardware Glass Sliders (`SystemSlider`)** — Interactive volume and display brightness controls right inside the reply.
 * **Rich Markdown (`MarkdownContent`)** — GitHub Flavored Markdown, comparison tables, syntax-highlighted code blocks (`highlight.js`), and inline/display LaTeX math (`KaTeX`).
 
@@ -116,14 +117,14 @@ AIDEN uses an MCP-style dynamic connector registry (`backend/connectors.py`) tha
 | Category | Status | Capabilities |
 | :--- | :---: | :--- |
 | **Core OS & Media** | ✅ Active | App launching, active window inspection & closing, Windows Settings deep-links, Recycle Bin, volume & brightness sliders, universal media playback (`play/pause/next/prev/restart`), power management, Bible passages |
+| **YouTube (Core)** | ✅ Active | Zero-config direct tools (`search_youtube` 4-dot Hero Carousel + selective `video_suggestion` Hero Walkthrough) with optional `YOUTUBE_API_KEY` override — no connector handshake or setup required |
 | **Dynamic UI (`A2UI v0.9`)** | ✅ Active | Generative interactive glass surfaces (`render_a2ui_surface`): live progress checklists, 60fps reactive calculators, tabbed comparisons, forms, quizzes, and Antigravity Plan Gate cards |
 | **Vision & Web** | ✅ Active | Screen Vision (`look_at_screen`: whole screen / active / background window), Live Grounded Web Search, Weather Forecast, Live Location |
 | **Gmail** | ✅ Active | Persistent warm IMAP + SMTP: unread inbox, fast search, read, draft, send, reply, mark read, archive |
 | **Google Calendar** | ✅ Active | OAuth 2.0: daily/weekly agenda, availability & conflict detection, event creation, update, cancellation |
 | **Spotify** | ✅ Active | OAuth 2.0: search tracks/artists/albums/playlists, browse personal library playlists, play items/playlists, shuffle/repeat, like/unlike tracks, active device check |
+| **Notes Vault (Obsidian)** | ✅ Active | Auto-discover local Obsidian vaults, scan folders, full-text note search, read/create/edit Markdown notes (`overwrite`/`append`/`insert_after_text`/`replace_text`), `obsidian://` deep-link open, and `[[wikilink]]` graph mapping |
 | **Antigravity Work** | ✅ Active | Headless `agy.exe` delegation: read-only Plan Gate (`agy_plan_task` / `agy_revise_plan`), async Full Turbo execution (`agy_execute_task`) with live inline CLI streaming & hover-minimize, status checks (`agy_check_status`), and process-tree cancel (`agy_cancel_task`) |
-| **Notes Vault (Obsidian)** | 🚧 Planned | Registered connector slot (`notes_vault`) — tool implementation coming in a future release |
-| **YouTube Visual** | 🚧 Planned | Registered connector slot (`youtube_visual`) — tool implementation coming in a future release |
 | **AI File Agent** | 🚧 Planned | Registered connector slot (`file_system`) — instant file/folder search is currently provided natively via the Rust Spotlight tray |
 
 ---
@@ -152,10 +153,10 @@ flowchart TD
         WSServer["Async WebSocket Server & Turn-Barrier Mailbox (Port 8765)"]
         ANS["Autonomic Nervous System Telemetry (ans.py)"]
         Brain["OpenAI Responses API Core (gpt-5.6-luna / gpt-6-luna)"]
-        Connectors["Dynamic Connectors (Gmail, Calendar, Spotify, Antigravity Work)"]
+        Connectors["Dynamic Connectors (Gmail, Calendar, Spotify, Obsidian, Antigravity Work)"]
         AgyWorker["Headless Antigravity CLI Worker (agy.exe)"]
         Memory["Semantic & Episodic Memory Manager"]
-        SysTools["OS, Vision, Weather, Web & A2UI Tools"]
+        SysTools["OS, Vision, Weather, Web, YouTube & A2UI Tools"]
     end
 
     ChatPill <--> |WebSocket JSON & Token Stream| WSServer
@@ -191,8 +192,11 @@ AIDEN_assistant/
 │   ├── tools_gmail.py            # Persistent warm IMAP/SMTP Gmail tools
 │   ├── tools_calendar.py         # Google Calendar OAuth & conflict-aware scheduling tools
 │   ├── tools_spotify.py          # Spotify Web API search, library & playback tools
+│   ├── tools_obsidian.py         # Obsidian vault discovery, search, CRUD, deep-link & wikilink graph
+│   ├── tools_youtube.py          # Zero-config YouTube search & silent walkthrough side-channel tools
 │   ├── tools_a2ui.py             # Google A2UI v0.9 validator & side-channel surface queue
 │   ├── tools_antigravity.py      # Headless Antigravity CLI Plan Gate & async Turbo worker
+│   ├── status_tags.py            # Shuffled-bag organic tool status variations (10 phrases/tool)
 │   ├── memory_manager.py         # Semantic facts (memory.json) & episodic ledger
 │   ├── configuration.py          # Identity vibe, operational rules & preferences
 │   ├── auth_manager.py           # Windows Credential Manager integration (keyring)
@@ -203,6 +207,7 @@ AIDEN_assistant/
 │   │   ├── components/
 │   │   │   ├── ChatPill.tsx             # Upper-third Liquid Glass pill & conjoined search tray
 │   │   │   ├── A2UISurface.tsx          # Google A2UI v0.9 renderer & zero-eval reactive engine
+│   │   │   ├── YouTubeCard.tsx          # Headerless Hero Video Card & 4-dot morphing carousel
 │   │   │   ├── AntigravityWorkCard.tsx  # Live inline Antigravity card with hover-minimize & stop
 │   │   │   ├── PipSquareEyes.tsx        # 68x68 living cube eyes, working green glow & Spotify state
 │   │   │   ├── PipCommentBubble.tsx     # Floating battery, spinning gear & status speech bubble
