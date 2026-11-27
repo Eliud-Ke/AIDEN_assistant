@@ -4176,8 +4176,42 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                   );
                 })}
 
-                {/* Unanchored Live Inline Antigravity Card (e.g. mid-launch or after wake) */}
-                {showInlineAgyCard &&
+                {/* Unanchored Live Inline Antigravity & File Explorer Cards when no follow-up turn is in-flight
+                    (e.g. Turn 1 fresh launch or waking AIDEN while a background job is still running) */}
+                {!hasFollowupPending &&
+                  !isProactiveThinkingInStream &&
+                  activeUiTag &&
+                  activeTurns.length === 0 &&
+                  isMultiTurnMode && (
+                    <div className="siri-turn-item proactive-pending-turn">
+                      <div className="siri-instream-thinking">
+                        <div className="siri-icon-morph-anchor">
+                          <span
+                            className={`siri-apple-constellation ${isConnecting ? "is-imploded" : ""}`}
+                            aria-hidden="true"
+                          >
+                            <AppleConstellationSpinner />
+                          </span>
+                          {activeConnectorMeta && (
+                            <div className={`siri-connector-sine-wrapper ${isConnecting ? "is-active" : ""}`}>
+                              <img
+                                src={activeConnectorMeta.icon}
+                                alt={activeConnectorMeta.name}
+                                className="siri-connector-sine-img"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <MorphingStatusText
+                          text={formatStatusTag(activeUiTag)}
+                          className="siri-instream-thinking-text"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                {!hasFollowupPending &&
+                  showInlineAgyCard &&
                   agyWorkJob &&
                   (!agyWorkJob.anchorTurnId || !activeTurns.some((t) => t.id === agyWorkJob.anchorTurnId)) &&
                   onDismissAgyCard &&
@@ -4191,8 +4225,8 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                     </div>
                   )}
 
-                {/* Unanchored Live Inline File Explorer Swarm Card (mid-launch before turn finalizes) */}
-                {fileAgentJob &&
+                {!hasFollowupPending &&
+                  fileAgentJob &&
                   (!fileAgentJob.anchorTurnId || !activeTurns.some((t) => t.id === fileAgentJob.anchorTurnId)) &&
                   onStopFileAgent &&
                   onOpenFilePath && (
@@ -4282,6 +4316,31 @@ export const ChatPill: React.FC<ChatPillProps> = ({
                         className="siri-instream-thinking-text"
                       />
                     </div>
+
+                    {/* Mid-launch Agy / File Agent panels live inside the active pending turn right below the tool status */}
+                    {showInlineAgyCard &&
+                      agyWorkJob &&
+                      (!agyWorkJob.anchorTurnId || !activeTurns.some((t) => t.id === agyWorkJob.anchorTurnId)) &&
+                      onDismissAgyCard &&
+                      onStopAgyTask && (
+                        <AntigravityWorkCard
+                          job={agyWorkJob}
+                          onDismiss={onDismissAgyCard}
+                          onStop={onStopAgyTask}
+                        />
+                      )}
+
+                    {fileAgentJob &&
+                      (!fileAgentJob.anchorTurnId || !activeTurns.some((t) => t.id === fileAgentJob.anchorTurnId)) &&
+                      onStopFileAgent &&
+                      onOpenFilePath && (
+                        <FileAgentCard
+                          job={fileAgentJob}
+                          onStop={onStopFileAgent}
+                          onOpenPath={onOpenFilePath}
+                          onLayoutChange={() => window.requestAnimationFrame(updateScrollMask)}
+                        />
+                      )}
                   </div>
                 )}
               </div>

@@ -111,6 +111,10 @@ Everyday file hunting, inspecting, organizing, and cleanup without ever opening 
 * **Tier 2 Async Parallel Hive-Mind Swarm (`file_agent_search` + `FileAgentCard.tsx`)**: When Tier 1 misses or is offline, dispatches a live branching visual swarm across your user directories (and wakes you automatically via the Turn-Barrier Mailbox to finish any chained move/copy/open action).
 * **Native Win32 File Operations**: Highlights items directly inside File Explorer using native `SHOpenFolderAndSelectItems` PIDLs (`file_open`), resolves shorthand destinations cleanly (`Desktop`, `Downloads`, `Documents`, `Pictures`, `Videos`, `Music`), copies with 2 GB guardrails (`file_copy`), and moves deleted items safely to the Windows **Recycle Bin** via `SHFileOperationW` (`file_trash`) — never permanent deletion.
 
+<div align="center">
+  <img src="docs/media/07-ai-file-agent.gif" alt="AIDEN AI File Agent Hive-Mind Swarm & Zero-Read Local File Explorer Demo" width="860" />
+</div>
+
 ### 👁️ Screen Vision, Live Web Grounding & Hardware Awareness
 * **Screen Vision (`look_at_screen`)**: Inspects your full screen, active window, or a specific background window by name to read errors, explain code, or summarize what you're looking at.
 * **Live Grounded Web Search (`grounded_web_search`)**: Searches live web sources for current events, docs, and real-time facts with clean clickable citations.
